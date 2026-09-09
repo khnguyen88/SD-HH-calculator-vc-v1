@@ -38,7 +38,7 @@ Update `drainage-calculator/storm-drain-calculator-spec.md`, keeping its phased 
 
 ### 3. CLAUDE.md
 
-Replace the placeholder with: project purpose (single-file offline storm drain design calculator), the non-negotiable single-file constraint, key file locations, and the deploy procedure.
+Replace the placeholder with: project purpose (single-file offline storm drain design calculator), the non-negotiable single-file constraint, key file locations, and the deploy procedure. **CLAUDE.md must never exceed 200 lines** (user requirement — Claude Code truncates context loaded from it); long-form material lives in `/docs` instead, with CLAUDE.md pointing to it.
 
 ### 4. Deployment
 
