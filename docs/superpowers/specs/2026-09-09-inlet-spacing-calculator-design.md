@@ -7,6 +7,11 @@ Add a standalone Inlet Spacing Calculator to the storm drain design tool. This f
 The calculator implements a linear-chain analysis where each inlet's total flow consists of its local contribution plus bypass from upstream inlets.
 
 ### 1.1 Hydrology & Flow
+- **Rainfall source — three selectable curves, resolved in this priority:**
+  1. **NOAA Atlas 14 (default):** per-county embedded values for all 24 Maryland jurisdictions (23 counties + Baltimore City) and the District of Columbia. A county dropdown (grouped: MD counties, then DC) auto-sets the rainfall data for the selected storm frequency (2/10/25-yr) for BOTH the Inlet Spacing tab and pipe sizing (i.e., the same selected curve is the app-wide default intensity source — the existing Drainage Area tab's manual `i` column stays as an override, unchanged). Data method: NOAA Atlas 14 point precipitation frequency estimates at a representative point per county (county seat / centroid), converted to intensity breakpoints at durations 5/10/15/30/60 min for each return period, piecewise-linear interpolated between breakpoints and clamped at endpoints — the same interpolation rule as the agency tables. The exact point used per county and the extraction date are recorded in a data-provenance block in the source and shown in the UI's data note, because NOAA Atlas 14 values vary within a county; users needing a project-specific value use the manual override. A "Custom" county option lets the user type their own 5/10/15/30/60-min intensities (from NOAA's web tool for their exact location), stored in the project.
+  2. **MDSHA agency table** (the SHA curve below — matches the reference workbook's SHA Intensity sheet).
+  3. **MoCo agency table** (the MoCo curve below — matches the reference workbook's Intensity sheet).
+  Rainfall source is a top-of-tab selector; the Inlet Spacing tab and the county selection persist through Excel export/import like all other state.
 - **Total Flow ($Q_{total}$):**
   $$Q_{total} = (C_{local} \times A_{local}) \times i(T_c, \text{Agency, Storm}) + \sum Q_{bypass\_upstream}$$
 - **Intensity ($i$):** Piecewise-linear interpolation from agency-specific $T_c$ vs $I$ tables (MoCo/MDSHA). Curve seed data, extracted from `docs/bburg-p-c.xlsx`:
@@ -28,7 +33,7 @@ The calculator implements a linear-chain analysis where each inlet's total flow 
     | 60 | 1.52 | 1.93 | 2.19 |
   - Note: the workbook's own 2-yr spacing sheet used a project-specific flat 4.01 in/hr (not a curve) — the 2-yr curves above are the proper agency curves; manual override covers the flat-rate case.
   - Clamped at table endpoints; a row whose $T_c$ exceeds the range gets the end value plus a note on its detail sheet.
-- **Manual Override:** Users can override the computed $i$ per row; an overridden cell is visibly marked and its detail sheet says so.
+- **Manual Override:** Users can override the computed $i$ per row by typing into the i cell; an overridden cell is visibly marked, its detail sheet says so, and clearing the cell reverts to the computed curve value. Manual entry always wins over any selected curve (NOAA/agency) for that row — the curves only pre-fill what the user hasn't specified. All three curve sources (NOAA per-county, MDSHA, MoCo) use the same piecewise-linear interpolation between duration breakpoints and clamp at the endpoints.
 
 ### 1.2 On-Grade Spread (HEC-22)
 - **Spread ($T$):**
@@ -84,7 +89,7 @@ Each library entry stores: standard number, label, grate length options (ft), gr
 ## 3. User Interface & Interaction
 
 ### 3.1 Tab Layout
-- **Global Controls:** Project Street, Agency (MDSHA/MoCo), Storm (2, 10, 25-yr), Default Allowable Spread (ft).
+- **Global Controls:** Project Street, Rainfall source (NOAA Atlas 14 / MDSHA table / MoCo table), County (NOAA mode; 24 MD jurisdictions + DC, or Custom), Storm (2/10/25-yr), Default Allowable Spread (ft). When NOAA + county is selected, the data note shows which county point the intensities represent.
 - **Main Table:**
   - Columns: Label, Agency, Structure Type, Area (ac), C, $T_c$ (min), $i$ (in/hr), $Q$ (cfs), $S$ (longitudinal), $S_x$ (cross), $W$ (ft), $a$ (ft), $n$, Spread $T$ (ft), Allowable $T$, Pickup %, Bypass To (Label), Bypass CA.
 - **Warning State:** Highlight row if Spread $T >$ Allowable $T$.
@@ -126,6 +131,7 @@ Additional oracle: the workbook's helper-column math must reproduce EX-I-1's ups
 4. Grate length ≥ Lt → exactly 100% pickup, bypass 0, no divide-by-zero.
 5. SUMP inlet mid-chain → downstream still receives its bypass (sump = 100% pickup means bypass 0; verify no NaN when a sump row has upstream inflow).
 6. Deleting an inlet others bypass to → orphaned references flagged, treated as 0 with warning.
-7. Intensity: exact at breakpoints, linear between, clamped beyond ends, per agency/storm.
+7. Intensity: exact at breakpoints, linear between, clamped beyond ends, per agency/storm. NOAA county selection: switching county changes the computed i; switching back restores it; Custom county values persist through export/import.
+7b. NOAA data block: assert all 25 jurisdictions exist with 5 breakpoints × 3 storms each; spot-check 2–3 counties against NOAA Atlas 14 published values recorded in the provenance block (the implementation plan includes compiling this table from NOAA's official point PPF estimates; do not invent numbers — cite the point coordinates and pull date per county).
 8. Structure-type selection auto-fills L/W/a/n; editing afterward doesn't reset on re-render.
 9. Export/import round-trip with the new sheet + standing OOXML checks (sharedStrings exists; no `t="str"` without `<f>`).
