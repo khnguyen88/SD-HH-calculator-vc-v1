@@ -2696,6 +2696,39 @@ function renderKb(){
 }
 
 /* ---------------------------------------------------------------------
+   Rainfall & IDF tab
+--------------------------------------------------------------------- */
+function renderRainfall(){
+  const c = document.getElementById("view-rainfall");
+  if(!c) return;
+  c.innerHTML = "";
+  c.appendChild(el("h1",{},"Rainfall & IDF"));
+  c.appendChild(el("p",{class:"view-desc"},"Stub — see Task 4."));
+}
+
+/* ---------------------------------------------------------------------
+   Pipe Sizing — 25-yr Check tab
+--------------------------------------------------------------------- */
+function renderPipeSizing25(){
+  const c = document.getElementById("view-pipe-sizing-25");
+  if(!c) return;
+  c.innerHTML = "";
+  c.appendChild(el("h1",{},"Pipe Sizing — 25-yr Check"));
+  c.appendChild(el("p",{class:"view-desc"},"Stub — see Task 10."));
+}
+
+/* ---------------------------------------------------------------------
+   Junction Structures — 25-yr Check tab
+--------------------------------------------------------------------- */
+function renderStructures25(){
+  const c = document.getElementById("view-structures-25");
+  if(!c) return;
+  c.innerHTML = "";
+  c.appendChild(el("h1",{},"Junction Structures — 25-yr Check"));
+  c.appendChild(el("p",{class:"view-desc"},"Stub — see Task 11."));
+}
+
+/* ---------------------------------------------------------------------
    Inlet Spacing tab
 --------------------------------------------------------------------- */
 function renderInletSpacing(){
@@ -2959,6 +2992,9 @@ function renderAll(){
   renderTable46();
   renderKb();
   renderInletSpacing();
+  renderRainfall();
+  renderPipeSizing25();
+  renderStructures25();
 }
 
 /* =======================================================================
