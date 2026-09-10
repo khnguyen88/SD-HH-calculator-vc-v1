@@ -4230,18 +4230,46 @@ function buildWorkbook(){
   wsOv["!cols"] = [{wch:100}];
   XLSX.utils.book_append_sheet(wb, wsOv, "Overview");
 
+  // ---- Rainfall Settings ----
+  const rf = state.rainfall;
+  const rfAoa = [
+    ["Rainfall Source",          rf.rainfallSource||"noaa"],
+    ["County",                   rf.county||"Montgomery"],
+    ["Pipe & HGL Design Storm",  rf.pipeStorm||"10yr"],
+    ["25-yr Check",              rf.pipe25Check ? "TRUE" : "FALSE"],
+    ["Inlet Design Storm",       rf.inletStorm||"2yr"],
+    ["Custom NOAA 5-min (in/hr)",  (rf.customNoaa&&rf.customNoaa[5]!=null&&rf.customNoaa[5]!=="")?rf.customNoaa[5]:""],
+    ["Custom NOAA 10-min (in/hr)", (rf.customNoaa&&rf.customNoaa[10]!=null&&rf.customNoaa[10]!=="")?rf.customNoaa[10]:""],
+    ["Custom NOAA 15-min (in/hr)", (rf.customNoaa&&rf.customNoaa[15]!=null&&rf.customNoaa[15]!=="")?rf.customNoaa[15]:""],
+    ["Custom NOAA 30-min (in/hr)", (rf.customNoaa&&rf.customNoaa[30]!=null&&rf.customNoaa[30]!=="")?rf.customNoaa[30]:""],
+    ["Custom NOAA 60-min (in/hr)", (rf.customNoaa&&rf.customNoaa[60]!=null&&rf.customNoaa[60]!=="")?rf.customNoaa[60]:""],
+  ];
+  const wsRf = XLSX.utils.aoa_to_sheet(rfAoa);
+  wsRf["!cols"] = [{wch:30},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, wsRf, "Rainfall Settings");
+
   // ---- Drainage Area ----
-  const daHeader = ["ID","Description","Area A (ac)","C","i Override (in/hr)","Tc (min)","Cf","Q (cfs)","Tc Method"];
-  const daRows = [daHeader];
-  state.drainage.forEach(r=>{
-    daRows.push([r.structureId||r.id, r.desc||"", num(r.area), num(r.C), r.iOverride!==""&&r.iOverride!=null?num(r.iOverride):"", num(r.tc), num(r.cf,1), null, r.tcMethod||"direct"]);
+  const rfSrc    = state.rainfall.rainfallSource;
+  const daStorms = availableStorms(rfSrc);
+  const daQHdrs  = daStorms.map(s => "Q_" + s + " (cfs)");
+  const daHeader = ["ID","Description","Area A (ac)","C","CA","i Override (in/hr)","Tc (min)","Cf","Tc Method", ...daQHdrs];
+  const daRows   = [daHeader];
+  state.drainage.forEach(r => {
+    const calc = calcDrainageRow(r);
+    const qVals = daStorms.map(s => round(calc.Qs[s] || 0, 3));
+    daRows.push([
+      r.structureId||r.id, r.desc||"",
+      num(r.area), num(r.C),
+      round(calc.CA, 3),
+      (r.iOverride !== "" && r.iOverride != null) ? num(r.iOverride) : "",
+      num(r.tc), num(r.cf, 1),
+      r.tcMethod||"direct",
+      ...qVals
+    ]);
   });
   const wsDa = XLSX.utils.aoa_to_sheet(daRows);
-  state.drainage.forEach((r,i)=>{
-    const row=i+2, calc=calcDrainageRow(r);
-    setFormula(wsDa, "H"+row, "=C"+row+"*D"+row+"*E"+row+"*G"+row, round(calc.designQ,4));
-  });
-  wsDa["!cols"] = [{wch:12},{wch:26},{wch:11},{wch:8},{wch:10},{wch:9},{wch:7},{wch:10},{wch:11}];
+  wsDa["!cols"] = [{wch:12},{wch:26},{wch:11},{wch:8},{wch:8},{wch:14},{wch:9},{wch:7},{wch:11},
+    ...daStorms.map(()=>({wch:10}))];
   XLSX.utils.book_append_sheet(wb, wsDa, "Drainage Area");
 
   // ---- TR-55 Segments (variable-length list per Drainage Area, so it gets
@@ -4292,7 +4320,7 @@ function buildWorkbook(){
   const wsSt = XLSX.utils.aoa_to_sheet(stAoa);
 
   // Now fill live formulas. Column letters:
-  // Drainage Area: A id ... H Q
+  // Drainage Area: A id B desc C area D C E CA F iOverride G tc H cf I tcMethod J+ Q per storm (static values)
   // Pipe Sizing:   A id B from C to D angle E shape F size G n H slope I len J designQ K area L qfull M vel N status O splitRole P from|role key
   // Structure:     A id B desc C daId D type E force F startElev G crown H rim
   //                I capturedQ J qFromPipes K totalFlow L outPipeId M Hf N Kb O Hb P Vout Q upstreamHGL R downstreamId S crownChk T rimChk
@@ -4588,6 +4616,25 @@ function importExcel(file){
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, {type:"array", cellFormula:false});
 
+      // ---- Rainfall Settings ----
+      const rfWs = wb.Sheets["Rainfall Settings"];
+      if (rfWs) {
+        const rfAoaRaw = XLSX.utils.sheet_to_json(rfWs, {header:1, raw:false, defval:""});
+        const rfMap = {};
+        rfAoaRaw.forEach(r => { if (r[0]) rfMap[String(r[0]).trim()] = r[1]; });
+        const newRf = defaultRainfallSettings();
+        if (rfMap["Rainfall Source"])         newRf.rainfallSource = rfMap["Rainfall Source"];
+        if (rfMap["County"])                  newRf.county         = rfMap["County"];
+        if (rfMap["Pipe & HGL Design Storm"]) newRf.pipeStorm      = rfMap["Pipe & HGL Design Storm"];
+        if (rfMap["25-yr Check"])             newRf.pipe25Check    = rfMap["25-yr Check"] === "TRUE";
+        if (rfMap["Inlet Design Storm"])      newRf.inletStorm     = rfMap["Inlet Design Storm"];
+        [5,10,15,30,60].forEach(d => {
+          const v = rfMap["Custom NOAA "+d+"-min (in/hr)"];
+          if (v !== "" && v != null) newRf.customNoaa[d] = String(v);
+        });
+        state.rainfall = newRf;
+      }
+
       const da = sheetToRows(wb, "Drainage Area");
       const daIdMap = {}; // label -> new internal id
       if(da){
@@ -4596,7 +4643,16 @@ function importExcel(file){
           const label = r["ID"]||"";
           if(label) daIdMap[label]=id;
           return {
-            id, structureId: label, desc:r["Description"]||"", area:r["Area A (ac)"]||"", C:r["C"]||"", i:r["i (in/hr)"]||"", tc:r["Tc (min)"]||"", cf: r["Cf"]===""||r["Cf"]==null?1:r["Cf"],
+            id, structureId: label, desc:r["Description"]||"", area:r["Area A (ac)"]||"", C:r["C"]||"",
+            iOverride: (()=>{
+              const override = r["i Override (in/hr)"];
+              if (override !== "" && override != null && isFinite(Number(override))) return String(override);
+              // Migration: old exports had 'i (in/hr)' — treat as iOverride
+              const oldI = r["i (in/hr)"];
+              if (oldI !== "" && oldI != null && isFinite(Number(oldI))) return String(oldI);
+              return "";
+            })(),
+            tc:r["Tc (min)"]||"", cf: r["Cf"]===""||r["Cf"]==null?1:r["Cf"],
             tcMethod: r["Tc Method"]==="tr55" ? "tr55" : "direct",
             tr55: { segments: [] },
           };

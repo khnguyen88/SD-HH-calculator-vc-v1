@@ -293,3 +293,27 @@ test("computeTotalFlow stormOverride: Q25 > Q10 for same structure", () => {
   // Q25 must be strictly greater than Q10 (different storm intensities, no iOverride)
   assert.ok(q25 > q10, "Q25 should be > Q10 (stormOverride not wired): q10=" + q10 + " q25=" + q25);
 });
+
+// ==================== Excel export: Rainfall Settings sheet ====================
+test("buildWorkbook: Rainfall Settings sheet exists with correct keys", () => {
+  const wb = sdc.buildWorkbook();
+  assert.ok(wb.SheetNames.includes("Rainfall Settings"), "Rainfall Settings sheet missing");
+  const ws = wb.Sheets["Rainfall Settings"];
+  const XLSX = window.XLSX;
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+  const keys = aoa.map(r => r[0]);
+  assert.ok(keys.includes("Rainfall Source"), "Rainfall Source row missing");
+  assert.ok(keys.includes("Pipe & HGL Design Storm"), "Pipe storm row missing");
+  assert.ok(keys.includes("Inlet Design Storm"), "Inlet storm row missing");
+});
+
+test("buildWorkbook: Drainage Area has CA column, no old i column", () => {
+  const wb = sdc.buildWorkbook();
+  const XLSX = window.XLSX;
+  const ws = wb.Sheets["Drainage Area"];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+  const headers = aoa[0] || [];
+  assert.ok(headers.includes("CA"), "CA header missing");
+  assert.ok(!headers.includes("i (in/hr)"), "old i column should be gone");
+  assert.ok(headers.includes("i Override (in/hr)"), "iOverride header missing");
+});
