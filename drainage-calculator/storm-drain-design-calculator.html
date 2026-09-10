@@ -1989,6 +1989,10 @@ function renderOverview(){
     ["5","Inlet Spacing", "Size grate inlets along a curb profile using HEC-22 methods. Pick a Junction Structure to auto-fill area, C, and Tc from its linked drainage area."],
     ["6","Pipe Sizing & Capacity", "Pick a From structure and a To structure, plus the angle the pipe makes entering the To structure. Design Q is pulled automatically as the From structure\u2019s Total Flow (or its Primary/Secondary share, for a pipe leaving a Flow Splitter) \u2014 you never re-enter it. Size pipes between structures using Manning\u2019s equation."],
     ["7","HGL", "Review the hydraulic grade line for each structure. The tool walks upstream from the outfall, computing upstream HGL, and checks each structure against Crown+1\u00a0ft and Rim\u22121\u00a0ft limits."],
+    ["8","Structure Loss (Kb)", "Bend losses are computed automatically from each structure\u2019s outgoing pipe velocity and the Kb coefficient for its type and angle. Review results on the HGL tab; edit default Kb values on the Kb Coefficients tab to match your agency\u2019s Appendix B chart."],
+    ["9","Flow Splitter", "When one structure splits flow to two outgoing pipes (Primary + Secondary), set its type to \u201cFlow Splitter\u201d on the Junction Structures tab and assign both pipes. The pipe leaving a Flow Splitter draws its Design Q from the Primary or Secondary share you enter on that row."],
+    ["10","Outlet Control Structure", "Size the outlet using stage\u2013discharge rating curves. Enter orifices, weirs, and pipe devices on the Outlet Structure tab; the tool builds the combined rating curve and carries it through the HGL chain."],
+    ["11","Detail & Print", "Click the \u2921 Detail button on any row to open a formatted calculation sheet for that element. Use \u201cPrint All\u201d to generate the full package \u2014 all drainage areas, structures, pipes, and HGL sheets \u2014 in one print dialog."],
   ];
   const wrap = el("div",{class:"section"});
   wrap.appendChild(el("h2",{},"How the pieces connect"));
