@@ -1012,8 +1012,9 @@ function computeInletRow(row, settings, bypassQIn, bypassCAIn) {
   const L    = Number(row.L);
   const allowT = Number(row.allowableSpread || settings.allowableSpread);
 
+  const rf = state.rainfall;
   const iComputed = (isFinite(tc) && tc > 0)
-    ? lookupIntensity(tc, settings.rainfallSource, settings.storm, settings.county, settings.customNoaa || {})
+    ? lookupIntensity(tc, rf.rainfallSource, rf.inletStorm, rf.county, rf.customNoaa || {})
     : 0;
   const i = (row.iOverride !== "" && row.iOverride != null && isFinite(Number(row.iOverride)))
     ? Number(row.iOverride)
@@ -1129,8 +1130,9 @@ function computeInletChain(rows, settings) {
 // The intensity this row would use (for converting carried bypass CA to Q)
 function computeRowIntensity(row, settings) {
   const tc = Number(row.tc);
+  const rf = state.rainfall;
   const iComputed = (isFinite(tc) && tc > 0)
-    ? lookupIntensity(tc, settings.rainfallSource, settings.storm, settings.county, settings.customNoaa || {})
+    ? lookupIntensity(tc, rf.rainfallSource, rf.inletStorm, rf.county, rf.customNoaa || {})
     : 0;
   return (row.iOverride !== "" && row.iOverride != null && isFinite(Number(row.iOverride)))
     ? Number(row.iOverride) : iComputed;
@@ -3023,62 +3025,6 @@ function renderInletSpacing(){
     oninput:(e)=>{ s.street=e.target.value; withFocusPreserved(renderAll); }}));
   gRow.appendChild(streetField);
 
-  // Rainfall source
-  const srcField = el("div",{class:"field"});
-  srcField.appendChild(el("label",{},"Rainfall source"));
-  const srcSel = el("select",{class:"cell-input",style:"width:220px;",
-    "data-focus-key":"is:global:source",
-    onchange:(e)=>{
-      s.rainfallSource=e.target.value;
-      // Coerce storm to one valid for the new source (moco has no 25yr; mdsha/noaa have no 5yr)
-      const valid = s.rainfallSource==="moco" ? ["2yr","5yr","10yr"] : ["2yr","10yr","25yr"];
-      if(!valid.includes(s.storm)) s.storm="10yr";
-      withFocusPreserved(renderAll);
-    }});
-  [["noaa","NOAA Atlas 14 (per county)"],["mdsha","MDSHA Agency Table"],["moco","MoCo Agency Table"]].forEach(([v,l])=>{
-    const o = el("option",{value:v},l);
-    if(s.rainfallSource===v) o.selected=true;
-    srcSel.appendChild(o);
-  });
-  srcField.appendChild(srcSel);
-  gRow.appendChild(srcField);
-
-  // County (NOAA only)
-  if(s.rainfallSource==="noaa"){
-    const countyField = el("div",{class:"field"});
-    countyField.appendChild(el("label",{},"County"));
-    const countySel = el("select",{class:"cell-input",style:"width:170px;",
-      "data-focus-key":"is:global:county",
-      onchange:(e)=>{ s.county=e.target.value; withFocusPreserved(renderAll); }});
-    NOAA_COUNTY_LIST.forEach(cty=>{
-      const o = el("option",{value:cty},cty);
-      if(s.county===cty) o.selected=true;
-      countySel.appendChild(o);
-    });
-    const oCustom = el("option",{value:"Custom"},"Custom");
-    if(s.county==="Custom") oCustom.selected=true;
-    countySel.appendChild(oCustom);
-    countyField.appendChild(countySel);
-    gRow.appendChild(countyField);
-  }
-
-  // Storm frequency
-  const stormField = el("div",{class:"field"});
-  stormField.appendChild(el("label",{},"Storm"));
-  const stormSel = el("select",{class:"cell-input",style:"width:110px;",
-    "data-focus-key":"is:global:storm",
-    onchange:(e)=>{ s.storm=e.target.value; withFocusPreserved(renderAll); }});
-  (s.rainfallSource==="moco"
-    ? [["2yr","2-year"],["5yr","5-year"],["10yr","10-year"]]
-    : [["2yr","2-year"],["10yr","10-year"],["25yr","25-year"]]
-  ).forEach(([v,l])=>{
-    const o = el("option",{value:v},l);
-    if(s.storm===v) o.selected=true;
-    stormSel.appendChild(o);
-  });
-  stormField.appendChild(stormSel);
-  gRow.appendChild(stormField);
-
   // Default allowable spread
   const allowField = el("div",{class:"field"});
   allowField.appendChild(el("label",{},"Default allowable spread (ft)"));
@@ -3090,28 +3036,13 @@ function renderInletSpacing(){
 
   gSection.appendChild(gRow);
 
-  // Custom NOAA point intensities (only when county==="Custom")
-  if(s.rainfallSource==="noaa" && s.county==="Custom"){
-    const customRow = el("div",{style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:4px;"});
-    [5,10,15,30,60].forEach(d=>{
-      const f = el("div",{class:"field",style:"margin-bottom:0;"});
-      f.appendChild(el("label",{},d+"-min"));
-      f.appendChild(el("input",{type:"text",inputmode:"decimal",class:"cell-input",style:"width:70px;",
-        value:(s.customNoaa && s.customNoaa[d]!==undefined && s.customNoaa[d]!==null) ? s.customNoaa[d] : "",
-        "data-focus-key":"is:global:custom:"+d,
-        oninput:(e)=>{ s.customNoaa=Object.assign({},s.customNoaa); s.customNoaa[d]=e.target.value; withFocusPreserved(renderAll); }}));
-      customRow.appendChild(f);
-    });
-    gSection.appendChild(el("p",{class:"hint",style:"margin:0 0 10px 0;"},
-      "Enter point precipitation depths as intensities (in/hr) for your project location. Interpolation between the entered durations is linear; values below/above the entered range clamp to the nearest entry."));
-    gSection.appendChild(customRow);
-  }
-  // County provenance note (real county selected)
-  else if(s.rainfallSource==="noaa" && NOAA_ATLAS14[s.county]){
-    gSection.appendChild(el("div",{class:"note"},
-      "County point: " + s.county + " — intensities represent lat " + NOAA_ATLAS14[s.county].lat +
-      ", lon " + NOAA_ATLAS14[s.county].lon + " (NOAA Atlas 14 PDS, pulled 2026-09-09). Values vary within the county; use Custom for a project-specific point."));
-  }
+  // Rainfall info note (settings managed in Rainfall tab)
+  const rf = state.rainfall;
+  const rfSrcLabel = rf.rainfallSource==="noaa"
+    ? "NOAA Atlas 14 ("+rf.county+")"
+    : rf.rainfallSource==="moco" ? "MoCo Agency Table" : "MDSHA Agency Table";
+  gSection.appendChild(el("div",{class:"note"},
+    "Rainfall: "+rfSrcLabel+", inlet storm: "+rf.inletStorm+". Change in the Rainfall Settings tab."));
 
   c.appendChild(gSection);
 
@@ -3121,6 +3052,16 @@ function renderInletSpacing(){
     el("h2",{},"Inlets"),
     el("button",{class:"btn btn-sm", onclick:()=>{ state.inletSpacing.push(defaultInletSpacingRow()); withFocusPreserved(renderAll); }}, "+ Add Inlet")
   ]));
+
+  // Build inletCtx for detail sheets (has all rainfall fields for display)
+  const inletCtx = {
+    street:          s.street,
+    allowableSpread: s.allowableSpread,
+    rainfallSource:  state.rainfall.rainfallSource,
+    county:          state.rainfall.county,
+    storm:           state.rainfall.inletStorm,
+    customNoaa:      state.rainfall.customNoaa || {},
+  };
 
   // Compute the chain once for the whole table
   const chain = computeInletChain(rows, s);
@@ -3184,7 +3125,7 @@ function renderInletSpacing(){
       el("td",{class:"out computed-cell"}, cc.pickupPct!=null ? cc.pickupPct.toFixed(1)+"%" : "—"),
       el("td",{}, bypassSelect(row)),
       el("td",{class:"out computed-cell"}, cc.bypassCA>0 ? cc.bypassCA.toFixed(5) : "0"),
-      el("td",{}, detailBtn(()=>openDetailModal(buildInletSpacingSheet(row, comp[row.id], s)))),
+      el("td",{}, detailBtn(()=>openDetailModal(buildInletSpacingSheet(row, comp[row.id], inletCtx)))),
       el("td",{}, delBtn(()=>{ state.inletSpacing=state.inletSpacing.filter(r=>r!==row); withFocusPreserved(renderAll); }))
     ]));
   });
@@ -4120,8 +4061,18 @@ function printAllSheets(){
     rows.forEach(r=>nodes.push(buildOutletStageSheet(r, os)));
   });
   if(state.inletSpacing.length){
-    const isChain = computeInletChain(state.inletSpacing, state.inletSpacingSettings);
-    state.inletSpacing.forEach(r=>nodes.push(buildInletSpacingSheet(r, isChain.results[r.id], state.inletSpacingSettings)));
+    const _is = state.inletSpacingSettings;
+    const _rf = state.rainfall;
+    const _isCtx = {
+      street:          _is.street,
+      allowableSpread: _is.allowableSpread,
+      rainfallSource:  _rf.rainfallSource,
+      county:          _rf.county,
+      storm:           _rf.inletStorm,
+      customNoaa:      _rf.customNoaa || {},
+    };
+    const isChain = computeInletChain(state.inletSpacing, _is);
+    state.inletSpacing.forEach(r=>nodes.push(buildInletSpacingSheet(r, isChain.results[r.id], _isCtx)));
   }
   if(nodes.length===0){ toast("Nothing to print yet \u2014 add some rows first.", true); return; }
   printNodes(nodes);
@@ -4474,15 +4425,7 @@ function buildWorkbook(){
   const isChain = computeInletChain(state.inletSpacing, is);
   const isAoa = [
     ["Street", is.street||""],
-    ["Rainfall Source", is.rainfallSource||"noaa"],
-    ["County", is.county||"Montgomery"],
-    ["Storm", is.storm||"10yr"],
     ["Default Allowable Spread (ft)", is.allowableSpread!=null?is.allowableSpread:""],
-    ["Custom NOAA 5-min (in/hr)",  (is.customNoaa&&is.customNoaa[5]!=null)?is.customNoaa[5]:""],
-    ["Custom NOAA 10-min (in/hr)", (is.customNoaa&&is.customNoaa[10]!=null)?is.customNoaa[10]:""],
-    ["Custom NOAA 15-min (in/hr)", (is.customNoaa&&is.customNoaa[15]!=null)?is.customNoaa[15]:""],
-    ["Custom NOAA 30-min (in/hr)", (is.customNoaa&&is.customNoaa[30]!=null)?is.customNoaa[30]:""],
-    ["Custom NOAA 60-min (in/hr)", (is.customNoaa&&is.customNoaa[60]!=null)?is.customNoaa[60]:""],
     [],
     ["Label","Structure Type","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
      "S","Sx","W (ft)","a (ft)","n","Allowable Spread (ft)","Bypass To",
@@ -4713,15 +4656,7 @@ function importExcel(file){
           const k = String(row[0]||"").trim();
           const v = row[1];
           if(k==="Street") newSettings.street=String(v||"");
-          else if(k==="Rainfall Source") newSettings.rainfallSource=String(v||"noaa");
-          else if(k==="County") newSettings.county=String(v||"Montgomery");
-          else if(k==="Storm") newSettings.storm=String(v||"10yr");
           else if(k==="Default Allowable Spread (ft)") newSettings.allowableSpread=(v!==""&&v!=null)?v:8;
-          else if(k==="Custom NOAA 5-min (in/hr)")  newSettings.customNoaa[5]=(v!==""&&v!=null)?String(v):"";
-          else if(k==="Custom NOAA 10-min (in/hr)") newSettings.customNoaa[10]=(v!==""&&v!=null)?String(v):"";
-          else if(k==="Custom NOAA 15-min (in/hr)") newSettings.customNoaa[15]=(v!==""&&v!=null)?String(v):"";
-          else if(k==="Custom NOAA 30-min (in/hr)") newSettings.customNoaa[30]=(v!==""&&v!=null)?String(v):"";
-          else if(k==="Custom NOAA 60-min (in/hr)") newSettings.customNoaa[60]=(v!==""&&v!=null)?String(v):"";
           else if(k==="Label") dataHeaderIdx=i;
         });
         if(dataHeaderIdx>=0){

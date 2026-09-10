@@ -173,8 +173,12 @@ test("I-7: L=15 selects k=0.54, Lt≈40.50", () => {
 test("inlet spacing state model wired", () => {
   assert.equal(typeof sdc.defaultInletSpacingRow, "function", "defaultInletSpacingRow missing");
   assert.ok(Array.isArray(sdc.state.inletSpacing), "state.inletSpacing not array");
-  assert.equal(sdc.state.inletSpacingSettings.rainfallSource, "noaa", "settings default source");
-  assert.equal(sdc.state.inletSpacingSettings.county, "Montgomery", "settings default county");
+  // Rainfall settings now live in state.rainfall, not inletSpacingSettings
+  assert.equal(sdc.state.rainfall.rainfallSource, "noaa", "state.rainfall default source");
+  assert.equal(sdc.state.rainfall.county, "Montgomery", "state.rainfall default county");
+  assert.equal(typeof sdc.state.rainfall.inletStorm, "string", "state.rainfall.inletStorm is a string");
+  // inletSpacingSettings no longer carries rainfall fields
+  assert.equal(sdc.state.inletSpacingSettings.rainfallSource, undefined, "inletSpacingSettings has no rainfallSource");
 });
 
 // ==================== Bypass chain ====================
@@ -262,4 +266,17 @@ test("calcDrainageRow: zero CA when area blank", () => {
   const result = sdc.calcDrainageRow(row);
   assert.equal(result.CA, 0, "CA should be 0 when area is blank");
   assert.equal(result.designQ, 0, "designQ should be 0");
+});
+
+test("inlet spacing uses state.rainfall.inletStorm", () => {
+  sdc.state.rainfall.rainfallSource = "mdsha";
+  sdc.state.rainfall.inletStorm = "2yr";
+  const row = {
+    id:"r-inlet-test", label:"I-T", S:"0.04", Sx:"0.01", W:1.33, a:0.0833, n:0.013, L:"10",
+    area:"0.2", C:"1", tc:"5", iOverride:"", allowableSpread:"", bypassTo:""
+  };
+  const is = sdc.state.inletSpacingSettings;
+  const r = sdc.computeInletRow(row, is, 0, 0);
+  // MDSHA 2yr at Tc=5 = 5.016 in/hr → Q = 0.2 * 5.016 = 1.003
+  assert.ok(Math.abs(r.Q - 1.003) < 0.05, "inlet Q uses inletStorm=2yr: " + r.Q);
 });
