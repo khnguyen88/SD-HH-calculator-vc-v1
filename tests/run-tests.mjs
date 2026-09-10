@@ -176,3 +176,49 @@ test("inlet spacing state model wired", () => {
   assert.equal(sdc.state.inletSpacingSettings.rainfallSource, "noaa", "settings default source");
   assert.equal(sdc.state.inletSpacingSettings.county, "Montgomery", "settings default county");
 });
+
+// ==================== Bypass chain ====================
+test("chain: bypass CA conservation, 2-inlet chain", () => {
+  const s = { rainfallSource:"mdsha", storm:"10yr", allowableSpread:8, county:"", customNoaa:{} };
+  const r1 = { id:"r1", label:"A", S:"0.010", Sx:"0.044", W:1.33, a:0.0833, n:0.013, L:"5",
+               area:"0.14289", C:"1", tc:"7", iOverride:"6.15", allowableSpread:"", bypassTo:"B" };
+  const r2 = { id:"r2", label:"B", S:"0.010", Sx:"0.044", W:1.33, a:0.0833, n:0.013, L:"15",
+               area:"0.1", C:"1", tc:"7", iOverride:"6.15", allowableSpread:"", bypassTo:"" };
+  const { results, cycles } = sdc.computeInletChain([r1,r2], s);
+  assert.equal(cycles.length, 0, "no cycles expected");
+  // r1's bypass CA out must equal r2's bypass CA in
+  // r2 Q = (local CA 0.1 + bypass CA in) * 6.15
+  const r1out = results["r1"].bypassCA;
+  const expectedQ2 = (0.1 + r1out) * 6.15;
+  isClose(results["r2"].Q, expectedQ2, 0.001, "r2 Q = (local+bypass CA) * own i");
+});
+
+test("chain: cycle detection", () => {
+  const s = { rainfallSource:"mdsha", storm:"10yr", allowableSpread:8, county:"", customNoaa:{} };
+  const r1 = { id:"r1", label:"A", S:"0.01", Sx:"0.04", W:1.33, a:0.0833, n:0.013, L:"5",
+               area:"0.1", C:"1", tc:"5", iOverride:"", allowableSpread:"", bypassTo:"B" };
+  const r2 = { id:"r2", label:"B", S:"0.01", Sx:"0.04", W:1.33, a:0.0833, n:0.013, L:"5",
+               area:"0.1", C:"1", tc:"5", iOverride:"", allowableSpread:"", bypassTo:"A" };
+  const { cycles, results } = sdc.computeInletChain([r1,r2], s);
+  assert.ok(cycles.length > 0, "cycle must be flagged");
+  assert.ok(results["r1"], "cyclic rows still get placeholder results");
+});
+
+test("chain: SUMP mid-chain passes 0 bypass downstream", () => {
+  const s = { rainfallSource:"mdsha", storm:"10yr", allowableSpread:8, county:"", customNoaa:{} };
+  const r1 = { id:"r1", label:"S", S:"SUMP", Sx:"", W:1.33, a:0.0833, n:0.013, L:"10",
+               area:"0.1", C:"1", tc:"5", iOverride:"6.68", allowableSpread:"", bypassTo:"B" };
+  const r2 = { id:"r2", label:"B", S:"0.01", Sx:"0.04", W:1.33, a:0.0833, n:0.013, L:"10",
+               area:"0.1", C:"1", tc:"5", iOverride:"6.68", allowableSpread:"", bypassTo:"" };
+  const { results } = sdc.computeInletChain([r1,r2], s);
+  assert.equal(results["r1"].bypassCA, 0, "sump bypass out = 0");
+  isClose(results["r2"].Q, 0.1 * 6.68, 0.001, "r2 Q = local only");
+});
+
+test("chain: orphan bypassTo flagged", () => {
+  const s = { rainfallSource:"mdsha", storm:"10yr", allowableSpread:8, county:"", customNoaa:{} };
+  const r1 = { id:"r1", label:"A", S:"0.01", Sx:"0.04", W:1.33, a:0.0833, n:0.013, L:"5",
+               area:"0.1", C:"1", tc:"5", iOverride:"6.68", allowableSpread:"", bypassTo:"GHOST" };
+  const { orphans } = sdc.computeInletChain([r1], s);
+  assert.ok(orphans.length === 1, "orphan must be flagged");
+});

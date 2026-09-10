@@ -218,6 +218,7 @@ table.data td.computed-cell{ background:rgba(56,198,180,0.05); }
 .cell-input.wide{ min-width:120px; }
 .cell-input.txt{ font-family:var(--font-ui); }
 select.cell-input{ font-family:var(--font-ui); }
+.is-i-override { border-color:#e8a020 !important; }
 
 .badge{
   display:inline-block;
@@ -1044,6 +1045,91 @@ function computeInletRow(row, settings, bypassQIn, bypassCAIn) {
     allowT,
     warn: allowT > 0 && T > allowT,
   };
+}
+
+// Bypass chain: computes all rows in topological order (upstream first).
+// CRITICAL (workbook convention): bypass carries CA, not Q. A downstream
+// inlet's Q = (local CA + bypass CA in) * its OWN intensity. We still pass
+// bypassQIn for display, computed as bypassCA * the RECEIVING row's intensity.
+// Returns { results: Map<rowId, comp>, order: [rowId...], cycles: [msg...], bypassCAIn: Map<rowId, number> }
+function computeInletChain(rows, settings) {
+  const byLabel = {};
+  rows.forEach(r => { if (r.label) byLabel[r.label] = r; });
+
+  const downstream = {};   // id -> downstream id | null
+  rows.forEach(r => {
+    const tgt = r.bypassTo && byLabel[r.bypassTo];
+    downstream[r.id] = tgt ? tgt.id : null;
+  });
+
+  // Orphan check: bypassTo references a label that doesn't exist
+  const orphans = [];
+  rows.forEach(r => {
+    if (r.bypassTo && !byLabel[r.bypassTo]) {
+      orphans.push(`Inlet "${r.label || "(unlabeled)"}" bypasses to "${r.bypassTo}" which does not exist — treated as 0.`);
+    }
+  });
+
+  // Kahn's topological sort
+  const indegree = {};
+  rows.forEach(r => indegree[r.id] = 0);
+  rows.forEach(r => { const d = downstream[r.id]; if (d != null) indegree[d]++; });
+  const queue = rows.filter(r => indegree[r.id] === 0).map(r => r.id);
+  const order = [];
+  while (queue.length) {
+    const id = queue.shift();
+    order.push(id);
+    const d = downstream[id];
+    if (d != null) { indegree[d]--; if (indegree[d] === 0) queue.push(d); }
+  }
+
+  // Cycle detection: rows not reached are in cycles
+  const inOrder = new Set(order);
+  const cycles = [];
+  const cyclicIds = new Set();
+  rows.forEach(r => {
+    if (!inOrder.has(r.id)) {
+      cyclicIds.add(r.id);
+      cycles.push(`Bypass chain cycle detected involving inlet "${r.label || r.id}" — circular references are ignored and those rows show no results.`);
+    }
+  });
+
+  // Accumulate bypass CA in topological order
+  const bypassCAIn = {};
+  rows.forEach(r => bypassCAIn[r.id] = 0);
+  const results = {};
+  order.forEach(id => {
+    const row = rows.find(r => r.id === id);
+    if (!row) return;
+    const caIn = bypassCAIn[id];
+    // Receiving row's own intensity converts carried CA to Q (workbook convention)
+    const bypassQIn = caIn * computeRowIntensity(row, settings);
+    const comp = computeInletRow(row, settings, bypassQIn, caIn);
+    results[id] = comp;
+    const d = downstream[id];
+    if (d != null) bypassCAIn[d] += comp.bypassCA;
+  });
+
+  // Cyclic rows get a zero placeholder so the UI doesn't crash
+  rows.forEach(r => {
+    if (!results[r.id]) {
+      results[r.id] = { i:0, iComputed:0, Q:0, totalCA:0, isSump:false, SxEff:0, T:0,
+                        Lt:0, E:0, bypassFrac:1, bypassQ:0, bypassCA:0, pickupPct:0,
+                        allowT:0, warn:false, cycle:true };
+    }
+  });
+
+  return { results, order, cycles, orphans, bypassCAIn };
+}
+
+// The intensity this row would use (for converting carried bypass CA to Q)
+function computeRowIntensity(row, settings) {
+  const tc = Number(row.tc);
+  const iComputed = (isFinite(tc) && tc > 0)
+    ? lookupIntensity(tc, settings.rainfallSource, settings.storm, settings.county, settings.customNoaa || {})
+    : 0;
+  return (row.iOverride !== "" && row.iOverride != null && isFinite(Number(row.iOverride)))
+    ? Number(row.iOverride) : iComputed;
 }
 
 // Which Kb column a structure type reads from. Outfall has no structure loss.
@@ -2583,8 +2669,246 @@ function renderInletSpacing(){
   const c = document.getElementById("view-inlet-spacing");
   if(!c) return;
   c.innerHTML = "";
+  const s = state.inletSpacingSettings;
+  const rows = state.inletSpacing;
+
   c.appendChild(el("h1",{},"Inlet Spacing"));
-  c.appendChild(el("p",{class:"view-desc"},"HEC-22 grate-inlet on-grade spacing with bypass carryover. Full UI coming in the next task."));
+  c.appendChild(el("p",{class:"view-desc"},
+    "HEC-22 grate-inlet on-grade spacing with bypass carryover. Each inlet's Q = (local CA + bypass CA in) × i, where carried bypass is CA (not Q) — the receiving inlet applies its own intensity. SUMP inlets capture 100%. Click ⤢ Detail on any row for the full calculation sheet."));
+
+  // ---- Section 1: Global settings ----
+  const gSection = el("div",{class:"section"});
+  gSection.appendChild(el("h2",{},"Global settings"));
+  const gRow = el("div",{style:"display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;"});
+
+  // Project street
+  const streetField = el("div",{class:"field"});
+  streetField.appendChild(el("label",{},"Project street"));
+  streetField.appendChild(el("input",{type:"text",class:"cell-input",style:"width:200px;",
+    value:s.street||"","data-focus-key":"is:global:street",
+    oninput:(e)=>{ s.street=e.target.value; withFocusPreserved(renderAll); }}));
+  gRow.appendChild(streetField);
+
+  // Rainfall source
+  const srcField = el("div",{class:"field"});
+  srcField.appendChild(el("label",{},"Rainfall source"));
+  const srcSel = el("select",{class:"cell-input",style:"width:220px;",
+    "data-focus-key":"is:global:source",
+    onchange:(e)=>{
+      s.rainfallSource=e.target.value;
+      // Coerce storm to one valid for the new source (moco has no 25yr; mdsha/noaa have no 5yr)
+      const valid = s.rainfallSource==="moco" ? ["2yr","5yr","10yr"] : ["2yr","10yr","25yr"];
+      if(!valid.includes(s.storm)) s.storm="10yr";
+      withFocusPreserved(renderAll);
+    }});
+  [["noaa","NOAA Atlas 14 (per county)"],["mdsha","MDSHA Agency Table"],["moco","MoCo Agency Table"]].forEach(([v,l])=>{
+    const o = el("option",{value:v},l);
+    if(s.rainfallSource===v) o.selected=true;
+    srcSel.appendChild(o);
+  });
+  srcField.appendChild(srcSel);
+  gRow.appendChild(srcField);
+
+  // County (NOAA only)
+  if(s.rainfallSource==="noaa"){
+    const countyField = el("div",{class:"field"});
+    countyField.appendChild(el("label",{},"County"));
+    const countySel = el("select",{class:"cell-input",style:"width:170px;",
+      "data-focus-key":"is:global:county",
+      onchange:(e)=>{ s.county=e.target.value; withFocusPreserved(renderAll); }});
+    NOAA_COUNTY_LIST.forEach(cty=>{
+      const o = el("option",{value:cty},cty);
+      if(s.county===cty) o.selected=true;
+      countySel.appendChild(o);
+    });
+    const oCustom = el("option",{value:"Custom"},"Custom");
+    if(s.county==="Custom") oCustom.selected=true;
+    countySel.appendChild(oCustom);
+    countyField.appendChild(countySel);
+    gRow.appendChild(countyField);
+  }
+
+  // Storm frequency
+  const stormField = el("div",{class:"field"});
+  stormField.appendChild(el("label",{},"Storm"));
+  const stormSel = el("select",{class:"cell-input",style:"width:110px;",
+    "data-focus-key":"is:global:storm",
+    onchange:(e)=>{ s.storm=e.target.value; withFocusPreserved(renderAll); }});
+  (s.rainfallSource==="moco"
+    ? [["2yr","2-year"],["5yr","5-year"],["10yr","10-year"]]
+    : [["2yr","2-year"],["10yr","10-year"],["25yr","25-year"]]
+  ).forEach(([v,l])=>{
+    const o = el("option",{value:v},l);
+    if(s.storm===v) o.selected=true;
+    stormSel.appendChild(o);
+  });
+  stormField.appendChild(stormSel);
+  gRow.appendChild(stormField);
+
+  // Default allowable spread
+  const allowField = el("div",{class:"field"});
+  allowField.appendChild(el("label",{},"Default allowable spread (ft)"));
+  allowField.appendChild(el("input",{type:"text",inputmode:"decimal",class:"cell-input",style:"width:80px;",
+    value:(s.allowableSpread===undefined||s.allowableSpread===null)?"":s.allowableSpread,
+    "data-focus-key":"is:global:allowSpread",
+    oninput:(e)=>{ s.allowableSpread=e.target.value; withFocusPreserved(renderAll); }}));
+  gRow.appendChild(allowField);
+
+  gSection.appendChild(gRow);
+
+  // Custom NOAA point intensities (only when county==="Custom")
+  if(s.rainfallSource==="noaa" && s.county==="Custom"){
+    const customRow = el("div",{style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:4px;"});
+    [5,10,15,30,60].forEach(d=>{
+      const f = el("div",{class:"field",style:"margin-bottom:0;"});
+      f.appendChild(el("label",{},d+"-min"));
+      f.appendChild(el("input",{type:"text",inputmode:"decimal",class:"cell-input",style:"width:70px;",
+        value:(s.customNoaa && s.customNoaa[d]!==undefined && s.customNoaa[d]!==null) ? s.customNoaa[d] : "",
+        "data-focus-key":"is:global:custom:"+d,
+        oninput:(e)=>{ s.customNoaa=Object.assign({},s.customNoaa); s.customNoaa[d]=e.target.value; withFocusPreserved(renderAll); }}));
+      customRow.appendChild(f);
+    });
+    gSection.appendChild(el("p",{class:"hint",style:"margin:0 0 10px 0;"},
+      "Enter point precipitation depths as intensities (in/hr) for your project location. Interpolation between the entered durations is linear; values below/above the entered range clamp to the nearest entry."));
+    gSection.appendChild(customRow);
+  }
+  // County provenance note (real county selected)
+  else if(s.rainfallSource==="noaa" && NOAA_ATLAS14[s.county]){
+    gSection.appendChild(el("div",{class:"note"},
+      "County point: " + s.county + " — intensities represent lat " + NOAA_ATLAS14[s.county].lat +
+      ", lon " + NOAA_ATLAS14[s.county].lon + " (NOAA Atlas 14 PDS, pulled 2026-09-09). Values vary within the county; use Custom for a project-specific point."));
+  }
+
+  c.appendChild(gSection);
+
+  // ---- Section 2: Inlet table ----
+  const section = el("div",{class:"section"});
+  section.appendChild(el("div",{class:"section-head"},[
+    el("h2",{},"Inlets"),
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.inletSpacing.push(defaultInletSpacingRow()); withFocusPreserved(renderAll); }}, "+ Add Inlet")
+  ]));
+
+  // Compute the chain once for the whole table
+  const chain = computeInletChain(rows, s);
+  const comp = chain.results;
+
+  const tableWrap = el("div",{class:"table-wrap"});
+  const table = el("table",{class:"data"});
+  table.appendChild(el("thead",{},el("tr",{},[
+    el("th",{},"Label"), el("th",{},"Structure Type"), el("th",{},"L (ft)"), el("th",{},"Area (ac)"),
+    el("th",{},"C"), el("th",{},"Tc (min)"), el("th",{},"i (in/hr)"),
+    el("th",{class:"computed"},"Q (cfs)"), el("th",{},"S"), el("th",{},"Sx"),
+    el("th",{},"W (ft)"), el("th",{},"a (ft)"), el("th",{},"n"),
+    el("th",{class:"computed"},"Spread T (ft)"), el("th",{},"Allowable T (ft)"),
+    el("th",{class:"computed"},"Pickup %"), el("th",{},"Bypass To"),
+    el("th",{class:"computed"},"Bypass CA"), el("th",{},""), el("th",{},"")
+  ])));
+  const tbody = el("tbody");
+  rows.forEach(row=>{
+    const cc = comp[row.id] || {};
+    const trAttrs = {};
+    if(cc.cycle) trAttrs.style = "background:rgba(220,60,60,0.10);";
+    else if(cc.warn) trAttrs.style = "background:rgba(220,60,60,0.10);";
+    if(cc.cycle) trAttrs.title = "In bypass cycle";
+
+    // i input: shows override (highlighted) or empty with computed placeholder
+    const iHasOverride = row.iOverride !== "" && row.iOverride != null;
+    const iInput = el("input",Object.assign({
+      type:"text",inputmode:"decimal",class:"cell-input"+(iHasOverride?" is-i-override":""),
+      style:"width:70px;",
+      value:iHasOverride ? row.iOverride : "",
+      placeholder:(cc.iComputed && cc.iComputed>0) ? cc.iComputed.toFixed(2) : "",
+      "data-focus-key":"is:"+row.id+":iOverride",
+      oninput:(e)=>{ row.iOverride=e.target.value; withFocusPreserved(renderAll); }
+    }, iHasOverride ? {title:"Override active — auto: "+(cc.iComputed||0).toFixed(2)} : {}));
+    const iCell = el("td",{},[iInput]);
+    if(iHasOverride){
+      iCell.appendChild(el("div",{style:"font-size:10px;color:var(--muted-2);font-family:var(--font-mono);margin-top:2px;"},
+        "auto: "+(cc.iComputed||0).toFixed(2)));
+    }
+
+    const spreadTxt = cc.isSump ? "—" : (cc.T>0 ? cc.T.toFixed(2) : "—");
+    const spreadAttrs = {class:"out computed-cell"};
+    if(cc.warn) spreadAttrs.style = "color:var(--fail);font-weight:700;";
+
+    tbody.appendChild(el("tr",trAttrs,[
+      el("td",{}, txtCell(row,"label",90)),
+      el("td",{}, stypeSelect(row)),
+      el("td",{}, txtCell(row,"L",60)),
+      el("td",{}, txtCell(row,"area",70)),
+      el("td",{}, txtCell(row,"C",55)),
+      el("td",{}, txtCell(row,"tc",60)),
+      iCell,
+      el("td",{class:"out computed-cell"}, fmt(cc.Q,3)),
+      el("td",{}, txtCell(row,"S",65)),
+      el("td",{}, txtCell(row,"Sx",60)),
+      el("td",{}, txtCell(row,"W",60)),
+      el("td",{}, txtCell(row,"a",60)),
+      el("td",{}, txtCell(row,"n",60)),
+      el("td",spreadAttrs, spreadTxt),
+      el("td",{}, txtCell(row,"allowableSpread",60)),
+      el("td",{class:"out computed-cell"}, cc.pickupPct!=null ? cc.pickupPct.toFixed(1)+"%" : "—"),
+      el("td",{}, bypassSelect(row)),
+      el("td",{class:"out computed-cell"}, cc.bypassCA>0 ? cc.bypassCA.toFixed(5) : "0"),
+      el("td",{}, detailBtn(()=>openDetailModal(buildInletSpacingSheet(row, comp[row.id], s)))),
+      el("td",{}, delBtn(()=>{ state.inletSpacing=state.inletSpacing.filter(r=>r!==row); withFocusPreserved(renderAll); }))
+    ]));
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  if(rows.length===0) section.appendChild(el("p",{class:"hint"},"No inlets yet — click “+ Add Inlet” to start. Label each inlet so bypass carryover can be chained downstream."));
+  c.appendChild(section);
+
+  function txtCell(row,field,w){
+    return el("input",{class:"cell-input",type:"text",inputmode:"decimal",style:"width:"+w+"px",
+      value:(row[field]===undefined||row[field]===null)?"":row[field],
+      "data-focus-key":"is:"+row.id+":"+field,
+      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }});
+  }
+
+  function stypeSelect(row){
+    const sel = el("select",{class:"cell-input",style:"width:150px",
+      "data-focus-key":"is:"+row.id+":stype",
+      onchange:(e)=>{
+        row.structureType=e.target.value;
+        const preset = INLET_STRUCTURES.find(st=>st.id===e.target.value);
+        if(preset){
+          row.W = preset.W; row.a = preset.a; row.n = preset.n;
+          if(row.L==="" || row.L==null) row.L = String(preset.Ls[0]);
+        }
+        withFocusPreserved(renderAll);
+      }});
+    sel.appendChild(el("option",{value:""},"— Select —"));
+    INLET_STRUCTURES.forEach(st=>{
+      const o = el("option",{value:st.id}, st.id+" "+st.label);
+      if(row.structureType===st.id) o.selected=true;
+      sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function bypassSelect(row){
+    const sel = el("select",{class:"cell-input",style:"width:90px",
+      "data-focus-key":"is:"+row.id+":bypassTo",
+      onchange:(e)=>{ row.bypassTo=e.target.value; withFocusPreserved(renderAll); }});
+    sel.appendChild(el("option",{value:""},"—"));
+    rows.forEach(other=>{
+      if(other===row || !other.label) return;
+      const o = el("option",{value:other.label}, other.label);
+      if(row.bypassTo===other.label) o.selected=true;
+      sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  // ---- Section 3: Chain warnings ----
+  chain.cycles.forEach(msg => c.appendChild(el("div",{class:"note warn"}, msg)));
+  chain.orphans.forEach(msg => c.appendChild(el("div",{class:"note warn"}, msg)));
+
+  // ---- Section 4: Disclosure ----
+  c.appendChild(el("div",{class:"note"},
+    "Structure library dimensions (L, W, a, n) are workbook-derived seed values — verify against the governing MDSHA Book of Standards sheet before submittal. All fields remain editable."));
 }
 
 /* ---------------------------------------------------------------------
@@ -3300,6 +3624,17 @@ function buildTr55Sheet(row){
   return sheetWrapper("tc55", "TR-55 Time of Concentration \u2014 "+(row.structureId||row.id), "NRCS TR-55 segmental method", body);
 }
 
+// PLACEHOLDER \u2014 replaced by the full per-inlet calculation sheet in Task 8.
+function buildInletSpacingSheet(row, comp, settings){
+  const body = [
+    csSection("Inlet", csTable([
+      ["Label", row.label || "(unlabeled)"],
+      ["Full calculation sheet", "coming in Task 8"],
+    ])),
+  ];
+  return sheetWrapper("inlet", "Inlet Spacing \u2014 "+(row.label||row.id), "HEC-22 grate inlet spacing", body);
+}
+
 function printNodes(nodes){
   const pa = document.getElementById("printArea");
   pa.innerHTML = "";
@@ -3896,6 +4231,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   tr55SheetFlowTt, tr55ShallowVelocity, tr55TravelTime, tr55ChannelVelocity, computeTr55, TR55_SHALLOW_CP,
   TR55_SHEET_N, TR55_CHANNEL_N, TR55_SEGMENT_TYPES, tr55SegmentCalc, tr55DefaultSegment,
   lookupIntensity, interpolatePL, computeSxEff, computeSpread, computeInterception, computeInletRow,
+  computeInletChain, computeRowIntensity, buildInletSpacingSheet,
   defaultInletSpacingRow, defaultInletSpacingSettings,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET };
 
