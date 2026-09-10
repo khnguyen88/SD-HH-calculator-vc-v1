@@ -492,8 +492,9 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
       <div class="view" id="view-kb"></div>
       <div class="view" id="view-inlet-spacing"></div>
       <div class="view" id="view-rainfall"></div>
+      <div class="view" id="view-hgl"></div>
       <div class="view" id="view-pipe-sizing-25"></div>
-      <div class="view" id="view-structures-25"></div>
+      <div class="view" id="view-hgl-25"></div>
     </div>
   </div>
 </div>
@@ -1934,17 +1935,18 @@ function getTabs() {
     {id:"rainfall",       label:"Rainfall & IDF"},
     {id:"drainage",       label:"Drainage Area (Q=CiA)"},
     {id:"structures",     label:"Junction Structures"},
-    {id:"pipes",          label:"Pipe Sizing"},
+    {id:"inlet-spacing",  label:"Inlet Spacing"},
+    {id:"pipes",          label:"Pipe Sizing & Capacity"},
+    {id:"hgl",            label:"HGL"},
     {id:"outlet",         label:"Outlet Structure"},
     {id:"formulas",       label:"Formulas & Examples"},
     {id:"table46",        label:"Table 4-6 Reference"},
     {id:"kb",             label:"Kb Coefficients"},
-    {id:"inlet-spacing",  label:"Inlet Spacing"},
   ];
   const r = state.rainfall;
   if (r.pipe25Check && r.pipeStorm !== "25yr") {
-    tabs.push({id:"pipe-sizing-25",  label:"Pipe Sizing — 25-yr"});
-    tabs.push({id:"structures-25",   label:"Junction Structures — 25-yr"});
+    tabs.push({id:"pipe-sizing-25",  label:"Pipe Sizing & Capacity — 25-yr"});
+    tabs.push({id:"hgl-25",          label:"HGL — 25-yr"});
   }
   return tabs;
 }
@@ -3061,13 +3063,24 @@ function renderPipeSizing25() {
 }
 
 /* ---------------------------------------------------------------------
-   Junction Structures — 25-yr Check tab
+   HGL tab
 --------------------------------------------------------------------- */
-function renderStructures25(){
-  const c = document.getElementById("view-structures-25");
+function renderHgl() {
+  const c = document.getElementById("view-hgl");
   if (!c) return;
   c.innerHTML = "";
-  c.appendChild(el("h1", {}, "Junction Structures — 25-yr Check"));
+  c.appendChild(el("h1", {}, "HGL"));
+  c.appendChild(el("p", {class:"view-desc"}, "Hydraulic Grade Line — computed from Junction Structures and Pipe Sizing."));
+}
+
+/* ---------------------------------------------------------------------
+   HGL — 25-yr Check tab
+--------------------------------------------------------------------- */
+function renderHgl25(){
+  const c = document.getElementById("view-hgl-25");
+  if (!c) return;
+  c.innerHTML = "";
+  c.appendChild(el("h1", {}, "HGL — 25-yr"));
   c.appendChild(el("p", {class:"view-desc"},
     "25-yr check — read only. Structure geometry and elevations are unchanged from the primary " +
     "Junction Structures tab. HGL is propagated with Q₂₅ flows."));
@@ -3311,15 +3324,16 @@ function renderAll(){
   renderOverview();
   renderDrainage();
   renderStructures();
+  renderInletSpacing();
   renderPipes();
+  renderHgl();
   renderOutlet();
   renderFormulas();
   renderTable46();
   renderKb();
-  renderInletSpacing();
   renderRainfall();
   renderPipeSizing25();
-  renderStructures25();
+  renderHgl25();
 }
 
 /* =======================================================================
