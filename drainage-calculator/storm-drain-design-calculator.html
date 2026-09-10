@@ -2028,6 +2028,85 @@ function restoreState(snap, projectName){
   renderAll();
 }
 
+function formatSaveTimestamp(ms){
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+" "+pad(d.getHours())+":"+pad(d.getMinutes());
+}
+
+function saveComp(){
+  const saves = getSaves();
+  if(saves.length >= SAVES_MAX){
+    toast("Save limit reached — delete a save first.", true);
+    return;
+  }
+  const projectName = document.getElementById("projectName").value || "Untitled";
+  const now = Date.now();
+  const entry = {
+    id: "save_"+now+"_"+Math.random().toString(36).slice(2,7),
+    name: projectName + " — " + formatSaveTimestamp(now),
+    projectName: projectName,
+    savedAt: now,
+    state: captureState(),
+  };
+  saves.push(entry);
+  setSaves(saves);
+  updateSavesUI();
+  toast("Saved <b>"+escapeHtml(entry.name)+"</b>.");
+}
+
+function loadComp(id){
+  const saves = getSaves();
+  const entry = saves.find(s => s.id === id);
+  if(!entry) return;
+  restoreState(entry.state, entry.projectName);
+  closeSavesPopover();
+  toast("Loaded <b>"+escapeHtml(entry.name)+"</b>.");
+}
+
+function deleteComp(id){
+  const saves = getSaves().filter(s => s.id !== id);
+  setSaves(saves);
+  updateSavesUI();
+}
+
+function renderSavesPopover(){
+  const saves = getSaves();
+  const list = document.getElementById("savesList");
+  list.innerHTML = "";
+  if(saves.length === 0){
+    list.appendChild(el("div",{class:"saves-empty"},"No saves yet."));
+    return;
+  }
+  saves.slice().reverse().forEach(entry => {
+    const row = el("div",{class:"save-row"});
+    row.appendChild(el("span",{class:"save-row-name", title:entry.name}, entry.name));
+    const loadBtn = el("button",{class:"btn btn-sm", onclick:()=>loadComp(entry.id)}, "Load");
+    const delBtn2 = el("button",{class:"btn btn-sm", style:"color:var(--fail);", title:"Delete this save", onclick:()=>deleteComp(entry.id)}, "✕");
+    row.appendChild(loadBtn);
+    row.appendChild(delBtn2);
+    list.appendChild(row);
+  });
+}
+
+function updateSavesUI(){
+  const saves = getSaves();
+  document.getElementById("savesCount").textContent = saves.length;
+  const saveBtn = document.getElementById("saveCompBtn");
+  if(saves.length >= SAVES_MAX){
+    saveBtn.disabled = true;
+    saveBtn.title = "Save limit reached ("+SAVES_MAX+") — delete a save first";
+  } else {
+    saveBtn.disabled = false;
+    saveBtn.title = "Save current project to browser storage";
+  }
+  renderSavesPopover();
+}
+
+function closeSavesPopover(){
+  document.getElementById("savesPopover").classList.remove("open");
+}
+
 function delBtn(onClick){
   return el("button",{class:"row-del", title:"Delete row", onclick:onClick}, "\u2715");
 }
