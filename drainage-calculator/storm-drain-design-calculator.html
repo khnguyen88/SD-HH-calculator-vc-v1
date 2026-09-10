@@ -2139,8 +2139,6 @@ function renderStructures(){
     el("th",{},"Structure ID"), el("th",{},"Description"), el("th",{},"Drainage Area"), el("th",{},"Type"), el("th",{},"Split config"),
     el("th",{},"Fixed?"), el("th",{},"Fixed/Start Elev"), el("th",{},"Crown (ft)"), el("th",{},"Rim/Grate (ft)"),
     el("th",{class:"computed"},"Captured Q"), el("th",{class:"computed"},"Inflow"), el("th",{class:"computed"},"Total Flow"),
-    el("th",{class:"computed"},"Hf"), el("th",{class:"computed"},"Kb"), el("th",{class:"computed"},"Hb"),
-    el("th",{class:"computed"},"Upstream HGL"), el("th",{class:"computed"},"Crown Chk"), el("th",{class:"computed"},"Rim Chk"),
     el("th",{},""), el("th",{},"")
   ])));
   const tbody = el("tbody");
@@ -2160,12 +2158,6 @@ function renderStructures(){
       el("td",{class:"out computed-cell"}, fmt(calc.captured,2)),
       el("td",{class:"out computed-cell"}, inflowCount + (calc.warnings.length? " \u26a0":"")),
       el("td",{class:"out computed-cell", style:"font-weight:700"}, fmt(calc.totalFlow,2)),
-      el("td",{class:"out computed-cell"}, fmt(calc.Hf,3)),
-      el("td",{class:"out computed-cell"}, calc.kb==null?"\u2014":fmt(calc.kb,2)),
-      el("td",{class:"out computed-cell"}, fmt(calc.Hb,3)),
-      el("td",{class:"out computed-cell", style:"font-weight:700"}, fmt(calc.elevation,2)),
-      el("td",{class:"computed-cell"}, checkBadge(calc.crownPass)),
-      el("td",{class:"computed-cell"}, checkBadge(calc.rimPass)),
       el("td",{}, detailBtn(()=>openDetailModal(buildStructureSheet(row.id)))),
       el("td",{}, delBtn(()=>{ state.structures=state.structures.filter(r=>r!==row); renderAll(); }))
     ]);
