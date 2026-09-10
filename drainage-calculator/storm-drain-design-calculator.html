@@ -2699,7 +2699,84 @@ function renderKb(){
    Rainfall & IDF tab
 --------------------------------------------------------------------- */
 function renderRainfallIdfTable(c) {
-  // placeholder — implemented in Task 5
+  const r = state.rainfall;
+  const storms = availableStorms(r.rainfallSource);
+  const pipeAccent = "#4a9eff";
+  const inletAccent = "#f0a500";
+
+  const idfSec = el("div", {class:"section"});
+  const srcLabels = {noaa:"NOAA Atlas 14", mdsha:"MDSHA Agency Table", moco:"MoCo Agency Table"};
+  const subtitle = r.rainfallSource === "noaa" && r.county !== "Custom"
+    ? srcLabels.noaa + " — " + r.county
+    : srcLabels[r.rainfallSource] || r.rainfallSource;
+  idfSec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Intensity Reference — " + subtitle)]));
+
+  const tableWrap = el("div", {class:"table-wrap"});
+  const tbl = el("table", {class:"data"});
+
+  // Header row
+  const headRow = el("tr", {});
+  headRow.appendChild(el("th", {}, "Tc (min)"));
+  storms.forEach(s => {
+    const isPipe  = s === r.pipeStorm;
+    const isInlet = s === r.inletStorm;
+    const accent  = isPipe ? pipeAccent : (isInlet ? inletAccent : "");
+    const shortLbl = {"2yr":"2-yr","10yr":"10-yr","25yr":"25-yr","5yr":"5-yr"}[s] || s;
+    const tag = (isPipe && isInlet) ? " (Pipe & Inlet)" : isPipe ? " (Pipe)" : isInlet ? " (Inlet)" : "";
+    headRow.appendChild(el("th", {style: accent ? "background:"+accent+"22;color:"+accent+";" : ""}, shortLbl + tag + "\ni (in/hr)"));
+  });
+  tbl.appendChild(el("thead", {}, headRow));
+
+  const tbody = el("tbody", {});
+  const stdTcs = [5, 7, 10, 15, 20, 30, 60];
+  stdTcs.forEach(tc => {
+    const tr = el("tr", {});
+    tr.appendChild(el("td", {}, String(tc)));
+    storms.forEach(s => {
+      const isPipe  = s === r.pipeStorm;
+      const isInlet = s === r.inletStorm;
+      const accent  = isPipe ? pipeAccent : (isInlet ? inletAccent : "");
+      const i = lookupIntensity(tc, r.rainfallSource, s, r.county, r.customNoaa || {});
+      tr.appendChild(el("td", {
+        class:"out computed-cell",
+        style: accent ? "background:"+accent+"11;font-weight:"+(isPipe||isInlet?"600":"400")+";" : ""
+      }, (i > 0 ? i.toFixed(2) : "—")));
+    });
+    tbody.appendChild(tr);
+  });
+
+  // Custom Tc row
+  const customTc = r._customIdfTc || "";
+  const customTr = el("tr", {});
+  const tcInput = el("input", {
+    class:"cell-input", type:"text", inputmode:"decimal", style:"width:70px;",
+    "data-focus-key":"rf:customTc",
+    value: customTc,
+    placeholder:"custom",
+    oninput: (e) => { r._customIdfTc = e.target.value; withFocusPreserved(renderAll); }
+  });
+  const tcTd = el("td", {});
+  tcTd.appendChild(tcInput);
+  customTr.appendChild(tcTd);
+  const parsedTc = parseFloat(customTc);
+  storms.forEach(s => {
+    const isPipe  = s === r.pipeStorm;
+    const isInlet = s === r.inletStorm;
+    const accent  = isPipe ? pipeAccent : (isInlet ? inletAccent : "");
+    const i = (isFinite(parsedTc) && parsedTc > 0)
+      ? lookupIntensity(parsedTc, r.rainfallSource, s, r.county, r.customNoaa || {})
+      : null;
+    customTr.appendChild(el("td", {
+      class:"out computed-cell",
+      style: accent ? "background:"+accent+"11;" : ""
+    }, i !== null ? i.toFixed(2) : "—"));
+  });
+  tbody.appendChild(customTr);
+
+  tbl.appendChild(tbody);
+  tableWrap.appendChild(tbl);
+  idfSec.appendChild(tableWrap);
+  c.appendChild(idfSec);
 }
 
 function renderRainfall() {
