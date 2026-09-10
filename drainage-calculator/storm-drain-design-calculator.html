@@ -1590,7 +1590,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
   if(isSplitter){
     const primary = outPipes.find(p=>p.splitRole==="primary");
     const secondary = outPipes.find(p=>p.splitRole==="secondary");
-    if(!primary || !secondary) warnings.push("Flow splitter needs one Primary and one Secondary outgoing pipe (set Role on the Pipe Sizing tab).");
+    if(!primary || !secondary) warnings.push("Flow splitter needs one Primary and one Secondary outgoing pipe (set Role on the Pipe Sizing & Capacity tab).");
     if(outPipes.length>2) warnings.push("More than 2 outgoing pipes found on a flow splitter \u2014 only Primary/Secondary are used.");
     outPipe = primary || outPipes[0] || null;
     outPipeFlow = splitInfo.primaryQ;
@@ -1987,7 +1987,7 @@ function renderOverview(){
     ["3","Junction Structures", "One row per physical structure (inlet, manhole, bend, junction, flow splitter, or outfall). Link a Drainage Area to capture its runoff. ", "Total Flow = Captured Q + \u03a3(Q of every pipe flowing into this structure)", ". The tool finds those inflow pipes automatically from the Pipe tab."],
     ["4","Pipes \u2014 each one connects two structures", "Pick a From structure and a To structure, plus the angle the pipe makes entering the To structure. Design Q is pulled automatically as the From structure's Total Flow (or its Primary/Secondary share, for a pipe leaving a Flow Splitter) \u2014 you never re-enter it."],
     ["5","Structure loss, automatically", "At each structure the tool counts inflow pipes: 0 \u2192 nominal entrance condition, 1 \u2192 Kb at that pipe's angle, 2 \u2192 the controlling-angle method (the angle belonging to the smaller computed loss governs), >2 \u2192 flagged as unsupported. Combined with friction loss on the outgoing pipe, this produces each structure's upstream HGL, checked against Crown+1ft and Rim\u22121ft."],
-    ["6","Flow Splitter", "A structure type for a diversion manhole or prefab structure downstream of an outlet \u2014 divides its Total Flow between a Primary and a Secondary outgoing pipe, either capacity-limited (Primary = MIN(Total, Capacity), Secondary = the remainder) or by a fixed ratio. Assign each outgoing pipe's Role on the Pipe Sizing tab."],
+    ["6","Flow Splitter", "A structure type for a diversion manhole or prefab structure downstream of an outlet \u2014 divides its Total Flow between a Primary and a Secondary outgoing pipe, either capacity-limited (Primary = MIN(Total, Capacity), Secondary = the remainder) or by a fixed ratio. Assign each outgoing pipe's Role on the Pipe Sizing & Capacity tab."],
     ["7","Outlet Control Structure", "A separate stage-discharge rating curve for a BMP/SWM/ESD outlet \u2014 add Orifice, Weir, or Pipe devices and their flows combine at every stage. Orifice/Pipe partial flow uses the exact wetted circular-segment area and centroid (not an approximation); full and submerged flow follow standard orifice equations. Weirs get free-flow and Villemonte-submerged regimes. Tailwater can link live to a Junction Structure's Upstream HGL."],
     ["8","Detail & Print", "Every row has a \u2921 Detail button that opens a full calculation sheet \u2014 inputs, formulas, substituted numbers, results. Print just that sheet, or print the entire project's sheets as one package, from inside that window."],
   ];
@@ -2131,7 +2131,7 @@ function renderStructures(){
   const c = document.getElementById("view-structures");
   c.innerHTML = "";
   c.appendChild(el("h1",{},"Junction Structures"));
-  c.appendChild(el("p",{class:"view-desc"},"One row per structure. Total Flow, Hf, Hb and Upstream HGL are computed automatically from linked drainage areas and connected pipes (set up on the Pipe Sizing tab). A Flow Splitter needs a Primary and a Secondary outgoing pipe \u2014 set each pipe's Role on the Pipe Sizing tab."));
+  c.appendChild(el("p",{class:"view-desc"},"One row per structure. Total Flow, Hf, Hb and Upstream HGL are computed automatically from linked drainage areas and connected pipes (set up on the Pipe Sizing & Capacity tab). A Flow Splitter needs a Primary and a Secondary outgoing pipe \u2014 set each pipe's Role on the Pipe Sizing & Capacity tab."));
 
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
@@ -2235,12 +2235,12 @@ function renderStructures(){
 }
 
 /* ---------------------------------------------------------------------
-   Pipe Sizing tab
+   Pipe Sizing & Capacity tab
 --------------------------------------------------------------------- */
 function renderPipes(){
   const c = document.getElementById("view-pipes");
   c.innerHTML = "";
-  c.appendChild(el("h1",{},"Pipe Sizing \u2014 Manning's Equation"));
+  c.appendChild(el("h1",{},"Pipe Sizing & Capacity \u2014 Manning's Equation"));
   c.appendChild(el("p",{class:"view-desc"},"Every pipe connects a From structure to a To structure. Design Q is pulled automatically from the From structure's Total Flow. Angle is this pipe's deflection entering the To structure (used for structure-loss calculations there). For elliptical pipes, enter Size as SPAN x RISE in inches (e.g. 38x24)."));
 
   const section = el("div",{class:"section"});
@@ -3003,15 +3003,15 @@ function renderRainfall() {
 }
 
 /* ---------------------------------------------------------------------
-   Pipe Sizing — 25-yr Check tab
+   Pipe Sizing & Capacity — 25-yr tab
 --------------------------------------------------------------------- */
 function renderPipeSizing25() {
   const c = document.getElementById("view-pipe-sizing-25");
   if (!c) return;
   c.innerHTML = "";
-  c.appendChild(el("h1", {}, "Pipe Sizing — 25-yr Check"));
+  c.appendChild(el("h1", {}, "Pipe Sizing & Capacity — 25-yr"));
   c.appendChild(el("p", {class:"view-desc"},
-    "25-yr check — read only. Pipe geometry is unchanged from the primary Pipe Sizing tab. " +
+    "25-yr check — read only. Pipe geometry is unchanged from the primary Pipe Sizing & Capacity tab. " +
     "Design Q uses Q₂₅ from each linked drainage area."));
 
   const section = el("div", {class:"section"});
@@ -3604,7 +3604,7 @@ function buildStructureSheet(structureId){
     splitBody.push(csFormula(["Secondary Q = Total Flow \u2212 Primary Q = "+fmt(calc.totalFlow,2)+" \u2212 "+fmt(s.primaryQ,2)]));
     splitBody.push(csResult("Secondary Q", fmt(s.secondaryQ,2)+" cfs"));
     if(calc.warnings.some(w=>w.indexOf("Primary and one Secondary")>=0)){
-      splitBody.push(csWarn("Missing a Primary or Secondary outgoing pipe \u2014 assign Role on the Pipe Sizing tab."));
+      splitBody.push(csWarn("Missing a Primary or Secondary outgoing pipe \u2014 assign Role on the Pipe Sizing & Capacity tab."));
     }
     body.push(csSection("Flow split ("+(s.method==="ratio"?"fixed ratio":"capacity-limited primary")+")", el("div",{}, splitBody)));
   }
@@ -3801,7 +3801,7 @@ function buildFormulasReferenceSheet(){
     b2.push(csFormula(["Qfull = "+fmt(pipeCalc.V,3)+" \u00d7 "+fmt(pipeCalc.areaSf,4)]));
     b2.push(csResult("Qfull", fmt(pipeCalc.Qfull,3)+" cfs \u2014 Design Q = "+fmt(pipeCalc.designQ,3)+" cfs \u2192 "+(pipeCalc.pass?"PASS":"FAIL")));
   }
-  body.push(csSection("2. Manning's Equation (Pipe Sizing tab)", el("div",{}, b2)));
+  body.push(csSection("2. Manning's Equation (Pipe Sizing & Capacity tab)", el("div",{}, b2)));
 
   // ---------------- 3. Friction Loss ----------------
   const b3 = [];
