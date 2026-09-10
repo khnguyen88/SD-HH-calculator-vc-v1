@@ -999,6 +999,28 @@ function computeInterception(L, Q, S, n, SxEff, a) {
   return { Lt, E, bypass_frac: 1 - E };
 }
 
+function resolvedInletFields(row) {
+  const out = {
+    area: row.area, C: row.C, tc: row.tc,
+    areaFromDA: false, CFromDA: false, tcFromDA: false,
+  };
+  if (!row.linkedStructureId) return out;
+  const st = state.structures.find(s => s.id === row.linkedStructureId);
+  if (!st || !st.drainageAreaId) return out;
+  const da = findDrainage(st.drainageAreaId);
+  if (!da) return out;
+  if (row.area === "" || row.area == null) { out.area = da.area; out.areaFromDA = true; }
+  if (row.C   === "" || row.C   == null)  { out.C   = da.C;    out.CFromDA   = true; }
+  if (row.tc  === "" || row.tc  == null)  { out.tc  = da.tc;   out.tcFromDA  = true; }
+  return out;
+}
+
+function resolvedInletLabel(row) {
+  if (!row.linkedStructureId) return row.label;
+  const st = state.structures.find(s => s.id === row.linkedStructureId);
+  return st ? (st.structureId || st.id) : row.label;
+}
+
 function computeInletRow(row, settings, bypassQIn, bypassCAIn) {
   const isSump = String(row.S).toUpperCase() === "SUMP";
   const tc = Number(row.tc);
@@ -1172,6 +1194,7 @@ function defaultInletSpacingSettings() {
 function defaultInletSpacingRow() {
   return {
     id: nextId(),
+    linkedStructureId: "",   // internal id of a type="inlet" structure, or "" = custom
     label: "",
     structureType: "",  // INLET_STRUCTURES id or ""
     area: "",
@@ -4888,6 +4911,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   TR55_SHEET_N, TR55_CHANNEL_N, TR55_SEGMENT_TYPES, tr55SegmentCalc, tr55DefaultSegment,
   lookupIntensity, interpolatePL, computeSxEff, computeSpread, computeInterception, computeInletRow,
   computeInletChain, computeRowIntensity, buildInletSpacingSheet,
+  resolvedInletFields, resolvedInletLabel,
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET };

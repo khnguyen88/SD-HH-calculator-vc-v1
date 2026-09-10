@@ -317,3 +317,46 @@ test("buildWorkbook: Drainage Area has CA column, no old i column", () => {
   assert.ok(!headers.includes("i (in/hr)"), "old i column should be gone");
   assert.ok(headers.includes("i Override (in/hr)"), "iOverride header missing");
 });
+
+test("resolvedInletFields: returns row values when no linkedStructureId", () => {
+  const row = { linkedStructureId:"", area:"0.5", C:"0.8", tc:"10" };
+  const r = sdc.resolvedInletFields(row);
+  assert.equal(r.area, "0.5");
+  assert.equal(r.areaFromDA, false);
+});
+
+test("resolvedInletFields: auto-fills blank area/C/tc from linked DA", () => {
+  const daId = sdc.state.drainage[0] && sdc.state.drainage[0].id;
+  const st = sdc.state.structures[0];
+  if (!st || !daId) return;
+  const origLinked = st.drainageAreaId;
+  st.drainageAreaId = daId;
+  const da = sdc.findDrainage(daId);
+  da.area = "1.2"; da.C = "0.7"; da.tc = "15";
+  const row = { linkedStructureId: st.id, area:"", C:"", tc:"" };
+  const r = sdc.resolvedInletFields(row);
+  assert.equal(r.area, "1.2");
+  assert.equal(r.C,    "0.7");
+  assert.equal(r.tc,   "15");
+  assert.equal(r.areaFromDA, true);
+  assert.equal(r.CFromDA,    true);
+  assert.equal(r.tcFromDA,   true);
+  st.drainageAreaId = origLinked;
+});
+
+test("resolvedInletFields: non-blank row field is kept as override", () => {
+  const daId = sdc.state.drainage[0] && sdc.state.drainage[0].id;
+  const st = sdc.state.structures[0];
+  if (!st || !daId) return;
+  const origLinked = st.drainageAreaId;
+  st.drainageAreaId = daId;
+  const da = sdc.findDrainage(daId);
+  da.area = "1.2"; da.C = "0.7"; da.tc = "15";
+  const row = { linkedStructureId: st.id, area:"0.5", C:"", tc:"" };
+  const r = sdc.resolvedInletFields(row);
+  assert.equal(r.area, "0.5");
+  assert.equal(r.areaFromDA, false);
+  assert.equal(r.C, "0.7");
+  assert.equal(r.CFromDA, true);
+  st.drainageAreaId = origLinked;
+});
