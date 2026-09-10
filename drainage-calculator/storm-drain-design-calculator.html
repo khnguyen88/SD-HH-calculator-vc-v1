@@ -490,6 +490,9 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
       <div class="view" id="view-table46"></div>
       <div class="view" id="view-kb"></div>
       <div class="view" id="view-inlet-spacing"></div>
+      <div class="view" id="view-rainfall"></div>
+      <div class="view" id="view-pipe-sizing-25"></div>
+      <div class="view" id="view-structures-25"></div>
     </div>
   </div>
 </div>
@@ -1879,29 +1882,41 @@ function detailBtn(onClick){
 /* ---------------------------------------------------------------------
    Navigation
 --------------------------------------------------------------------- */
-const TABS = [
-  {id:"overview",   label:"Overview"},
-  {id:"drainage",   label:"Drainage Area (Q=CiA)"},
-  {id:"structures", label:"Junction Structures"},
-  {id:"pipes",      label:"Pipe Sizing"},
-  {id:"outlet",     label:"Outlet Structure"},
-  {id:"formulas",   label:"Formulas & Examples"},
-  {id:"table46",    label:"Table 4-6 Reference"},
-  {id:"kb",         label:"Kb Coefficients"},
-  {id:"inlet-spacing", label:"Inlet Spacing"},
-];
+function getTabs() {
+  const tabs = [
+    {id:"overview",       label:"Overview"},
+    {id:"rainfall",       label:"Rainfall & IDF"},
+    {id:"drainage",       label:"Drainage Area (Q=CiA)"},
+    {id:"structures",     label:"Junction Structures"},
+    {id:"pipes",          label:"Pipe Sizing"},
+    {id:"outlet",         label:"Outlet Structure"},
+    {id:"formulas",       label:"Formulas & Examples"},
+    {id:"table46",        label:"Table 4-6 Reference"},
+    {id:"kb",             label:"Kb Coefficients"},
+    {id:"inlet-spacing",  label:"Inlet Spacing"},
+  ];
+  const r = state.rainfall;
+  if (r.pipe25Check && r.pipeStorm !== "25yr") {
+    tabs.push({id:"pipe-sizing-25",  label:"Pipe Sizing — 25-yr"});
+    tabs.push({id:"structures-25",   label:"Junction Structures — 25-yr"});
+  }
+  return tabs;
+}
 
 function renderNav(){
+  const tabs = getTabs();
+  if (!tabs.find(t => t.id === state.active)) state.active = "pipes";
   const nav = document.getElementById("nav");
   nav.innerHTML = "";
-  TABS.forEach((t,i)=>{
+  tabs.forEach((t,i)=>{
     const btn = el("button", {
       class: "nav-btn" + (state.active===t.id ? " active":""),
       onclick: ()=>{ state.active=t.id; renderAll(); }
     }, [ el("span",{class:"nav-num"}, String(i+1).padStart(2,"0")), t.label ]);
     nav.appendChild(btn);
   });
-  document.getElementById("tabLabel").textContent = TABS.find(t=>t.id===state.active).label;
+  const activeTab = tabs.find(t=>t.id===state.active);
+  document.getElementById("tabLabel").textContent = activeTab ? activeTab.label : "";
 }
 function showActiveView(){
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id==="view-"+state.active));
