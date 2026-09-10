@@ -3070,7 +3070,58 @@ function renderHgl() {
   if (!c) return;
   c.innerHTML = "";
   c.appendChild(el("h1", {}, "HGL"));
-  c.appendChild(el("p", {class:"view-desc"}, "Hydraulic Grade Line — computed from Junction Structures and Pipe Sizing."));
+  c.appendChild(el("p", {class:"view-desc"},
+    "Hydraulic grade line results for the primary design storm. " +
+    "Define structures and pipes on the Junction Structures and Pipe Sizing & Capacity tabs first. " +
+    "This tab is read-only — all values are computed."));
+
+  const section = el("div", {class:"section"});
+  section.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Upstream HGL — Primary Design Storm")]));
+  const tableWrap = el("div", {class:"table-wrap"});
+  const table = el("table", {class:"data"});
+  table.appendChild(el("thead", {}, el("tr", {}, [
+    el("th",{},"Structure ID"),
+    el("th",{},"Type"),
+    el("th",{class:"computed"},"Total Q\n(cfs)"),
+    el("th",{class:"computed"},"Hf\n(ft)"),
+    el("th",{class:"computed"},"Kb"),
+    el("th",{class:"computed"},"Hb\n(ft)"),
+    el("th",{class:"computed"},"Upstream HGL\n(ft)"),
+    el("th",{},"Crown\n(ft)"),
+    el("th",{class:"computed"},"Crown\nCheck"),
+    el("th",{},"Rim\n(ft)"),
+    el("th",{class:"computed"},"Rim\nCheck"),
+  ])));
+  const tbody = el("tbody");
+  state.structures.forEach(row => {
+    const calc = computeStructureCalc(row.id);
+    const crown = parseFloat(row.crown);
+    const rim   = parseFloat(row.rim);
+    const crownStyle = calc && calc.crownPass === false ? "color:#e05;font-weight:700;" : "";
+    const rimStyle   = calc && calc.rimPass   === false ? "color:#e05;font-weight:700;" : "";
+    tbody.appendChild(el("tr", {}, [
+      el("td",{}, row.structureId||row.id),
+      el("td",{}, row.type||""),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.totalFlow) ? fmt(calc.totalFlow,2) : "—"),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hf)        ? fmt(calc.Hf,3)        : "—"),
+      el("td",{class:"out computed-cell"}, calc && calc.kb != null           ? fmt(calc.kb,2)         : "—"),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hb)        ? fmt(calc.Hb,3)        : "—"),
+      el("td",{class:"out computed-cell", style:"font-weight:700"},
+        calc && isFinite(calc.elevation) ? fmt(calc.elevation,2) : "—"),
+      el("td",{}, isFinite(crown) ? fmt(crown,2) : "—"),
+      el("td",{class:"out computed-cell", style:crownStyle},
+        !calc ? "—" : calc.crownPass === null ? "—" : calc.crownPass ? "✓" : "✗ > crown+1"),
+      el("td",{}, isFinite(rim) ? fmt(rim,2) : "—"),
+      el("td",{class:"out computed-cell", style:rimStyle},
+        !calc ? "—" : calc.rimPass === null ? "—" : calc.rimPass ? "✓" : "✗ FLOOD"),
+    ]));
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  if (state.structures.length === 0)
+    section.appendChild(el("p",{class:"hint"},"No structures defined. Add structures on the Junction Structures tab."));
+  c.appendChild(section);
 }
 
 /* ---------------------------------------------------------------------
