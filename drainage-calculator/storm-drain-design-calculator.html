@@ -3299,24 +3299,37 @@ function sheetWrapper(kind, title, sub, bodyNodes){
 
 function buildDrainageSheet(row){
   const calc = calcDrainageRow(row);
-  const designStorm = state.rainfall.pipeStorm || "\u2014";
-  const designI = (calc.cf > 0 && calc.CA > 0) ? calc.designQ / (calc.cf * calc.CA) : 0;
-  const iLabel = calc.iOverridden ? "Rainfall intensity, i (override)" : "Rainfall intensity, i ("+designStorm+" design storm)";
+  const r    = state.rainfall;
+  const srcLabel = r.rainfallSource === "noaa"
+    ? "NOAA Atlas 14 \u2014 " + r.county
+    : r.rainfallSource === "moco" ? "MoCo Agency Table" : "MDSHA Agency Table";
+
+  const iRows = calc.iOverridden
+    ? [["Intensity source", "Manual override"],
+       ["i used (all storms)", fmt(Number(row.iOverride), 3) + " in/hr \u26a0 verify against source"]]
+    : [["Intensity source", srcLabel],
+       ["Time of concentration, Tc", (row.tc !== "" && row.tc != null ? fmt(parseFloat(row.tc), 1) + " min" : "\u2014")]];
+
+  const qRows = calc.storms.map(s => {
+    const label = {"2yr":"Q\u2082","10yr":"Q\u2081\u2080","25yr":"Q\u2082\u2085","5yr":"Q\u2085"}[s] || ("Q "+s);
+    const tag = s === r.pipeStorm ? " \u2190 pipe design storm" : s === r.inletStorm ? " \u2190 inlet design storm" : "";
+    return [label, fmt(calc.Qs[s], 3) + " cfs" + tag];
+  });
+
   const body = [
     csSection("Inputs", csTable([
-      ["Tributary area, A", fmt(calc.A,2)+" ac"],
-      ["Runoff coefficient, C", fmt(calc.C,2)],
-      [iLabel, fmt(designI,3)+" in/hr"],
-      ["Time of concentration, Tc", (row.tc!==""&&row.tc!=null?fmt(parseFloat(row.tc),1)+" min":"\u2014")],
-      ["Frequency correction, Cf", fmt(calc.cf,2)],
+      ["Tributary area, A", fmt(calc.A, 2) + " ac"],
+      ["Runoff coefficient, C", fmt(calc.C, 2)],
+      ["CA = C \u00d7 A", fmt(calc.CA, 3)],
+      ["Frequency correction, Cf", fmt(calc.cf, 2)],
+      ...iRows,
     ])),
-    csSection("Rational Method", el("div",{},[
-      csFormula(["Q = Cf \u00d7 C \u00d7 i \u00d7 A"]),
-      csFormula(["Q = "+fmt(calc.cf,2)+" \u00d7 "+fmt(calc.C,2)+" \u00d7 "+fmt(designI,3)+" \u00d7 "+fmt(calc.A,2)]),
-      csResult("Q ("+designStorm+")", fmt(calc.designQ,2)+" cfs"),
+    csSection("Rational Method \u2014 Q = Cf \u00d7 CA \u00d7 i", el("div", {}, [
+      csTable(qRows),
     ])),
   ];
-  return sheetWrapper("drainage", "Drainage Area \u2014 "+(row.structureId||row.id), row.desc||"Rational Method (Q = C\u00b7i\u00b7A)", body);
+  return sheetWrapper("drainage", "Drainage Area \u2014 " + (row.structureId || row.id),
+    row.desc || "Rational Method (Q = Cf\u00b7C\u00b7i\u00b7A)", body);
 }
 
 function buildPipeSheet(row){
