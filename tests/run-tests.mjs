@@ -173,8 +173,12 @@ test("I-7: L=15 selects k=0.54, Lt≈40.50", () => {
 test("inlet spacing state model wired", () => {
   assert.equal(typeof sdc.defaultInletSpacingRow, "function", "defaultInletSpacingRow missing");
   assert.ok(Array.isArray(sdc.state.inletSpacing), "state.inletSpacing not array");
-  assert.equal(sdc.state.inletSpacingSettings.rainfallSource, "noaa", "settings default source");
-  assert.equal(sdc.state.inletSpacingSettings.county, "Montgomery", "settings default county");
+  // Rainfall settings now live in state.rainfall, not inletSpacingSettings
+  assert.equal(sdc.state.rainfall.rainfallSource, "noaa", "state.rainfall default source");
+  assert.equal(sdc.state.rainfall.county, "Montgomery", "state.rainfall default county");
+  assert.equal(typeof sdc.state.rainfall.inletStorm, "string", "state.rainfall.inletStorm is a string");
+  // inletSpacingSettings no longer carries rainfall fields
+  assert.equal(sdc.state.inletSpacingSettings.rainfallSource, undefined, "inletSpacingSettings has no rainfallSource");
 });
 
 // ==================== Bypass chain ====================
@@ -221,4 +225,95 @@ test("chain: orphan bypassTo flagged", () => {
                area:"0.1", C:"1", tc:"5", iOverride:"6.68", allowableSpread:"", bypassTo:"GHOST" };
   const { orphans } = sdc.computeInletChain([r1], s);
   assert.ok(orphans.length === 1, "orphan must be flagged");
+});
+
+test("availableStorms: moco returns 3 storms", () => {
+  assert.deepEqual([...sdc.availableStorms("moco")], ["2yr","5yr","10yr"]);
+});
+test("availableStorms: noaa returns 3 storms", () => {
+  assert.deepEqual([...sdc.availableStorms("noaa")], ["2yr","10yr","25yr"]);
+});
+test("availableStorms: mdsha returns 3 storms", () => {
+  assert.deepEqual([...sdc.availableStorms("mdsha")], ["2yr","10yr","25yr"]);
+});
+
+// ==================== calcDrainageRow — multi-storm shape ====================
+test("calcDrainageRow: returns CA, Qs, designQ", () => {
+  sdc.state.rainfall.rainfallSource = "mdsha";
+  sdc.state.rainfall.pipeStorm = "10yr";
+  const row = { area:"1.0", C:"0.8", iOverride:"", tc:"10", cf:"1.0", tcMethod:"direct", tr55:{segments:[]} };
+  const result = sdc.calcDrainageRow(row);
+  assert.ok(Math.abs(result.CA - 0.8) < 0.001, "CA should be 0.8");
+  assert.ok(result.Qs["10yr"] !== undefined, "Qs should have 10yr key");
+  assert.ok(result.Qs["2yr"]  !== undefined, "Qs should have 2yr key");
+  assert.ok(Math.abs(result.designQ - result.Qs["10yr"]) < 0.001, "designQ should match pipeStorm Q");
+  // MDSHA 10yr at Tc=10 is 5.340 in/hr → Q = 1*0.8*1.0*5.340 = 4.272
+  assert.ok(Math.abs(result.Qs["10yr"] - 4.272) < 0.01, "Q10 ≈ 4.272 cfs: " + result.Qs["10yr"]);
+});
+
+test("calcDrainageRow: iOverride overrides all storm Qs", () => {
+  sdc.state.rainfall.rainfallSource = "mdsha";
+  sdc.state.rainfall.pipeStorm = "10yr";
+  const row = { area:"1.0", C:"0.8", iOverride:"5.0", tc:"10", cf:"1.0", tcMethod:"direct", tr55:{segments:[]} };
+  const result = sdc.calcDrainageRow(row);
+  ["2yr","10yr","25yr"].forEach(s => {
+    assert.ok(Math.abs(result.Qs[s] - 0.8*5.0) < 0.001, s + " Q should use iOverride: " + result.Qs[s]);
+  });
+});
+
+test("calcDrainageRow: zero CA when area blank", () => {
+  const row = { area:"", C:"0.8", iOverride:"", tc:"10", cf:"1.0", tcMethod:"direct", tr55:{segments:[]} };
+  const result = sdc.calcDrainageRow(row);
+  assert.equal(result.CA, 0, "CA should be 0 when area is blank");
+  assert.equal(result.designQ, 0, "designQ should be 0");
+});
+
+test("inlet spacing uses state.rainfall.inletStorm", () => {
+  sdc.state.rainfall.rainfallSource = "mdsha";
+  sdc.state.rainfall.inletStorm = "2yr";
+  const row = {
+    id:"r-inlet-test", label:"I-T", S:"0.04", Sx:"0.01", W:1.33, a:0.0833, n:0.013, L:"10",
+    area:"0.2", C:"1", tc:"5", iOverride:"", allowableSpread:"", bypassTo:""
+  };
+  const is = sdc.state.inletSpacingSettings;
+  const r = sdc.computeInletRow(row, is, 0, 0);
+  // MDSHA 2yr at Tc=5 = 5.016 in/hr → Q = 0.2 * 5.016 = 1.003
+  assert.ok(Math.abs(r.Q - 1.003) < 0.05, "inlet Q uses inletStorm=2yr: " + r.Q);
+});
+
+test("computeTotalFlow stormOverride: Q25 > Q10 for same structure", () => {
+  const structs = sdc.state.structures;
+  if (!structs.length) { return; }
+  const firstInlet = structs.find(s => s.type === "inlet");
+  if (!firstInlet || !firstInlet.drainageAreaId) { return; }
+  sdc.state.rainfall.rainfallSource = "noaa";
+  sdc.state.rainfall.pipeStorm = "10yr";
+  const q10 = sdc.computeTotalFlow(firstInlet.id, null, "10yr").Q;
+  const q25 = sdc.computeTotalFlow(firstInlet.id, null, "25yr").Q;
+  // Q25 must be strictly greater than Q10 (different storm intensities, no iOverride)
+  assert.ok(q25 > q10, "Q25 should be > Q10 (stormOverride not wired): q10=" + q10 + " q25=" + q25);
+});
+
+// ==================== Excel export: Rainfall Settings sheet ====================
+test("buildWorkbook: Rainfall Settings sheet exists with correct keys", () => {
+  const wb = sdc.buildWorkbook();
+  assert.ok(wb.SheetNames.includes("Rainfall Settings"), "Rainfall Settings sheet missing");
+  const ws = wb.Sheets["Rainfall Settings"];
+  const XLSX = window.XLSX;
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+  const keys = aoa.map(r => r[0]);
+  assert.ok(keys.includes("Rainfall Source"), "Rainfall Source row missing");
+  assert.ok(keys.includes("Pipe & HGL Design Storm"), "Pipe storm row missing");
+  assert.ok(keys.includes("Inlet Design Storm"), "Inlet storm row missing");
+});
+
+test("buildWorkbook: Drainage Area has CA column, no old i column", () => {
+  const wb = sdc.buildWorkbook();
+  const XLSX = window.XLSX;
+  const ws = wb.Sheets["Drainage Area"];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+  const headers = aoa[0] || [];
+  assert.ok(headers.includes("CA"), "CA header missing");
+  assert.ok(!headers.includes("i (in/hr)"), "old i column should be gone");
+  assert.ok(headers.includes("i Override (in/hr)"), "iOverride header missing");
 });
