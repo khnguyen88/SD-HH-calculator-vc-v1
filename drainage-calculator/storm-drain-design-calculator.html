@@ -341,6 +341,47 @@ select.cell-input{ font-family:var(--font-ui); }
 #toast.err{ border-color:var(--fail); }
 #toast.err b{ color:var(--fail); }
 
+.saves-wrap{ position:relative; }
+.saves-popover{
+  display:none;
+  position:absolute;
+  top:calc(100% + 6px);
+  right:0;
+  z-index:200;
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  min-width:320px;
+  max-width:420px;
+  box-shadow:0 4px 16px rgba(0,0,0,0.4);
+  padding:10px 0;
+}
+.saves-popover.open{ display:block; }
+.saves-popover-header{
+  padding:4px 14px 8px;
+  font-size:11px;
+  color:var(--muted);
+  border-bottom:1px solid var(--border-soft);
+  margin-bottom:6px;
+}
+.saves-empty{ padding:8px 14px; color:var(--muted); font-size:12.5px; }
+.save-row{
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+  padding:5px 14px;
+}
+.save-row:hover{ background:rgba(255,255,255,0.03); }
+.save-row-name{
+  flex:1;
+  font-size:12.5px;
+  color:var(--text);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  font-family:var(--font-mono);
+}
+
 @media (prefers-reduced-motion: reduce){
   *{ transition:none !important; }
 }
