@@ -5215,7 +5215,8 @@ function init(){
 
   document.addEventListener("click", (e)=>{
     const pop = document.getElementById("savesPopover");
-    if(pop.classList.contains("open") && !pop.contains(e.target) && e.target.id !== "savesMenuBtn"){
+    const btn = document.getElementById("savesMenuBtn");
+    if(pop.classList.contains("open") && !pop.contains(e.target) && !btn.contains(e.target)){
       closeSavesPopover();
     }
   });
