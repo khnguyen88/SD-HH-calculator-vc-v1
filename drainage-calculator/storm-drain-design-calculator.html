@@ -517,6 +517,14 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
         <span class="tab-label" id="tabLabel"></span>
       </div>
       <div class="topbar-right">
+        <button class="btn btn-sm" id="saveCompBtn" title="Save current project to browser storage">&#8964; Save</button>
+        <div class="saves-wrap">
+          <button class="btn btn-sm" id="savesMenuBtn">Saves (<span id="savesCount">0</span>) &#9660;</button>
+          <div class="saves-popover" id="savesPopover">
+            <div class="saves-popover-header">Saved in this browser only &mdash; export to Excel for a permanent record</div>
+            <div id="savesList"></div>
+          </div>
+        </div>
         <button class="btn" id="importBtn" title="Import a previously exported .xlsx file">&#8593; Import from Excel</button>
         <input type="file" id="importFile" accept=".xlsx">
         <button class="btn btn-primary" id="exportBtn" title="Export all tables to a .xlsx file">&#8595; Export to Excel</button>
