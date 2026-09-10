@@ -219,6 +219,7 @@ table.data td.computed-cell{ background:rgba(56,198,180,0.05); }
 .cell-input.txt{ font-family:var(--font-ui); }
 select.cell-input{ font-family:var(--font-ui); }
 .is-i-override { border-color:#e8a020 !important; }
+.i-override input, .i-override { border-color: #f90 !important; }
 
 .badge{
   display:inline-block;
@@ -2005,23 +2006,51 @@ function renderDrainage(){
 
   const tableWrap = el("div",{class:"table-wrap"});
   const table = el("table",{class:"data"});
+  const storms = availableStorms(state.rainfall.rainfallSource);
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"ID"), el("th",{},"Description"), el("th",{},"Area A (ac)"),
-    el("th",{},"C"), el("th",{},"i (in/hr)"), el("th",{},"Tc (min)"), el("th",{},"Cf"),
-    el("th",{class:"computed"},"Q (cfs)"), el("th",{},""), el("th",{},"")
+    el("th",{},"C"),
+    el("th",{class:"computed"},"CA"),
+    el("th",{},"i override\n(in/hr)"),
+    el("th",{},"Tc (min)"), el("th",{},"Cf"),
+    ...storms.map(s => {
+      const isPipe  = s === state.rainfall.pipeStorm;
+      const isInlet = s === state.rainfall.inletStorm;
+      const accent  = isPipe ? "#4a9eff" : (isInlet ? "#f0a500" : "");
+      const lbl = {"2yr":"Q₂","10yr":"Q₁₀","25yr":"Q₂₅","5yr":"Q₅"}[s] || ("Q "+s);
+      return el("th", {class:"computed", style: accent?"color:"+accent+";":""}, lbl+"\n(cfs)");
+    }),
+    el("th",{},""), el("th",{},"")
   ])));
   const tbody = el("tbody");
   state.drainage.forEach(row=>{
     const calc = calcDrainageRow(row);
+    const iOverrideCell = el("input", {
+      class:"cell-input" + (calc.iOverridden ? " i-override" : ""),
+      type:"text", inputmode:"decimal", style:"width:65px;",
+      "data-focus-key":"drainage:"+row.id+":iOverride",
+      value: row.iOverride !== undefined ? row.iOverride : "",
+      placeholder: calc.iOverridden ? "" : "auto",
+      oninput: (e) => { row.iOverride = e.target.value; withFocusPreserved(renderAll); }
+    });
     tbody.appendChild(el("tr",{},[
       el("td",{}, txt(row,"structureId",90)),
       el("td",{}, txt(row,"desc",160)),
       el("td",{}, num(row,"area",70)),
       el("td",{}, num(row,"C",60)),
-      el("td",{}, num(row,"iOverride",60)),
+      el("td",{class:"out computed-cell"}, fmt(calc.CA, 3)),
+      el("td",{class: calc.iOverridden ? "i-override" : ""}, iOverrideCell),
       el("td",{}, tcCell(row)),
       el("td",{}, num(row,"cf",55)),
-      el("td",{class:"out computed-cell"}, fmt(calc.designQ,2)),
+      ...calc.storms.map(s => {
+        const isPipe  = s === state.rainfall.pipeStorm;
+        const isInlet = s === state.rainfall.inletStorm;
+        const accent  = isPipe ? "#4a9eff" : (isInlet ? "#f0a500" : "");
+        return el("td", {
+          class:"out computed-cell",
+          style: accent ? "font-weight:600;border-bottom:2px solid "+accent+";" : ""
+        }, fmt(calc.Qs[s], 2));
+      }),
       el("td",{}, detailBtn(()=>openDetailModal(buildDrainageSheet(row)))),
       el("td",{}, delBtn(()=>{ state.drainage=state.drainage.filter(r=>r!==row); renderAll(); }))
     ]));
@@ -2055,9 +2084,7 @@ function renderDrainage(){
   }
 }
 function patchDrainageRow(row){
-  const idx = state.drainage.indexOf(row);
-  const tr = document.querySelectorAll("#view-drainage tbody tr")[idx];
-  if(tr){ tr.children[7].textContent = fmt(calcDrainageRow(row).designQ,2); }
+  renderDrainage();
   if(state.active==="structures") renderStructures();
 }
 
