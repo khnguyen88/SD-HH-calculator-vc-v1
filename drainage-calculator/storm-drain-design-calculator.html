@@ -933,6 +933,118 @@ const MOCO_KB_PRESET = [
   { angle: 90, inlet: 1.50, manhole: 1.00, bend: 0.25 },
 ];
 
+/* ---------------------------------------------------------------------
+   Inlet Spacing — Core Computation Functions
+--------------------------------------------------------------------- */
+
+function interpolatePL(tc, breakpoints) {
+  if (!breakpoints || breakpoints.length === 0) return 0;
+  if (tc <= breakpoints[0][0]) return breakpoints[0][1];
+  for (let j = 1; j < breakpoints.length; j++) {
+    const [t0, i0] = breakpoints[j-1];
+    const [t1, i1] = breakpoints[j];
+    if (tc <= t1) return i0 + (i1-i0)*((tc-t0)/(t1-t0));
+  }
+  return breakpoints[breakpoints.length-1][1];
+}
+
+function lookupIntensity(tc, source, storm, county, customNoaa) {
+  if (source === "noaa") {
+    if (county === "Custom") {
+      const pts = [[5,customNoaa[5]],[10,customNoaa[10]],[15,customNoaa[15]],[30,customNoaa[30]],[60,customNoaa[60]]]
+        .filter(([,v]) => v !== "" && v != null && isFinite(Number(v)))
+        .map(([t,v]) => [t, Number(v)]);
+      return interpolatePL(tc, pts);
+    }
+    const entry = NOAA_ATLAS14[county];
+    if (!entry) return 0;
+    const stormData = entry[storm] || entry["10yr"];
+    const pts = [5,10,15,30,60].map(d => [d, stormData[d]]);
+    return interpolatePL(tc, pts);
+  }
+  if (source === "moco") {
+    const curve = MOCO_INTENSITY[storm] || MOCO_INTENSITY["10yr"];
+    return interpolatePL(tc, curve);
+  }
+  // default: "mdsha"
+  const curve = MDSHA_INTENSITY[storm] || MDSHA_INTENSITY["10yr"];
+  return interpolatePL(tc, curve);
+}
+
+function computeSxEff(Sx, a, W, Q, S, n) {
+  if (!(Q > 0) || !(W > 0) || !(a > 0)) return Sx;
+  const V    = (a + Sx * W) / W;
+  const Qw   = (0.56 / n) * Math.pow(V, 1.667) * Math.pow(S, 0.5) * Math.pow(W, 2.667);
+  const Wratio = (a / (a + Sx * W)) * (Qw / Q);
+  return Sx + (a / W) * Wratio;
+}
+
+function computeSpread(Q, n, SxEff, S) {
+  if (!(Q > 0) || !(SxEff > 0) || !(S > 0)) return 0;
+  return Math.pow((Q * n) / (0.56 * Math.pow(SxEff, 1.67) * Math.pow(S, 0.5)), 0.3745);
+}
+
+function computeInterception(L, Q, S, n, SxEff, a) {
+  if (!(Q > 0) || !(S > 0) || !(SxEff > 0)) return { Lt: 0, E: 1, bypass_frac: 0 };
+  const k = (!(a > 0)) ? 0.60 : (L >= 15 ? 0.54 : 0.58);
+  const Lt = k * Math.pow(Q, 0.42) * Math.pow(S, 0.3) * Math.pow(1 / (n * SxEff), 0.6);
+  if (L >= Lt) return { Lt, E: 1, bypass_frac: 0 };
+  const E = 1 - Math.pow(1 - L / Lt, 1.8);
+  return { Lt, E, bypass_frac: 1 - E };
+}
+
+function computeInletRow(row, settings, bypassQIn, bypassCAIn) {
+  const isSump = String(row.S).toUpperCase() === "SUMP";
+  const tc = Number(row.tc);
+  const area = Number(row.area);
+  const C    = Number(row.C);
+  const S    = isSump ? 0 : Number(row.S);
+  const Sx   = Number(row.Sx);
+  const W    = Number(row.W);
+  const a    = Number(row.a);
+  const n    = Number(row.n);
+  const L    = Number(row.L);
+  const allowT = Number(row.allowableSpread || settings.allowableSpread);
+
+  const iComputed = (isFinite(tc) && tc > 0)
+    ? lookupIntensity(tc, settings.rainfallSource, settings.storm, settings.county, settings.customNoaa || {})
+    : 0;
+  const i = (row.iOverride !== "" && row.iOverride != null && isFinite(Number(row.iOverride)))
+    ? Number(row.iOverride)
+    : iComputed;
+
+  const localCA = (isFinite(C) && isFinite(area)) ? C * area : 0;
+  const localQ  = localCA * i;
+  const Q       = localQ + (isFinite(bypassQIn) ? bypassQIn : 0);
+  const totalCA = localCA + (isFinite(bypassCAIn) ? bypassCAIn : 0);
+
+  if (isSump) {
+    return { i, iComputed, Q, totalCA, isSump: true,
+             SxEff: null, T: null, Lt: null, E: 1, bypassFrac: 0,
+             bypassQ: 0, bypassCA: 0, pickupPct: 100, allowT,
+             warn: false };
+  }
+
+  const SxEff = (isFinite(Sx) && Sx > 0 && isFinite(W) && W > 0)
+    ? computeSxEff(Sx, a, W, Q, S, n)
+    : (isFinite(Sx) ? Sx : 0);
+  const T     = (Q > 0 && SxEff > 0 && S > 0) ? computeSpread(Q, n, SxEff, S) : 0;
+  const { Lt, E, bypass_frac } = (Q > 0 && isFinite(L) && L > 0)
+    ? computeInterception(L, Q, S, n, SxEff, a)
+    : { Lt: 0, E: 1, bypass_frac: 0 };
+  const bypassQ  = Q * bypass_frac;
+  const bypassCA = totalCA * bypass_frac;
+
+  return {
+    i, iComputed, Q, totalCA, isSump: false,
+    SxEff, T, Lt, E, bypassFrac: bypass_frac,
+    bypassQ, bypassCA,
+    pickupPct: E * 100,
+    allowT,
+    warn: allowT > 0 && T > allowT,
+  };
+}
+
 // Which Kb column a structure type reads from. Outfall has no structure loss.
 const KB_COLUMN_FOR_TYPE = { inlet:"inlet", manhole:"manhole", bend:"bend", junction:"bend", splitter:"manhole", outfall:null };
 
@@ -3735,7 +3847,9 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   circularSegment, orificeOrPipeQ, weirQ, deviceQ, resolveTailwater, generateStageList, computeRatingCurve, computeSplitterSplit, pipeDesignQ,
   findOutletStructure, devicesForOutlet,
   tr55SheetFlowTt, tr55ShallowVelocity, tr55TravelTime, tr55ChannelVelocity, computeTr55, TR55_SHALLOW_CP,
-  TR55_SHEET_N, TR55_CHANNEL_N, TR55_SEGMENT_TYPES, tr55SegmentCalc, tr55DefaultSegment };
+  TR55_SHEET_N, TR55_CHANNEL_N, TR55_SEGMENT_TYPES, tr55SegmentCalc, tr55DefaultSegment,
+  lookupIntensity, interpolatePL, computeSxEff, computeSpread, computeInterception, computeInletRow,
+  MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET };
 
 })();
 
