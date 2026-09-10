@@ -1970,6 +1970,29 @@ function toast(msg, isErr){
   clearTimeout(toast._h);
   toast._h = setTimeout(()=>t.classList.remove("show"), 3800);
 }
+
+const SAVES_KEY = "sdCalc_saves";
+const SAVES_MAX = 5;
+
+function getSaves(){
+  try {
+    const raw = localStorage.getItem(SAVES_KEY);
+    if(!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+function setSaves(saves){
+  try {
+    localStorage.setItem(SAVES_KEY, JSON.stringify(saves));
+  } catch(e) {
+    toast("Browser storage unavailable — save not written.", true);
+  }
+}
+
 function delBtn(onClick){
   return el("button",{class:"row-del", title:"Delete row", onclick:onClick}, "\u2715");
 }
