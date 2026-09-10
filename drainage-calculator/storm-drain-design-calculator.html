@@ -1024,9 +1024,10 @@ function resolvedInletLabel(row) {
 
 function computeInletRow(row, settings, bypassQIn, bypassCAIn) {
   const isSump = String(row.S).toUpperCase() === "SUMP";
-  const tc = Number(row.tc);
-  const area = Number(row.area);
-  const C    = Number(row.C);
+  const rif  = resolvedInletFields(row);
+  const tc   = Number(rif.tc);
+  const area = Number(rif.area);
+  const C    = Number(rif.C);
   const S    = isSump ? 0 : Number(row.S);
   const Sx   = Number(row.Sx);
   const W    = Number(row.W);

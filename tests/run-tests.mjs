@@ -360,3 +360,24 @@ test("resolvedInletFields: non-blank row field is kept as override", () => {
   assert.equal(r.CFromDA, true);
   st.drainageAreaId = origLinked;
 });
+
+test("computeInletRow uses linkedStructureId DA auto-fill for area/C/tc", () => {
+  const da = sdc.state.drainage[0];
+  const st = sdc.state.structures[0];
+  if (!da || !st) return;
+  const origDA = st.drainageAreaId;
+  da.area = "1.0"; da.C = "0.9"; da.tc = "8";
+  st.drainageAreaId = da.id;
+  const row = {
+    id:"test-linked", linkedStructureId: st.id,
+    area:"", C:"", tc:"",       // all blank → auto-fill from DA
+    iOverride:"", S:"0.04", Sx:"0.02", W:1.33, a:0.0833, n:0.013, L:"10",
+    allowableSpread:"", bypassTo:""
+  };
+  const is = sdc.state.inletSpacingSettings;
+  const result = sdc.computeInletRow(row, is, 0, 0);
+  // area=1.0, C=0.9 → localCA=0.9
+  assert.ok(result.totalCA >= 0.89 && result.totalCA <= 0.91,
+    "totalCA should be ~0.9 (got " + result.totalCA + ")");
+  st.drainageAreaId = origDA;
+});
