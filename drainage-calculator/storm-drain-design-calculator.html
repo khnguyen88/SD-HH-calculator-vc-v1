@@ -2022,8 +2022,9 @@ function restoreState(snap, projectName){
   state.inletSpacing = snap.inletSpacing || [];
   state.inletSpacingSettings = snap.inletSpacingSettings || defaultInletSpacingSettings();
   state.rainfall = snap.rainfall || defaultRainfallSettings();
-  state.project = projectName;
-  document.getElementById("projectName").value = projectName;
+  const restoredName = projectName || "Untitled Storm Drain Project";
+  state.project = restoredName;
+  document.getElementById("projectName").value = restoredName;
   renderAll();
 }
 
