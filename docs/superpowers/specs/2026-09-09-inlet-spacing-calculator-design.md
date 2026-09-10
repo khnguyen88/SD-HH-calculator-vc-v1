@@ -110,17 +110,26 @@ Each library entry stores: standard number, label, grate length options (ft), gr
 - **Scope guard:** grate-inlet on-grade + sump only. No curb-opening interception, no slotted drains, no combination-capture decomposition. Structure types whose standard is a combination/curb-opening inlet still appear in the library for their dimensions, but interception math treats every inlet as a grate.
 
 ## 5. Test Oracles (from `docs/bburg-p-c.xlsx`, "Inlet Spacing_10-yr" sheet)
-Hard-code these rows in the test harness; the implementation must reproduce them to ±0.01 (spread, Lt, pickup %, bypass CA). Global params for that sheet: W = 1.33 ft, a = 0.0833 ft, n = 0.013, allowable spread = 8 ft.
 
-| Inlet | L (ft) | CA local | Bypass CA in | $T_c$ | $i$ | Q (cfs) | $S$ | Sx (grade) | Spread T | Pickup % | Bypass CA out |
+**Corrections discovered during implementation (2026-09-10):**
+1. **Column swap:** In the workbook, the GRADE column (M) is the longitudinal slope S (it holds "SUMP" for sump inlets) and XSLOPE (L) is the cross slope Sx. The original table below had S and Sx transposed for on-grade rows.
+2. **FlowMaster divergence:** The sheet itself notes "Formulas have been voided and flowmaster has been used and results manually inputted." The displayed Spread (col P) and Pickup % (col Q) values were manually typed from FlowMaster and are NOT what the workbook's own formula chain (cols V–AB, whose live versions survive in the "Inlet Spacing_2-yr" sheet) computes — e.g., I-1's formula chain gives E=0.6707 vs the displayed 99.25%. The implementation reproduces the workbook's **formula chain** (V→W→X→Y/Z/AA→AB), which the oracles below now assert digit-for-digit against the frozen helper cells.
+3. **I-6 has no upstream bypass** (G18 empty, H18=F18); its R18 (0.01004) is its bypass CA **out** to I-5, computed from the manual FlowMaster pickup 93.59%, not the formula chain.
+
+Global params for the oracle sheet: W = 1.33 ft, a = 0.0833 ft, n = 0.013, allowable spread = 8 ft.
+
+| Inlet | L (ft) | CA local | $T_c$ | $i$ | Q (cfs) | S (grade) | Sx (cross) | Workbook chain: SxEff (X) | Lt (Y) | E (AB) | Displayed (FlowMaster): Spread T / Pickup % |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| EX-I-1 | 11.1 | 0.04667 | 0.29169 | 5 | 6.68 | 2.260 | 0.055 | SUMP | 3.2* | 100 | 0 |
-| I-1 | 5 | 0.14289 | 0 | 7 | 6.15 | 0.8788 | 0.044 | 0.01 | 4.10 | 99.25 | 0.00107 |
-| I-2 | 15 | 0.18013 | 0 | 5 | 6.68 | 1.2033 | 0.0219 | 0.0212 | 4.90 | 100 | 0 |
-| I-3 | 10 | 0.18525 | 0 | 10 | 5.34 | 0.9892 | 0.019 | 0.08 | 5.90 | 100 | 0 |
-| I-6 | 5 | 0.15669 | 0.01004 | 10 | 5.34 | 0.8367 | 0.026 | 0.007 | 5.20 | 93.59 | 0.01004 |
+| EX-I-1 | 11.1 | 0.04667 | 5 | 6.68 | 2.260 | SUMP | 0.055 | — | — | 1.0 | 3.2 / 100 |
+| I-1 | 5 | 0.14289 | 7 | 6.15 | 0.8788 | 0.010 | 0.044 | 0.0532 | 10.8573 | 0.6707 | 4.10 / 99.25 |
+| I-2 | 15 | 0.18013 | 5 | 6.68 | 1.2033 | 0.0212 | 0.0219 | 0.0303 | 20.2606* | 0.9117* | 4.90 / 100 |
+| I-3 | 10 | 0.18525 | 10 | 5.34 | 0.9892 | 0.080 | 0.019 | 0.0384 | 25.8922 | 0.5846 | 5.90 / 100 |
+| I-6 | 5 | 0.15669 | 10 | 5.34 | 0.8367 | 0.007 | 0.026 | 0.0332 | 12.6924 | 0.5940 | 5.20 / 93.59 |
+| I-7 | 15 | 1.42181 | 10 | 5.34 | 7.5924 | 0.0162 | 0.0291 | 0.0303 | 40.5046 (k=0.54) | 0.5651 | 10.0 / 79.56 |
 
-\* EX-I-1 is SUMP; its workbook spread (3.2 ft) came from FlowMaster, not the on-grade formula — the oracle test for this row asserts Q, pickup 100%, and bypass 0 only; the sump path renders "—" for spread in the app.
+\* I-2 frozen helpers: X=0.0303, Z (k=0.58)=21.7614, AB=0.9117. The E=0.9117 formula-chain value vs displayed 100% again reflects the FlowMaster manual inputs.
+
+The oracle tests assert the **formula-chain** columns (SxEff, Lt, E) and Q — not the displayed Spread/Pickup, which depend on FlowMaster runs. Bypass CA out in the app is totalCA × (1−E) from the chain; the workbook's R column used the manual pickup % instead (R18=0.01004 from 93.59%, vs the chain's 0.15669×(1−0.594)=0.0636) — recorded here so nobody "fixes" the app to match R18.
 
 Additional oracle: the workbook's helper-column math must reproduce EX-I-1's upstream-bypass accumulation (`R13+R19` → I-1's own row shows bypass arriving from I-1 and I-7 chains) — covered by the chaining tests below rather than a single-row oracle.
 
