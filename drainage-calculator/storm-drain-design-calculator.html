@@ -4389,7 +4389,7 @@ function buildWorkbook(){
   const rfSrc    = state.rainfall.rainfallSource;
   const daStorms = availableStorms(rfSrc);
   const daQHdrs  = daStorms.map(s => "Q_" + s + " (cfs)");
-  const daHeader = ["ID","Description","Area A (ac)","C","CA","i Override (in/hr)","Tc (min)","Cf","Tc Method", ...daQHdrs];
+  const daHeader = ["ID","Description","Area A (ac)","C","CA","i Override (in/hr)","Tc (min)","Cf","Tc Method","Structure", ...daQHdrs];
   const daRows   = [daHeader];
   state.drainage.forEach(r => {
     const calc = calcDrainageRow(r);
@@ -4401,11 +4401,15 @@ function buildWorkbook(){
       (r.iOverride !== "" && r.iOverride != null) ? num(r.iOverride) : "",
       num(r.tc), num(r.cf, 1),
       r.tcMethod||"direct",
+      (()=>{
+        const linked = state.structures.find(s => s.drainageAreaId === r.id);
+        return linked ? (linked.structureId || "") : "";
+      })(),
       ...qVals
     ]);
   });
   const wsDa = XLSX.utils.aoa_to_sheet(daRows);
-  wsDa["!cols"] = [{wch:12},{wch:26},{wch:11},{wch:8},{wch:8},{wch:14},{wch:9},{wch:7},{wch:11},
+  wsDa["!cols"] = [{wch:12},{wch:26},{wch:11},{wch:8},{wch:8},{wch:14},{wch:9},{wch:7},{wch:11},{wch:12},
     ...daStorms.map(()=>({wch:10}))];
   XLSX.utils.book_append_sheet(wb, wsDa, "Drainage Area");
 
@@ -4684,13 +4688,18 @@ function buildWorkbook(){
     ["Street", is.street||""],
     ["Default Allowable Spread (ft)", is.allowableSpread!=null?is.allowableSpread:""],
     [],
-    ["Label","Structure Type","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
+    ["Linked Structure","Label","Structure Type","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
      "S","Sx","W (ft)","a (ft)","n","Allowable Spread (ft)","Bypass To",
      "Q (cfs)","Spread T (ft)","Pickup (%)","Bypass CA out"],
   ];
   state.inletSpacing.forEach(r=>{
     const cc = isChain.results[r.id]||{};
     isAoa.push([
+      (()=>{
+        if (!r.linkedStructureId) return "";
+        const st = state.structures.find(s => s.id === r.linkedStructureId);
+        return st ? (st.structureId || "") : "";
+      })(),
       r.label||"", r.structureType||"",
       r.L!==""&&r.L!=null?num(r.L):r.L,
       r.area!==""&&r.area!=null?num(r.area):r.area,
@@ -4710,7 +4719,7 @@ function buildWorkbook(){
     ]);
   });
   const wsIs = XLSX.utils.aoa_to_sheet(isAoa);
-  wsIs["!cols"] = [{wch:14},{wch:18},{wch:8},{wch:10},{wch:7},{wch:9},{wch:16},
+  wsIs["!cols"] = [{wch:14},{wch:14},{wch:18},{wch:8},{wch:10},{wch:7},{wch:9},{wch:16},
                    {wch:9},{wch:8},{wch:8},{wch:8},{wch:7},{wch:16},{wch:12},
                    {wch:10},{wch:12},{wch:11},{wch:14}];
   XLSX.utils.book_append_sheet(wb, wsIs, "Inlet Spacing");
@@ -4942,7 +4951,7 @@ function importExcel(file){
           const v = row[1];
           if(k==="Street") newSettings.street=String(v||"");
           else if(k==="Default Allowable Spread (ft)") newSettings.allowableSpread=(v!==""&&v!=null)?v:8;
-          else if(k==="Label") dataHeaderIdx=i;
+          else if(k==="Label" || k==="Linked Structure") dataHeaderIdx=i;
         });
         if(dataHeaderIdx>=0){
           const headers = isAoa[dataHeaderIdx].map(h=>String(h).trim());
@@ -4966,6 +4975,13 @@ function importExcel(file){
               row.n   = g("n")!==""?String(g("n")):row.n;
               row.allowableSpread = g("Allowable Spread (ft)")!==""?String(g("Allowable Spread (ft)")):"";
               row.bypassTo = String(g("Bypass To")||"");
+              const linkedStructName = String(g("Linked Structure")||"").trim();
+              if (linkedStructName) {
+                const matchSt = state.structures.find(s => (s.structureId||"") === linkedStructName);
+                row.linkedStructureId = matchSt ? matchSt.id : "";
+              } else {
+                row.linkedStructureId = "";
+              }
               return row;
             });
         }

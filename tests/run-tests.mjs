@@ -361,6 +361,17 @@ test("resolvedInletFields: non-blank row field is kept as override", () => {
   st.drainageAreaId = origLinked;
 });
 
+test("buildWorkbook: Inlet Spacing sheet has Linked Structure column", () => {
+  const wb = sdc.buildWorkbook();
+  const XLSX = window.XLSX;
+  const ws = wb.Sheets["Inlet Spacing"];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+  // Find the data header row (first row where first cell is "Linked Structure" OR second cell is "Label")
+  const headerRow = aoa.find(r => r[0] === "Linked Structure" || r[1] === "Label");
+  assert.ok(headerRow, "Linked Structure column header row not found");
+  assert.equal(headerRow[0], "Linked Structure", "First column should be Linked Structure");
+});
+
 test("computeInletRow uses linkedStructureId DA auto-fill for area/C/tc", () => {
   const da = sdc.state.drainage[0];
   const st = sdc.state.structures[0];
