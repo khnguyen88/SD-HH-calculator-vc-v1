@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "WebFetch(domain:hdsc.nws.noaa.gov)",
+      "Bash(powershell -Command ' *)",
+      "Bash(node *)",
+      "Bash(npm test *)"
+    ]
+  }
+}
