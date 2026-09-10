@@ -222,3 +222,13 @@ test("chain: orphan bypassTo flagged", () => {
   const { orphans } = sdc.computeInletChain([r1], s);
   assert.ok(orphans.length === 1, "orphan must be flagged");
 });
+
+test("availableStorms: moco returns 3 storms", () => {
+  assert.deepEqual([...sdc.availableStorms("moco")], ["2yr","5yr","10yr"]);
+});
+test("availableStorms: noaa returns 3 storms", () => {
+  assert.deepEqual([...sdc.availableStorms("noaa")], ["2yr","10yr","25yr"]);
+});
+test("availableStorms: mdsha returns 3 storms", () => {
+  assert.deepEqual([...sdc.availableStorms("mdsha")], ["2yr","10yr","25yr"]);
+});

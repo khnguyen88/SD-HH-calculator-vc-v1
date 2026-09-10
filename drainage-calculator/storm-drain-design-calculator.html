@@ -2698,12 +2698,158 @@ function renderKb(){
 /* ---------------------------------------------------------------------
    Rainfall & IDF tab
 --------------------------------------------------------------------- */
-function renderRainfall(){
+function renderRainfallIdfTable(c) {
+  // placeholder — implemented in Task 5
+}
+
+function renderRainfall() {
   const c = document.getElementById("view-rainfall");
-  if(!c) return;
+  if (!c) return;
   c.innerHTML = "";
-  c.appendChild(el("h1",{},"Rainfall & IDF"));
-  c.appendChild(el("p",{class:"view-desc"},"Stub — see Task 4."));
+  const r = state.rainfall;
+
+  c.appendChild(el("h1", {}, "Rainfall & IDF"));
+  c.appendChild(el("p", {class:"view-desc"},
+    "Shared rainfall settings for the entire project. Pipe & HGL tabs use the Pipe design storm; " +
+    "Inlet Spacing uses the Inlet design storm. The IDF table shows intensities at standard Tₜ values."));
+
+  // ---- Settings section ----
+  const settingsSec = el("div", {class:"section"});
+  settingsSec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Project Rainfall Settings")]));
+  const sRow = el("div", {style:"display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:12px 0;"});
+
+  // Source
+  const srcField = el("div", {class:"field"});
+  srcField.appendChild(el("label", {}, "Rainfall Source"));
+  const srcSel = el("select", {class:"cell-input", style:"width:200px;",
+    "data-focus-key":"rf:source",
+    onchange: (e) => {
+      r.rainfallSource = e.target.value;
+      const valid = availableStorms(r.rainfallSource);
+      if (!valid.includes(r.pipeStorm))  r.pipeStorm  = "10yr";
+      if (!valid.includes(r.inletStorm)) r.inletStorm = "2yr";
+      withFocusPreserved(renderAll);
+    }});
+  [["noaa","NOAA Atlas 14 (per county)"],["mdsha","MDSHA Agency Table"],["moco","MoCo Agency Table"]].forEach(([v,l]) => {
+    const o = el("option", {value:v}, l);
+    if (r.rainfallSource === v) o.selected = true;
+    srcSel.appendChild(o);
+  });
+  srcField.appendChild(srcSel);
+  sRow.appendChild(srcField);
+
+  // County (NOAA only)
+  if (r.rainfallSource === "noaa") {
+    const ctyField = el("div", {class:"field"});
+    ctyField.appendChild(el("label", {}, "County"));
+    const ctySel = el("select", {class:"cell-input", style:"width:180px;",
+      "data-focus-key":"rf:county",
+      onchange: (e) => { r.county = e.target.value; withFocusPreserved(renderAll); }});
+    NOAA_COUNTY_LIST.forEach(cty => {
+      const o = el("option", {value:cty}, cty);
+      if (r.county === cty) o.selected = true;
+      ctySel.appendChild(o);
+    });
+    const oCustom = el("option", {value:"Custom"}, "Custom (enter below)");
+    if (r.county === "Custom") oCustom.selected = true;
+    ctySel.appendChild(oCustom);
+    ctyField.appendChild(ctySel);
+    sRow.appendChild(ctyField);
+  }
+
+  settingsSec.appendChild(sRow);
+
+  // Custom NOAA intensity inputs
+  if (r.rainfallSource === "noaa" && r.county === "Custom") {
+    const customRow = el("div", {style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:8px 0;"});
+    customRow.appendChild(el("span", {style:"font-size:0.85em;opacity:0.7;align-self:center;"}, "Custom intensities (in/hr):"));
+    [5,10,15,30,60].forEach(d => {
+      const f = el("div", {class:"field"});
+      f.appendChild(el("label", {}, d+"-min"));
+      f.appendChild(el("input", {class:"cell-input", type:"text", inputmode:"decimal", style:"width:70px;",
+        "data-focus-key":"rf:custom:"+d,
+        value: (r.customNoaa && r.customNoaa[d] !== undefined) ? r.customNoaa[d] : "",
+        oninput: (e) => {
+          r.customNoaa = Object.assign({}, r.customNoaa);
+          r.customNoaa[d] = e.target.value;
+          withFocusPreserved(renderAll);
+        }}));
+      customRow.appendChild(f);
+    });
+    settingsSec.appendChild(customRow);
+  }
+
+  // NOAA validation link + county point note
+  if (r.rainfallSource === "noaa" && r.county !== "Custom" && NOAA_ATLAS14[r.county]) {
+    const entry = NOAA_ATLAS14[r.county];
+    const href = "https://hdsc.nws.noaa.gov/pfds/pfds_point_cu.html?lat=" + entry.lat +
+                 "&lon=" + entry.lon + "&data=intensity&units=us&series=pds";
+    const noteDiv = el("div", {style:"padding:6px 0 4px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;"});
+    noteDiv.appendChild(el("a", {href, target:"_blank", style:"font-size:0.9em;"}, "Validate on NOAA Atlas 14 ↗"));
+    noteDiv.appendChild(el("span", {style:"font-size:0.8em;opacity:0.6;"},
+      "Represents lat " + entry.lat + ", lon " + entry.lon +
+      " (county centroid, pulled 2026-09-09). Values vary within the county; use Custom for project-specific accuracy."));
+    settingsSec.appendChild(noteDiv);
+  }
+
+  c.appendChild(settingsSec);
+
+  // ---- Design Storms section ----
+  const stormSec = el("div", {class:"section"});
+  stormSec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Design Storms")]));
+  const stRow = el("div", {style:"display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;padding:12px 0;"});
+
+  const storms = availableStorms(r.rainfallSource);
+  const stormLabels = {"2yr":"2-year","5yr":"5-year","10yr":"10-year","25yr":"25-year"};
+
+  // Pipe & HGL storm
+  const pipeStormField = el("div", {class:"field"});
+  pipeStormField.appendChild(el("label", {}, "Pipe & HGL Design Storm"));
+  const pipeSel = el("select", {class:"cell-input", style:"width:130px;",
+    "data-focus-key":"rf:pipeStorm",
+    onchange: (e) => { r.pipeStorm = e.target.value; withFocusPreserved(renderAll); }});
+  storms.forEach(s => {
+    const o = el("option", {value:s}, stormLabels[s]||s);
+    if (r.pipeStorm === s) o.selected = true;
+    pipeSel.appendChild(o);
+  });
+  pipeStormField.appendChild(pipeSel);
+  stRow.appendChild(pipeStormField);
+
+  // Inlet storm
+  const inletStormField = el("div", {class:"field"});
+  inletStormField.appendChild(el("label", {}, "Inlet Design Storm"));
+  const inletSel = el("select", {class:"cell-input", style:"width:130px;",
+    "data-focus-key":"rf:inletStorm",
+    onchange: (e) => { r.inletStorm = e.target.value; withFocusPreserved(renderAll); }});
+  storms.forEach(s => {
+    const o = el("option", {value:s}, stormLabels[s]||s);
+    if (r.inletStorm === s) o.selected = true;
+    inletSel.appendChild(o);
+  });
+  inletStormField.appendChild(inletSel);
+  stRow.appendChild(inletStormField);
+
+  // 25-yr check checkbox (hidden when pipeStorm is already 25yr)
+  if (r.pipeStorm !== "25yr") {
+    const chkField = el("div", {class:"field"});
+    chkField.appendChild(el("label", {}, " "));
+    const chkLabel = el("label", {style:"display:flex;align-items:center;gap:8px;cursor:pointer;"});
+    const chk = el("input", {type:"checkbox",
+      "data-focus-key":"rf:pipe25Check",
+      onchange: (e) => { r.pipe25Check = e.target.checked; withFocusPreserved(renderAll); }});
+    chk.checked = r.pipe25Check;
+    chkLabel.appendChild(chk);
+    chkLabel.appendChild(document.createTextNode("Also compute 25-yr pipe & HGL check"));
+    chkField.appendChild(chkLabel);
+    stRow.appendChild(chkField);
+  }
+
+  stormSec.appendChild(stRow);
+  c.appendChild(stormSec);
+
+  // IDF table — implemented in Task 5
+  renderRainfallIdfTable(c);
 }
 
 /* ---------------------------------------------------------------------
@@ -4519,7 +4665,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   TR55_SHEET_N, TR55_CHANNEL_N, TR55_SEGMENT_TYPES, tr55SegmentCalc, tr55DefaultSegment,
   lookupIntensity, interpolatePL, computeSxEff, computeSpread, computeInterception, computeInletRow,
   computeInletChain, computeRowIntensity, buildInletSpacingSheet,
-  defaultInletSpacingRow, defaultInletSpacingSettings,
+  defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET };
 
 })();
