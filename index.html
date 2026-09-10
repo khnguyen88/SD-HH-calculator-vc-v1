@@ -149,6 +149,7 @@ button, input, select{ font-family:inherit; font-size:inherit; color:inherit; }
 .btn:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
 .btn-primary{ background:var(--accent); color:#04231F; border-color:var(--accent); }
 .btn-primary:hover{ background:var(--accent-dim); border-color:var(--accent-dim); }
+.btn:disabled{ opacity:0.45; cursor:not-allowed; pointer-events:none; }
 .btn-ghost{ background:transparent; }
 .btn-sm{ padding:5px 9px; font-size:11.5px; }
 .btn-danger{ color:var(--fail); }
@@ -341,6 +342,48 @@ select.cell-input{ font-family:var(--font-ui); }
 #toast.err{ border-color:var(--fail); }
 #toast.err b{ color:var(--fail); }
 
+.saves-wrap{ position:relative; }
+.saves-popover{
+  display:none;
+  position:absolute;
+  top:calc(100% + 6px);
+  right:0;
+  z-index:200;
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  min-width:320px;
+  max-width:420px;
+  box-shadow:0 4px 16px rgba(0,0,0,0.4);
+  padding:10px 0;
+}
+.saves-popover.open{ display:block; }
+.saves-popover-header{
+  padding:4px 14px 8px;
+  font-size:11px;
+  color:var(--muted);
+  border-bottom:1px solid var(--border-soft);
+  margin-bottom:6px;
+}
+.saves-empty{ padding:8px 14px; color:var(--muted); font-size:12.5px; }
+.save-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:5px 14px;
+  cursor:pointer;
+}
+.save-row:hover{ background:rgba(255,255,255,0.03); }
+.save-row-name{
+  flex:1;
+  font-size:12.5px;
+  color:var(--text);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  font-family:var(--font-mono);
+}
+
 @media (prefers-reduced-motion: reduce){
   *{ transition:none !important; }
 }
@@ -475,6 +518,14 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
         <span class="tab-label" id="tabLabel"></span>
       </div>
       <div class="topbar-right">
+        <button class="btn btn-sm" id="saveCompBtn" title="Save current project to browser storage">&#8964; Save</button>
+        <div class="saves-wrap">
+          <button class="btn btn-sm" id="savesMenuBtn" title="View and restore browser-saved projects">Saves (<span id="savesCount">0</span>) &#9660;</button>
+          <div class="saves-popover" id="savesPopover">
+            <div class="saves-popover-header">Saved in this browser only &mdash; export to Excel for a permanent record</div>
+            <div id="savesList"></div>
+          </div>
+        </div>
         <button class="btn" id="importBtn" title="Import a previously exported .xlsx file">&#8593; Import from Excel</button>
         <input type="file" id="importFile" accept=".xlsx">
         <button class="btn btn-primary" id="exportBtn" title="Export all tables to a .xlsx file">&#8595; Export to Excel</button>
@@ -1920,6 +1971,146 @@ function toast(msg, isErr){
   clearTimeout(toast._h);
   toast._h = setTimeout(()=>t.classList.remove("show"), 3800);
 }
+
+const SAVES_KEY = "sdCalc_saves";
+const SAVES_MAX = 5;
+
+function getSaves(){
+  try {
+    const raw = localStorage.getItem(SAVES_KEY);
+    if(!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+function setSaves(saves){
+  try {
+    localStorage.setItem(SAVES_KEY, JSON.stringify(saves));
+    return true;
+  } catch(e) {
+    toast("Browser storage unavailable — save not written.", true);
+    return false;
+  }
+}
+
+function captureState(){
+  const snap = JSON.parse(JSON.stringify({
+    drainage: state.drainage,
+    structures: state.structures,
+    pipes: state.pipes,
+    kb: state.kb,
+    outletStructures: state.outletStructures,
+    outletDevices: state.outletDevices,
+    activeOutletId: state.activeOutletId,
+    outletShowGeometryDetail: state.outletShowGeometryDetail,
+    inletSpacing: state.inletSpacing,
+    inletSpacingSettings: state.inletSpacingSettings,
+    rainfall: state.rainfall,
+  }));
+  return snap;
+}
+
+function restoreState(snap, projectName){
+  state.drainage = snap.drainage || [];
+  state.structures = snap.structures || [];
+  state.pipes = snap.pipes || [];
+  state.kb = snap.kb || defaultKbRows();
+  state.outletStructures = snap.outletStructures || [];
+  state.outletDevices = snap.outletDevices || [];
+  state.activeOutletId = snap.activeOutletId || "";
+  state.outletShowGeometryDetail = snap.outletShowGeometryDetail !== undefined ? snap.outletShowGeometryDetail : true;
+  state.inletSpacing = snap.inletSpacing || [];
+  state.inletSpacingSettings = snap.inletSpacingSettings || defaultInletSpacingSettings();
+  state.rainfall = snap.rainfall || defaultRainfallSettings();
+  const restoredName = projectName || "Untitled Storm Drain Project";
+  state.project = restoredName;
+  document.getElementById("projectName").value = restoredName;
+  renderAll();
+}
+
+function formatSaveTimestamp(ms){
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+" "+pad(d.getHours())+":"+pad(d.getMinutes());
+}
+
+function saveComp(){
+  const saves = getSaves();
+  if(saves.length >= SAVES_MAX){
+    toast("Save limit reached — delete a save first.", true);
+    return;
+  }
+  const projectName = document.getElementById("projectName").value || "Untitled";
+  const now = Date.now();
+  const entry = {
+    id: "save_"+now+"_"+Math.random().toString(36).slice(2,7),
+    name: projectName + " — " + formatSaveTimestamp(now),
+    projectName: projectName,
+    savedAt: now,
+    state: captureState(),
+  };
+  saves.push(entry);
+  if(!setSaves(saves)) return;
+  updateSavesUI();
+  toast("Saved <b>"+escapeHtml(entry.name)+"</b>.");
+}
+
+function loadComp(id){
+  const saves = getSaves();
+  const entry = saves.find(s => s.id === id);
+  if(!entry) return;
+  restoreState(entry.state, entry.projectName);
+  closeSavesPopover();
+  toast("Loaded <b>"+escapeHtml(entry.name)+"</b>.");
+}
+
+function deleteComp(id){
+  const saves = getSaves().filter(s => s.id !== id);
+  if(!setSaves(saves)) return;
+  updateSavesUI();
+  toast("Save deleted.");
+}
+
+function renderSavesPopover(){
+  const saves = getSaves();
+  const list = document.getElementById("savesList");
+  list.innerHTML = "";
+  if(saves.length === 0){
+    list.appendChild(el("div",{class:"saves-empty"},"No saves yet."));
+    return;
+  }
+  saves.slice().reverse().forEach(entry => {
+    const row = el("div",{class:"save-row"});
+    row.appendChild(el("span",{class:"save-row-name", title:entry.name}, entry.name));
+    const loadBtn = el("button",{class:"btn btn-sm", onclick:()=>loadComp(entry.id)}, "Load");
+    const delBtn2 = el("button",{class:"btn btn-sm", style:"color:var(--fail);", title:"Delete this save", onclick:()=>deleteComp(entry.id)}, "✕");
+    row.appendChild(loadBtn);
+    row.appendChild(delBtn2);
+    list.appendChild(row);
+  });
+}
+
+function updateSavesUI(){
+  const saves = getSaves();
+  document.getElementById("savesCount").textContent = saves.length;
+  const saveBtn = document.getElementById("saveCompBtn");
+  if(saves.length >= SAVES_MAX){
+    saveBtn.disabled = true;
+    saveBtn.title = "Save limit reached ("+SAVES_MAX+") — delete a save first";
+  } else {
+    saveBtn.disabled = false;
+    saveBtn.title = "Save current project to browser storage";
+  }
+  renderSavesPopover();
+}
+
+function closeSavesPopover(){
+  document.getElementById("savesPopover").classList.remove("open");
+}
+
 function delBtn(onClick){
   return el("button",{class:"row-del", title:"Delete row", onclick:onClick}, "\u2715");
 }
@@ -4992,6 +5183,7 @@ function importExcel(file){
       }
 
       renderAll();
+      updateSavesUI();
       toast("Imported <b>"+escapeHtml(file.name)+"</b>.");
     }catch(err){
       console.error(err);
@@ -5010,6 +5202,26 @@ function init(){
 
   document.getElementById("projectName").value = state.project;
   document.getElementById("projectName").addEventListener("input", (e)=>{ state.project = e.target.value; });
+
+  updateSavesUI();
+
+  document.getElementById("saveCompBtn").addEventListener("click", saveComp);
+
+  document.getElementById("savesMenuBtn").addEventListener("click", (e)=>{
+    e.stopPropagation();
+    const pop = document.getElementById("savesPopover");
+    const isOpen = pop.classList.contains("open");
+    if(!isOpen) renderSavesPopover();
+    pop.classList.toggle("open", !isOpen);
+  });
+
+  document.addEventListener("click", (e)=>{
+    const pop = document.getElementById("savesPopover");
+    const btn = document.getElementById("savesMenuBtn");
+    if(pop.classList.contains("open") && !pop.contains(e.target) && !btn.contains(e.target)){
+      closeSavesPopover();
+    }
+  });
 
   document.getElementById("exportBtn").addEventListener("click", exportExcel);
   const fileInput = document.getElementById("importFile");
