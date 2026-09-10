@@ -29,3 +29,6 @@ yarn-error.log*
 
 # Claude Code project instructions (local only)
 CLAUDE.md
+
+# Git worktrees
+.worktrees/
