@@ -1,0 +1,11 @@
+{
+  "name": "storm-drain-tests",
+  "type": "module",
+  "scripts": {
+    "test": "node --test run-tests.mjs"
+  },
+  "dependencies": {
+    "jsdom": "^25.0.0",
+    "xlsx": "^0.18.5"
+  }
+}
