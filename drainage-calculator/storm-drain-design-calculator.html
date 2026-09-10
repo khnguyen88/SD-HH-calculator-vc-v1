@@ -596,6 +596,343 @@ const STRUCTURE_TYPES = [
   ["inlet","Inlet"], ["manhole","Manhole"], ["bend","Bend"],
   ["junction","Junction"], ["splitter","Flow Splitter"], ["outfall","Outfall"]
 ];
+// MDSHA (SHA Intensity sheet, bburg-p-c.xlsx). Intensities in/hr.
+// Clamp below Tc=5 → use 5-min value; clamp above last breakpoint → use last value.
+const MDSHA_INTENSITY = {
+  "2yr":  [[5, 5.016], [10, 4.788], [15, 3.364]],
+  "10yr": [[5, 6.684], [10, 5.340], [15, 4.520], [30, 3.260]],
+  "25yr": [[5, 7.572], [10, 6.000], [15, 5.080], [30, 3.780]],
+};
+
+// MoCo (Intensity sheet, bburg-p-c.xlsx). 2YR/5YR/10YR; no 25-yr column.
+const MOCO_INTENSITY = {
+  "2yr":  [[5, 5.52], [10, 4.28], [15, 3.54], [20, 3.04], [30, 2.40], [60, 1.52]],
+  "5yr":  [[5, 6.39], [10, 5.16], [15, 4.36], [20, 3.78], [30, 3.02], [60, 1.93]],
+  "10yr": [[5, 7.07], [10, 5.85], [15, 5.00], [20, 4.37], [30, 3.49], [60, 2.19]],
+};
+
+// NOAA Atlas 14 PDS intensities (in/hr) for Maryland counties and DC.
+// Source: NOAA PFDS API (https://hdsc.nws.noaa.gov/hdsc/pfds/), PDS series, US customary units.
+// Pull date: 2026-09-09
+// Coordinates: county seat or centroid per jurisdiction (listed per entry).
+// Note: Values represent a single representative point; actual values vary within each county.
+// Users needing project-specific intensity should use the Custom county option.
+//
+// Method: Raw quantiles array fetched from NOAA PFDS API for each coordinate.
+//   Array structure: 19 durations × 10 return periods.
+//   Columns (0-indexed): 1-yr(0), 2-yr(1), 5-yr(2), 10-yr(3), 25-yr(4), ...
+//   Rows used: 5-min(0), 10-min(1), 15-min(2), 30-min(3), 60-min(4).
+//   Conversion: intensity (in/hr) = depth (in) / (duration_min / 60), rounded to 2 decimal places.
+const NOAA_ATLAS14 = {
+  "Allegany": {
+    lat: 39.6529, lon: -78.7625,
+    // depths: 5min=[0.349,0.485,0.566] 10min=[0.545,0.748,0.865] 15min=[0.667,0.921,1.07] 30min=[0.892,1.28,1.51] 60min=[1.10,1.63,1.96]
+    "2yr":  { 5: 4.19, 10: 3.27, 15: 2.67, 30: 1.78, 60: 1.10 },
+    "10yr": { 5: 5.82, 10: 4.49, 15: 3.68, 30: 2.56, 60: 1.63 },
+    "25yr": { 5: 6.79, 10: 5.19, 15: 4.28, 30: 3.02, 60: 1.96 },
+  },
+  "Anne Arundel": {
+    lat: 38.9784, lon: -76.4922,
+    // depths: 5min=[0.417,0.554,0.626] 10min=[0.666,0.885,0.998] 15min=[0.838,1.12,1.26] 30min=[1.16,1.62,1.87] 60min=[1.45,2.11,2.49]
+    "2yr":  { 5: 5.00, 10: 4.00, 15: 3.35, 30: 2.32, 60: 1.45 },
+    "10yr": { 5: 6.65, 10: 5.31, 15: 4.48, 30: 3.24, 60: 2.11 },
+    "25yr": { 5: 7.51, 10: 5.99, 15: 5.04, 30: 3.74, 60: 2.49 },
+  },
+  "Baltimore City": {
+    lat: 39.2904, lon: -76.6122,
+    // depths: 5min=[0.414,0.549,0.621] 10min=[0.662,0.879,0.990] 15min=[0.833,1.11,1.25] 30min=[1.15,1.61,1.86] 60min=[1.44,2.10,2.47]
+    "2yr":  { 5: 4.97, 10: 3.97, 15: 3.33, 30: 2.30, 60: 1.44 },
+    "10yr": { 5: 6.59, 10: 5.27, 15: 4.44, 30: 3.22, 60: 2.10 },
+    "25yr": { 5: 7.45, 10: 5.94, 15: 5.00, 30: 3.72, 60: 2.47 },
+  },
+  "Baltimore County": {
+    lat: 39.3951, lon: -76.6017,
+    // depths: 5min=[0.419,0.554,0.625] 10min=[0.671,0.886,0.996] 15min=[0.843,1.12,1.26] 30min=[1.16,1.62,1.87] 60min=[1.46,2.11,2.49]
+    "2yr":  { 5: 5.03, 10: 4.03, 15: 3.37, 30: 2.32, 60: 1.46 },
+    "10yr": { 5: 6.65, 10: 5.32, 15: 4.48, 30: 3.24, 60: 2.11 },
+    "25yr": { 5: 7.50, 10: 5.98, 15: 5.04, 30: 3.74, 60: 2.49 },
+  },
+  "Calvert": {
+    lat: 38.5401, lon: -76.5858,
+    // depths: 5min=[0.432,0.573,0.648] 10min=[0.691,0.916,1.03] 15min=[0.869,1.16,1.31] 30min=[1.20,1.68,1.94] 60min=[1.51,2.19,2.58]
+    "2yr":  { 5: 5.18, 10: 4.15, 15: 3.48, 30: 2.40, 60: 1.51 },
+    "10yr": { 5: 6.88, 10: 5.50, 15: 4.64, 30: 3.36, 60: 2.19 },
+    "25yr": { 5: 7.78, 10: 6.18, 15: 5.24, 30: 3.88, 60: 2.58 },
+  },
+  "Caroline": {
+    lat: 38.8890, lon: -75.8283,
+    // depths: 5min=[0.418,0.554,0.626] 10min=[0.669,0.886,0.998] 15min=[0.841,1.12,1.26] 30min=[1.16,1.62,1.87] 60min=[1.46,2.11,2.49]
+    "2yr":  { 5: 5.02, 10: 4.01, 15: 3.36, 30: 2.32, 60: 1.46 },
+    "10yr": { 5: 6.65, 10: 5.32, 15: 4.48, 30: 3.24, 60: 2.11 },
+    "25yr": { 5: 7.51, 10: 5.99, 15: 5.04, 30: 3.74, 60: 2.49 },
+  },
+  "Carroll": {
+    lat: 39.5757, lon: -76.9958,
+    // depths: 5min=[0.397,0.523,0.593] 10min=[0.635,0.836,0.941] 15min=[0.796,1.05,1.19] 30min=[1.10,1.52,1.76] 60min=[1.37,1.98,2.34]
+    "2yr":  { 5: 4.76, 10: 3.81, 15: 3.18, 30: 2.20, 60: 1.37 },
+    "10yr": { 5: 6.28, 10: 5.02, 15: 4.20, 30: 3.04, 60: 1.98 },
+    "25yr": { 5: 7.12, 10: 5.65, 15: 4.76, 30: 3.52, 60: 2.34 },
+  },
+  "Cecil": {
+    lat: 39.6062, lon: -75.8333,
+    // depths: 5min=[0.412,0.537,0.599] 10min=[0.659,0.858,0.955] 15min=[0.828,1.08,1.21] 30min=[1.14,1.57,1.79] 60min=[1.44,2.05,2.39]
+    "2yr":  { 5: 4.94, 10: 3.95, 15: 3.31, 30: 2.28, 60: 1.44 },
+    "10yr": { 5: 6.44, 10: 5.15, 15: 4.32, 30: 3.14, 60: 2.05 },
+    "25yr": { 5: 7.19, 10: 5.73, 15: 4.84, 30: 3.58, 60: 2.39 },
+  },
+  "Charles": {
+    lat: 38.5287, lon: -76.9750,
+    // depths: 5min=[0.436,0.579,0.654] 10min=[0.698,0.924,1.04] 15min=[0.877,1.17,1.32] 30min=[1.21,1.69,1.96] 60min=[1.52,2.21,2.61]
+    "2yr":  { 5: 5.23, 10: 4.19, 15: 3.51, 30: 2.42, 60: 1.52 },
+    "10yr": { 5: 6.95, 10: 5.54, 15: 4.68, 30: 3.38, 60: 2.21 },
+    "25yr": { 5: 7.85, 10: 6.24, 15: 5.28, 30: 3.92, 60: 2.61 },
+  },
+  "Dorchester": {
+    lat: 38.5632, lon: -76.0788,
+    // depths: 5min=[0.428,0.570,0.645] 10min=[0.685,0.911,1.03] 15min=[0.861,1.15,1.30] 30min=[1.19,1.67,1.93] 60min=[1.49,2.17,2.57]
+    "2yr":  { 5: 5.14, 10: 4.11, 15: 3.44, 30: 2.38, 60: 1.49 },
+    "10yr": { 5: 6.84, 10: 5.47, 15: 4.60, 30: 3.34, 60: 2.17 },
+    "25yr": { 5: 7.74, 10: 6.18, 15: 5.20, 30: 3.86, 60: 2.57 },
+  },
+  "Frederick": {
+    lat: 39.4143, lon: -77.4105,
+    // depths: 5min=[0.406,0.543,0.622] 10min=[0.645,0.861,0.979] 15min=[0.804,1.08,1.23] 30min=[1.10,1.54,1.80] 60min=[1.37,2.00,2.38]
+    "2yr":  { 5: 4.87, 10: 3.87, 15: 3.22, 30: 2.20, 60: 1.37 },
+    "10yr": { 5: 6.52, 10: 5.17, 15: 4.32, 30: 3.08, 60: 2.00 },
+    "25yr": { 5: 7.46, 10: 5.87, 15: 4.92, 30: 3.60, 60: 2.38 },
+  },
+  "Garrett": {
+    lat: 39.4062, lon: -79.4067,
+    // depths: 5min=[0.329,0.444,0.513] 10min=[0.513,0.686,0.784] 15min=[0.627,0.844,0.969] 30min=[0.839,1.17,1.37] 60min=[1.03,1.49,1.77]
+    "2yr":  { 5: 3.95, 10: 3.08, 15: 2.51, 30: 1.68, 60: 1.03 },
+    "10yr": { 5: 5.33, 10: 4.12, 15: 3.38, 30: 2.34, 60: 1.49 },
+    "25yr": { 5: 6.16, 10: 4.70, 15: 3.88, 30: 2.74, 60: 1.77 },
+  },
+  "Harford": {
+    lat: 39.5351, lon: -76.3483,
+    // depths: 5min=[0.416,0.547,0.616] 10min=[0.665,0.875,0.982] 15min=[0.836,1.11,1.24] 30min=[1.16,1.60,1.84] 60min=[1.45,2.09,2.45]
+    "2yr":  { 5: 4.99, 10: 3.99, 15: 3.34, 30: 2.32, 60: 1.45 },
+    "10yr": { 5: 6.56, 10: 5.25, 15: 4.44, 30: 3.20, 60: 2.09 },
+    "25yr": { 5: 7.39, 10: 5.89, 15: 4.96, 30: 3.68, 60: 2.45 },
+  },
+  "Howard": {
+    lat: 39.2673, lon: -76.7983,
+    // depths: 5min=[0.412,0.545,0.616] 10min=[0.658,0.872,0.982] 15min=[0.827,1.10,1.24] 30min=[1.14,1.60,1.84] 60min=[1.43,2.08,2.46]
+    "2yr":  { 5: 4.94, 10: 3.95, 15: 3.31, 30: 2.28, 60: 1.43 },
+    "10yr": { 5: 6.54, 10: 5.23, 15: 4.40, 30: 3.20, 60: 2.08 },
+    "25yr": { 5: 7.39, 10: 5.89, 15: 4.96, 30: 3.68, 60: 2.46 },
+  },
+  "Kent": {
+    lat: 39.2090, lon: -76.0650,
+    // depths: 5min=[0.417,0.551,0.622] 10min=[0.667,0.882,0.991] 15min=[0.839,1.12,1.26] 30min=[1.16,1.62,1.86] 60min=[1.45,2.10,2.48]
+    "2yr":  { 5: 5.00, 10: 4.00, 15: 3.36, 30: 2.32, 60: 1.45 },
+    "10yr": { 5: 6.61, 10: 5.29, 15: 4.48, 30: 3.24, 60: 2.10 },
+    "25yr": { 5: 7.46, 10: 5.95, 15: 5.04, 30: 3.72, 60: 2.48 },
+  },
+  "Montgomery": {
+    lat: 39.0840, lon: -77.1528,
+    // depths: 5min=[0.413,0.550,0.624] 10min=[0.661,0.879,0.994] 15min=[0.830,1.11,1.26] 30min=[1.15,1.61,1.87] 60min=[1.44,2.10,2.48]
+    "2yr":  { 5: 4.96, 10: 3.97, 15: 3.32, 30: 2.30, 60: 1.44 },
+    "10yr": { 5: 6.60, 10: 5.27, 15: 4.44, 30: 3.22, 60: 2.10 },
+    "25yr": { 5: 7.49, 10: 5.96, 15: 5.04, 30: 3.74, 60: 2.48 },
+  },
+  "Prince George's": {
+    lat: 38.8179, lon: -76.7497,
+    // depths: 5min=[0.421,0.559,0.632] 10min=[0.673,0.894,1.01] 15min=[0.846,1.13,1.28] 30min=[1.17,1.64,1.89] 60min=[1.47,2.13,2.52]
+    "2yr":  { 5: 5.05, 10: 4.04, 15: 3.38, 30: 2.34, 60: 1.47 },
+    "10yr": { 5: 6.71, 10: 5.36, 15: 4.52, 30: 3.28, 60: 2.13 },
+    "25yr": { 5: 7.58, 10: 6.06, 15: 5.12, 30: 3.78, 60: 2.52 },
+  },
+  "Queen Anne's": {
+    lat: 39.0390, lon: -76.0688,
+    // depths: 5min=[0.416,0.552,0.624] 10min=[0.666,0.883,0.994] 15min=[0.837,1.12,1.26] 30min=[1.16,1.62,1.87] 60min=[1.45,2.11,2.48]
+    "2yr":  { 5: 4.99, 10: 4.00, 15: 3.35, 30: 2.32, 60: 1.45 },
+    "10yr": { 5: 6.62, 10: 5.30, 15: 4.48, 30: 3.24, 60: 2.11 },
+    "25yr": { 5: 7.49, 10: 5.96, 15: 5.04, 30: 3.74, 60: 2.48 },
+  },
+  "Saint Mary's": {
+    lat: 38.2918, lon: -76.6358,
+    // depths: 5min=[0.436,0.579,0.655] 10min=[0.698,0.926,1.04] 15min=[0.877,1.17,1.32] 30min=[1.21,1.70,1.96] 60min=[1.52,2.21,2.61]
+    "2yr":  { 5: 5.23, 10: 4.19, 15: 3.51, 30: 2.42, 60: 1.52 },
+    "10yr": { 5: 6.95, 10: 5.56, 15: 4.68, 30: 3.40, 60: 2.21 },
+    "25yr": { 5: 7.86, 10: 6.24, 15: 5.28, 30: 3.92, 60: 2.61 },
+  },
+  "Somerset": {
+    lat: 38.1979, lon: -75.6927,
+    // depths: 5min=[0.429,0.568,0.643] 10min=[0.687,0.908,1.02] 15min=[0.863,1.15,1.30] 30min=[1.19,1.66,1.92] 60min=[1.50,2.17,2.56]
+    "2yr":  { 5: 5.15, 10: 4.12, 15: 3.45, 30: 2.38, 60: 1.50 },
+    "10yr": { 5: 6.82, 10: 5.45, 15: 4.60, 30: 3.32, 60: 2.17 },
+    "25yr": { 5: 7.72, 10: 6.12, 15: 5.20, 30: 3.84, 60: 2.56 },
+  },
+  "Talbot": {
+    lat: 38.7743, lon: -76.0763,
+    // depths: 5min=[0.423,0.562,0.636] 10min=[0.677,0.899,1.01] 15min=[0.850,1.14,1.28] 30min=[1.18,1.65,1.90] 60min=[1.47,2.14,2.54]
+    "2yr":  { 5: 5.08, 10: 4.06, 15: 3.40, 30: 2.36, 60: 1.47 },
+    "10yr": { 5: 6.74, 10: 5.39, 15: 4.56, 30: 3.30, 60: 2.14 },
+    "25yr": { 5: 7.63, 10: 6.06, 15: 5.12, 30: 3.80, 60: 2.54 },
+  },
+  "Washington": {
+    lat: 39.6418, lon: -77.7199,
+    // depths: 5min=[0.397,0.547,0.636] 10min=[0.621,0.847,0.976] 15min=[0.762,1.05,1.21] 30min=[1.02,1.46,1.72] 60min=[1.26,1.86,2.23]
+    "2yr":  { 5: 4.76, 10: 3.73, 15: 3.05, 30: 2.04, 60: 1.26 },
+    "10yr": { 5: 6.56, 10: 5.08, 15: 4.20, 30: 2.92, 60: 1.86 },
+    "25yr": { 5: 7.63, 10: 5.86, 15: 4.84, 30: 3.44, 60: 2.23 },
+  },
+  "Wicomico": {
+    lat: 38.3607, lon: -75.5994,
+    // depths: 5min=[0.426,0.564,0.639] 10min=[0.682,0.903,1.02] 15min=[0.857,1.14,1.29] 30min=[1.18,1.65,1.91] 60min=[1.48,2.15,2.54]
+    "2yr":  { 5: 5.11, 10: 4.09, 15: 3.43, 30: 2.36, 60: 1.48 },
+    "10yr": { 5: 6.77, 10: 5.42, 15: 4.56, 30: 3.30, 60: 2.15 },
+    "25yr": { 5: 7.67, 10: 6.12, 15: 5.16, 30: 3.82, 60: 2.54 },
+  },
+  "Worcester": {
+    lat: 38.1771, lon: -75.3927,
+    // depths: 5min=[0.434,0.573,0.648] 10min=[0.694,0.916,1.03] 15min=[0.872,1.16,1.31] 30min=[1.20,1.68,1.94] 60min=[1.51,2.19,2.58]
+    "2yr":  { 5: 5.21, 10: 4.16, 15: 3.49, 30: 2.40, 60: 1.51 },
+    "10yr": { 5: 6.88, 10: 5.50, 15: 4.64, 30: 3.36, 60: 2.19 },
+    "25yr": { 5: 7.78, 10: 6.18, 15: 5.24, 30: 3.88, 60: 2.58 },
+  },
+  "DC": {
+    lat: 38.9072, lon: -77.0369,
+    // depths: 5min=[0.425,0.564,0.639] 10min=[0.679,0.902,1.02] 15min=[0.854,1.14,1.29] 30min=[1.18,1.65,1.91] 60min=[1.48,2.15,2.55]
+    "2yr":  { 5: 5.10, 10: 4.07, 15: 3.42, 30: 2.36, 60: 1.48 },
+    "10yr": { 5: 6.77, 10: 5.41, 15: 4.56, 30: 3.30, 60: 2.15 },
+    "25yr": { 5: 7.67, 10: 6.12, 15: 5.16, 30: 3.82, 60: 2.55 },
+  },
+};
+
+const NOAA_COUNTY_LIST = [
+  "Allegany","Anne Arundel","Baltimore City","Baltimore County",
+  "Calvert","Caroline","Carroll","Cecil","Charles","Dorchester",
+  "Frederick","Garrett","Harford","Howard","Kent","Montgomery",
+  "Prince George's","Queen Anne's","Saint Mary's","Somerset",
+  "Talbot","Washington","Wicomico","Worcester","DC"
+];
+
+// MDSHA Book of Standards Category III — grate inlet library.
+// seedOnly:true = dimensions from workbook seed values, verify against standard sheet before submittal.
+const INLET_STRUCTURES = [
+  { id:"MD 374.01", label:"Curb Opening Inlet (Sh. 1)",        Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.02", label:"Curb Opening Inlet (Sh. 2)",        Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.11", label:"Combination Inlet (Sh. 1)",         Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.12", label:"Combination Inlet (Sh. 2)",         Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.21", label:"Grate Inlet Structures (Sh. 1)",    Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.22", label:"Grate Inlet Structures (Sh. 2)",    Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.31", label:"Standard COG Grate Inlet (Sh. 1)",  Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.32", label:"Standard COG Grate Inlet (Sh. 2)",  Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.41", label:"Combination Inlet COG (Sh. 1)",     Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.42", label:"Combination Inlet COG (Sh. 2)",     Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.51", label:"Precast Sq/Rect COG Inlet",         Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.52", label:"Precast Sq/Rect COS Inlet (1)",     Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.61", label:"Precast Sq/Rect COS Inlet (2)",     Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 374.63", label:"Precast Circular COS Inlet",        Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 375.01", label:"C-1a Precast Curb Inlet (Sh. 1)",   Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 375.02", label:"C-1a Precast Curb Inlet (Sh. 2)",   Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 375.21", label:"C-1c Precast Curb Inlet (Sh. 1)",   Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 375.22", label:"C-1c Precast Curb Inlet (Sh. 2)",   Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 376.01", label:"Inlet Structure Type A (Sh. 1)",    Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 376.02", label:"Inlet Structure Type A (Sh. 2)",    Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 376.11", label:"Inlet Structure Type E",            Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+  { id:"MD 378.01", label:"Precast Concrete Junction Box",     Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
+];
+
+// MoCo Kb preset — from "Kb Values MoCo" sheet of bburg-p-c.xlsx.
+// Inlet: 0.50 at 0° → 0.98 at 38°; Manhole: 0.15→0.66; Bend: 0.01→0.16.
+// Full table covers 0°–90°.
+const MOCO_KB_PRESET = [
+  { angle:  0, inlet: 0.50, manhole: 0.15, bend: 0.01 },
+  { angle:  1, inlet: 0.51, manhole: 0.16, bend: 0.01 },
+  { angle:  2, inlet: 0.52, manhole: 0.18, bend: 0.02 },
+  { angle:  3, inlet: 0.53, manhole: 0.19, bend: 0.02 },
+  { angle:  4, inlet: 0.54, manhole: 0.20, bend: 0.03 },
+  { angle:  5, inlet: 0.54, manhole: 0.22, bend: 0.03 },
+  { angle:  6, inlet: 0.55, manhole: 0.22, bend: 0.03 },
+  { angle:  7, inlet: 0.56, manhole: 0.24, bend: 0.04 },
+  { angle:  8, inlet: 0.57, manhole: 0.26, bend: 0.05 },
+  { angle:  9, inlet: 0.58, manhole: 0.27, bend: 0.05 },
+  { angle: 10, inlet: 0.59, manhole: 0.28, bend: 0.06 },
+  { angle: 11, inlet: 0.60, manhole: 0.30, bend: 0.06 },
+  { angle: 12, inlet: 0.61, manhole: 0.31, bend: 0.07 },
+  { angle: 13, inlet: 0.62, manhole: 0.34, bend: 0.07 },
+  { angle: 14, inlet: 0.62, manhole: 0.34, bend: 0.07 },
+  { angle: 15, inlet: 0.63, manhole: 0.35, bend: 0.08 },
+  { angle: 16, inlet: 0.64, manhole: 0.36, bend: 0.08 },
+  { angle: 17, inlet: 0.65, manhole: 0.38, bend: 0.09 },
+  { angle: 18, inlet: 0.66, manhole: 0.39, bend: 0.09 },
+  { angle: 19, inlet: 0.67, manhole: 0.40, bend: 0.09 },
+  { angle: 20, inlet: 0.68, manhole: 0.42, bend: 0.10 },
+  { angle: 21, inlet: 0.69, manhole: 0.43, bend: 0.10 },
+  { angle: 22, inlet: 0.70, manhole: 0.44, bend: 0.11 },
+  { angle: 23, inlet: 0.71, manhole: 0.46, bend: 0.11 },
+  { angle: 24, inlet: 0.73, manhole: 0.47, bend: 0.11 },
+  { angle: 25, inlet: 0.74, manhole: 0.48, bend: 0.12 },
+  { angle: 26, inlet: 0.76, manhole: 0.50, bend: 0.12 },
+  { angle: 27, inlet: 0.78, manhole: 0.51, bend: 0.13 },
+  { angle: 28, inlet: 0.80, manhole: 0.52, bend: 0.13 },
+  { angle: 29, inlet: 0.82, manhole: 0.54, bend: 0.13 },
+  { angle: 30, inlet: 0.83, manhole: 0.55, bend: 0.14 },
+  { angle: 31, inlet: 0.85, manhole: 0.56, bend: 0.14 },
+  { angle: 32, inlet: 0.87, manhole: 0.58, bend: 0.14 },
+  { angle: 33, inlet: 0.89, manhole: 0.59, bend: 0.14 },
+  { angle: 34, inlet: 0.90, manhole: 0.60, bend: 0.14 },
+  { angle: 35, inlet: 0.92, manhole: 0.62, bend: 0.15 },
+  { angle: 36, inlet: 0.94, manhole: 0.63, bend: 0.15 },
+  { angle: 37, inlet: 0.96, manhole: 0.64, bend: 0.16 },
+  { angle: 38, inlet: 0.98, manhole: 0.66, bend: 0.16 },
+  { angle: 39, inlet: 0.99, manhole: 0.67, bend: 0.16 },
+  { angle: 40, inlet: 1.01, manhole: 0.68, bend: 0.17 },
+  { angle: 41, inlet: 1.03, manhole: 0.70, bend: 0.17 },
+  { angle: 42, inlet: 1.05, manhole: 0.71, bend: 0.17 },
+  { angle: 43, inlet: 1.06, manhole: 0.72, bend: 0.17 },
+  { angle: 44, inlet: 1.08, manhole: 0.74, bend: 0.18 },
+  { angle: 45, inlet: 1.10, manhole: 0.75, bend: 0.18 },
+  { angle: 46, inlet: 1.11, manhole: 0.76, bend: 0.18 },
+  { angle: 47, inlet: 1.12, manhole: 0.76, bend: 0.19 },
+  { angle: 48, inlet: 1.13, manhole: 0.77, bend: 0.19 },
+  { angle: 49, inlet: 1.14, manhole: 0.78, bend: 0.19 },
+  { angle: 50, inlet: 1.15, manhole: 0.78, bend: 0.19 },
+  { angle: 51, inlet: 1.16, manhole: 0.79, bend: 0.19 },
+  { angle: 52, inlet: 1.17, manhole: 0.80, bend: 0.19 },
+  { angle: 53, inlet: 1.18, manhole: 0.80, bend: 0.19 },
+  { angle: 54, inlet: 1.19, manhole: 0.81, bend: 0.20 },
+  { angle: 55, inlet: 1.20, manhole: 0.82, bend: 0.20 },
+  { angle: 56, inlet: 1.21, manhole: 0.82, bend: 0.20 },
+  { angle: 57, inlet: 1.22, manhole: 0.83, bend: 0.20 },
+  { angle: 58, inlet: 1.23, manhole: 0.84, bend: 0.20 },
+  { angle: 59, inlet: 1.24, manhole: 0.84, bend: 0.20 },
+  { angle: 60, inlet: 1.25, manhole: 0.85, bend: 0.20 },
+  { angle: 61, inlet: 1.26, manhole: 0.85, bend: 0.20 },
+  { angle: 62, inlet: 1.27, manhole: 0.86, bend: 0.20 },
+  { angle: 63, inlet: 1.27, manhole: 0.86, bend: 0.20 },
+  { angle: 64, inlet: 1.28, manhole: 0.87, bend: 0.20 },
+  { angle: 65, inlet: 1.29, manhole: 0.87, bend: 0.20 },
+  { angle: 66, inlet: 1.30, manhole: 0.88, bend: 0.21 },
+  { angle: 67, inlet: 1.31, manhole: 0.88, bend: 0.21 },
+  { angle: 68, inlet: 1.32, manhole: 0.89, bend: 0.21 },
+  { angle: 69, inlet: 1.32, manhole: 0.89, bend: 0.21 },
+  { angle: 70, inlet: 1.33, manhole: 0.90, bend: 0.21 },
+  { angle: 71, inlet: 1.34, manhole: 0.91, bend: 0.21 },
+  { angle: 72, inlet: 1.35, manhole: 0.91, bend: 0.21 },
+  { angle: 73, inlet: 1.36, manhole: 0.91, bend: 0.21 },
+  { angle: 74, inlet: 1.37, manhole: 0.92, bend: 0.22 },
+  { angle: 75, inlet: 1.37, manhole: 0.92, bend: 0.22 },
+  { angle: 76, inlet: 1.38, manhole: 0.93, bend: 0.22 },
+  { angle: 77, inlet: 1.39, manhole: 0.93, bend: 0.22 },
+  { angle: 78, inlet: 1.40, manhole: 0.94, bend: 0.22 },
+  { angle: 79, inlet: 1.41, manhole: 0.94, bend: 0.22 },
+  { angle: 80, inlet: 1.42, manhole: 0.95, bend: 0.23 },
+  { angle: 81, inlet: 1.42, manhole: 0.95, bend: 0.23 },
+  { angle: 82, inlet: 1.43, manhole: 0.96, bend: 0.23 },
+  { angle: 83, inlet: 1.44, manhole: 0.96, bend: 0.23 },
+  { angle: 84, inlet: 1.45, manhole: 0.97, bend: 0.24 },
+  { angle: 85, inlet: 1.46, manhole: 0.97, bend: 0.24 },
+  { angle: 86, inlet: 1.47, manhole: 0.98, bend: 0.24 },
+  { angle: 87, inlet: 1.47, manhole: 0.98, bend: 0.24 },
+  { angle: 88, inlet: 1.49, manhole: 0.99, bend: 0.25 },
+  { angle: 89, inlet: 1.49, manhole: 0.99, bend: 0.25 },
+  { angle: 90, inlet: 1.50, manhole: 1.00, bend: 0.25 },
+];
+
 // Which Kb column a structure type reads from. Outfall has no structure loss.
 const KB_COLUMN_FOR_TYPE = { inlet:"inlet", manhole:"manhole", bend:"bend", junction:"bend", splitter:"manhole", outfall:null };
 
