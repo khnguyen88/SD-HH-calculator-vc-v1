@@ -2981,12 +2981,59 @@ function renderRainfall() {
 /* ---------------------------------------------------------------------
    Pipe Sizing — 25-yr Check tab
 --------------------------------------------------------------------- */
-function renderPipeSizing25(){
+function renderPipeSizing25() {
   const c = document.getElementById("view-pipe-sizing-25");
-  if(!c) return;
+  if (!c) return;
   c.innerHTML = "";
-  c.appendChild(el("h1",{},"Pipe Sizing — 25-yr Check"));
-  c.appendChild(el("p",{class:"view-desc"},"Stub — see Task 10."));
+  c.appendChild(el("h1", {}, "Pipe Sizing — 25-yr Check"));
+  c.appendChild(el("p", {class:"view-desc"},
+    "25-yr check — read only. Pipe geometry is unchanged from the primary Pipe Sizing tab. " +
+    "Design Q uses Q₂₅ from each linked drainage area."));
+
+  const section = el("div", {class:"section"});
+  section.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Pipe capacity check — 25-yr storm")]));
+  const tableWrap = el("div", {class:"table-wrap"});
+  const table = el("table", {class:"data"});
+  table.appendChild(el("thead", {}, el("tr", {}, [
+    el("th",{},"From"), el("th",{},"To"), el("th",{},"Shape / Size"),
+    el("th",{class:"computed"},"Design Q₂₅\n(cfs)"),
+    el("th",{class:"computed"},"Q_full (cfs)"),
+    el("th",{class:"computed"},"V (fps)"),
+    el("th",{class:"computed"},"Pass?"),
+  ])));
+  const tbody = el("tbody");
+  state.pipes.forEach(row => {
+    const geo   = pipeGeometry(row);
+    const q25   = pipeDesignQ(row, null, "25yr");
+    const n     = parseFloat(row.n);
+    const S     = parseFloat(row.slope);
+    let qfull = null, v = null, pass = null;
+    if (geo && isFinite(n) && isFinite(S) && S > 0) {
+      const mf = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
+      qfull = mf.Qfull; v = mf.V;
+      pass = isFinite(q25) && isFinite(qfull) ? q25 <= qfull : null;
+    }
+    const fromSt = findStructure(row.fromStructureId);
+    const toSt   = findStructure(row.toStructureId);
+    const sizeLabel = row.shape === "elliptical"
+      ? (row.size || "?") + " ellip."
+      : (row.size || "?") + '" circ.';
+    tbody.appendChild(el("tr", {}, [
+      el("td",{}, fromSt ? (fromSt.structureId||fromSt.id) : (row.fromStructureId||"?")),
+      el("td",{}, toSt   ? (toSt.structureId||toSt.id)     : (row.toStructureId||"?")),
+      el("td",{}, sizeLabel),
+      el("td",{class:"out computed-cell"}, isFinite(q25)   ? fmt(q25,2)   : "—"),
+      el("td",{class:"out computed-cell"}, isFinite(qfull) ? fmt(qfull,2) : "—"),
+      el("td",{class:"out computed-cell"}, isFinite(v)     ? fmt(v,2)     : "—"),
+      el("td",{class:"out computed-cell", style: pass===false?"color:#e05;font-weight:700;":""},
+        pass===null ? "—" : pass ? "✓" : "✗ OVER"),
+    ]));
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  if (state.pipes.length === 0) section.appendChild(el("p",{class:"hint"},"No pipes defined."));
+  c.appendChild(section);
 }
 
 /* ---------------------------------------------------------------------
