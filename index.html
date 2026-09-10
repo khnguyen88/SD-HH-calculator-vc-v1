@@ -219,6 +219,7 @@ table.data td.computed-cell{ background:rgba(56,198,180,0.05); }
 .cell-input.txt{ font-family:var(--font-ui); }
 select.cell-input{ font-family:var(--font-ui); }
 .is-i-override { border-color:#e8a020 !important; }
+.i-override input, .i-override { border-color: #f90 !important; }
 
 .badge{
   display:inline-block;
@@ -490,6 +491,9 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
       <div class="view" id="view-table46"></div>
       <div class="view" id="view-kb"></div>
       <div class="view" id="view-inlet-spacing"></div>
+      <div class="view" id="view-rainfall"></div>
+      <div class="view" id="view-pipe-sizing-25"></div>
+      <div class="view" id="view-structures-25"></div>
     </div>
   </div>
 </div>
@@ -1008,8 +1012,9 @@ function computeInletRow(row, settings, bypassQIn, bypassCAIn) {
   const L    = Number(row.L);
   const allowT = Number(row.allowableSpread || settings.allowableSpread);
 
+  const rf = state.rainfall;
   const iComputed = (isFinite(tc) && tc > 0)
-    ? lookupIntensity(tc, settings.rainfallSource, settings.storm, settings.county, settings.customNoaa || {})
+    ? lookupIntensity(tc, rf.rainfallSource, rf.inletStorm, rf.county, rf.customNoaa || {})
     : 0;
   const i = (row.iOverride !== "" && row.iOverride != null && isFinite(Number(row.iOverride)))
     ? Number(row.iOverride)
@@ -1125,8 +1130,9 @@ function computeInletChain(rows, settings) {
 // The intensity this row would use (for converting carried bypass CA to Q)
 function computeRowIntensity(row, settings) {
   const tc = Number(row.tc);
+  const rf = state.rainfall;
   const iComputed = (isFinite(tc) && tc > 0)
-    ? lookupIntensity(tc, settings.rainfallSource, settings.storm, settings.county, settings.customNoaa || {})
+    ? lookupIntensity(tc, rf.rainfallSource, rf.inletStorm, rf.county, rf.customNoaa || {})
     : 0;
   return (row.iOverride !== "" && row.iOverride != null && isFinite(Number(row.iOverride)))
     ? Number(row.iOverride) : iComputed;
@@ -1141,14 +1147,25 @@ const KB_COLUMN_FOR_TYPE = { inlet:"inlet", manhole:"manhole", bend:"bend", junc
 let uid = 1;
 const nextId = () => "r" + (uid++);
 
+function defaultRainfallSettings() {
+  return {
+    rainfallSource: "noaa",
+    county: "Montgomery",
+    customNoaa: { 5:"", 10:"", 15:"", 30:"", 60:"" },
+    pipeStorm:   "10yr",
+    pipe25Check: false,
+    inletStorm:  "2yr",
+  };
+}
+
+function availableStorms(src) {
+  return src === "moco" ? ["2yr","5yr","10yr"] : ["2yr","10yr","25yr"];
+}
+
 function defaultInletSpacingSettings() {
   return {
     street: "",
-    rainfallSource: "noaa",     // "noaa"|"mdsha"|"moco"
-    county: "Montgomery",       // key in NOAA_ATLAS14 or "Custom"
-    storm: "10yr",              // "2yr"|"5yr"|"10yr"|"25yr"
     allowableSpread: 8,
-    customNoaa: { 5:"", 10:"", 15:"", 30:"", 60:"" },
   };
 }
 
@@ -1185,6 +1202,7 @@ const state = {
   outletShowGeometryDetail: true,
   inletSpacing: [],
   inletSpacingSettings: defaultInletSpacingSettings(),
+  rainfall: defaultRainfallSettings(),
 };
 
 function defaultOutletFields(){
@@ -1196,14 +1214,14 @@ function defaultDeviceFields(){
 
 function seedExample(){
   const da1 = nextId();
-  state.drainage.push({id:da1, structureId:"DA-1", desc:"Roof + lawn area to St.1", area:1.4, C:0.55, i:6.8, tc:91.65, cf:1.0, tcMethod:"tr55",
+  state.drainage.push({id:da1, structureId:"DA-1", desc:"Roof + lawn area to St.1", area:1.4, C:0.55, iOverride:"", tc:91.65, cf:1.0, tcMethod:"tr55",
     tr55:{segments:[
       {id:nextId(), type:"sheet", n:0.24, L:100, s:0.01, P2:3.6},
       {id:nextId(), type:"shallow", L:1400, s:0.01, surface:"unpaved"},
       {id:nextId(), type:"channel", L:7300, s:0.005, n:0.05, area:27, wp:28.2},
     ]}});
   const da2 = nextId();
-  state.drainage.push({id:da2, structureId:"DA-2", desc:"Parking area to St.2", area:0.9, C:0.85, i:6.8, tc:8, cf:1.0, tcMethod:"direct", tr55:{segments:[]}});
+  state.drainage.push({id:da2, structureId:"DA-2", desc:"Parking area to St.2", area:0.9, C:0.85, iOverride:"", tc:8, cf:1.0, tcMethod:"direct", tr55:{segments:[]}});
 
   const stOut = nextId();
   state.structures.push({id:stOut, structureId:"OUTFALL", desc:"Free outfall", drainageAreaId:"", type:"outfall", forceElev:true, startElev:100.0, crown:"", rim:""});
@@ -1312,9 +1330,27 @@ function interpKb(columnKey, angleDeg){
   return rows[rows.length-1][columnKey];
 }
 
-function calcDrainageRow(row){
-  const A=parseFloat(row.area)||0, C=parseFloat(row.C)||0, i=parseFloat(row.i)||0, cf=parseFloat(row.cf)||1;
-  return { Q: cf*C*i*A, A, C, i, cf };
+function calcDrainageRow(row) {
+  const A  = parseFloat(row.area) || 0;
+  const C  = parseFloat(row.C)    || 0;
+  const cf = parseFloat(row.cf)   || 1;
+  const tc = parseFloat(row.tc);
+  const CA = C * A;
+  const r  = state.rainfall;
+
+  const iOverridden = row.iOverride !== "" && row.iOverride != null && isFinite(Number(row.iOverride));
+
+  function intensityFor(storm) {
+    if (iOverridden) return Number(row.iOverride);
+    if (!isFinite(tc) || tc <= 0) return 0;
+    return lookupIntensity(tc, r.rainfallSource, storm, r.county, r.customNoaa || {});
+  }
+
+  const storms = availableStorms(r.rainfallSource);
+  const Qs = {};
+  storms.forEach(s => { Qs[s] = cf * CA * intensityFor(s); });
+
+  return { CA, cf, A, C, Qs, storms, designQ: Qs[r.pipeStorm] || 0, iOverridden };
 }
 
 /* =======================================================================
@@ -1436,10 +1472,12 @@ function getOutgoingPipes(structureId){ return state.pipes.filter(p=>p.fromStruc
 function getIncomingPipes(structureId){ return state.pipes.filter(p=>p.toStructureId===structureId); }
 function getOutgoingPipe(structureId){ const list=getOutgoingPipes(structureId); return list.length? list[0] : null; }
 
-function capturedQFor(structure){
+function capturedQFor(structure, stormOverride){
   if(!structure || !structure.drainageAreaId) return 0;
   const da = findDrainage(structure.drainageAreaId);
-  return da ? calcDrainageRow(da).Q : 0;
+  if(!da) return 0;
+  const calc = calcDrainageRow(da);
+  return stormOverride ? (calc.Qs[stormOverride] || 0) : calc.designQ;
 }
 
 // Given a splitter structure and the total flow arriving at it, returns how
@@ -1462,27 +1500,27 @@ function computeSplitterSplit(st, totalFlow){
 // is that pipe's own designQ (pipeDesignQ), which is normally the full total
 // flow of its From structure -- unless that From structure is a Flow
 // Splitter, in which case only the Primary or Secondary share applies.
-function computeTotalFlow(structureId, seen){
+function computeTotalFlow(structureId, seen, stormOverride){
   seen = seen || new Set();
   const st = findStructure(structureId);
   if(!st) return {Q:0, captured:0, inflow:[], error:null};
   if(seen.has(structureId)) return {Q:0, captured:0, inflow:[], error:"circular"};
   const nextSeen = new Set(seen);
   nextSeen.add(structureId);
-  const captured = capturedQFor(st);
+  const captured = capturedQFor(st, stormOverride);
   const inflowPipes = getIncomingPipes(structureId);
   const inflow = inflowPipes.map(p=>{
-    const q = pipeDesignQ(p, nextSeen);
+    const q = pipeDesignQ(p, nextSeen, stormOverride);
     return { pipe:p, fromId:p.fromStructureId, Q: q, error:null };
   });
   const sum = inflow.reduce((a,b)=>a+(isFinite(b.Q)?b.Q:0), 0);
   return { Q: captured+sum, captured, inflow, error:null };
 }
 
-function pipeDesignQ(pipeRow, seen){
+function pipeDesignQ(pipeRow, seen, stormOverride){
   if(!pipeRow || !pipeRow.fromStructureId) return 0;
   const fromSt = findStructure(pipeRow.fromStructureId);
-  const totalFlow = computeTotalFlow(pipeRow.fromStructureId, seen).Q;
+  const totalFlow = computeTotalFlow(pipeRow.fromStructureId, seen, stormOverride).Q;
   if(fromSt && fromSt.type === "splitter"){
     const split = computeSplitterSplit(fromSt, totalFlow);
     if(pipeRow.splitRole === "primary") return split.primaryQ;
@@ -1511,13 +1549,13 @@ function calcPipeRow(row){
 // (for a Flow Splitter, the Secondary path is a separate branch that is
 // resolved independently by its own downstream chain, but does not feed
 // back into this structure's own elevation).
-function computeStructureCalc(structureId, seen){
+function computeStructureCalc(structureId, seen, stormOverride){
   seen = seen || new Set();
   const st = findStructure(structureId);
   const warnings = [];
   if(!st) return null;
 
-  const totalFlowInfo = computeTotalFlow(structureId);
+  const totalFlowInfo = computeTotalFlow(structureId, null, stormOverride);
   const totalFlow = totalFlowInfo.Q;
   const isSplitter = st.type === "splitter";
   const splitInfo = isSplitter ? computeSplitterSplit(st, totalFlow) : null;
@@ -1556,7 +1594,7 @@ function computeStructureCalc(structureId, seen){
   }
   seen.add(structureId);
 
-  const downstream = computeStructureCalc(outPipe.toStructureId, seen);
+  const downstream = computeStructureCalc(outPipe.toStructureId, seen, stormOverride);
   const downstreamElev = downstream ? downstream.elevation : 0;
 
   const geo = pipeGeometry(outPipe);
@@ -1581,7 +1619,7 @@ function computeStructureCalc(structureId, seen){
   } else if(inflowPipes.length===2){
     const [p1,p2] = inflowPipes;
     const a1 = parseFloat(p1.angle)||0, a2 = parseFloat(p2.angle)||0;
-    const Q1 = pipeDesignQ(p1), Q2 = pipeDesignQ(p2);
+    const Q1 = pipeDesignQ(p1, null, stormOverride), Q2 = pipeDesignQ(p2, null, stormOverride);
     const A3 = geo ? geo.areaSf : 0;
     const V1_3 = A3>0? Q1/A3:0, V2_3 = A3>0? Q2/A3:0;
     const Kb1 = interpKb(kbColumn, a1), Kb2 = interpKb(kbColumn, a2);
@@ -1867,29 +1905,41 @@ function detailBtn(onClick){
 /* ---------------------------------------------------------------------
    Navigation
 --------------------------------------------------------------------- */
-const TABS = [
-  {id:"overview",   label:"Overview"},
-  {id:"drainage",   label:"Drainage Area (Q=CiA)"},
-  {id:"structures", label:"Junction Structures"},
-  {id:"pipes",      label:"Pipe Sizing"},
-  {id:"outlet",     label:"Outlet Structure"},
-  {id:"formulas",   label:"Formulas & Examples"},
-  {id:"table46",    label:"Table 4-6 Reference"},
-  {id:"kb",         label:"Kb Coefficients"},
-  {id:"inlet-spacing", label:"Inlet Spacing"},
-];
+function getTabs() {
+  const tabs = [
+    {id:"overview",       label:"Overview"},
+    {id:"rainfall",       label:"Rainfall & IDF"},
+    {id:"drainage",       label:"Drainage Area (Q=CiA)"},
+    {id:"structures",     label:"Junction Structures"},
+    {id:"pipes",          label:"Pipe Sizing"},
+    {id:"outlet",         label:"Outlet Structure"},
+    {id:"formulas",       label:"Formulas & Examples"},
+    {id:"table46",        label:"Table 4-6 Reference"},
+    {id:"kb",             label:"Kb Coefficients"},
+    {id:"inlet-spacing",  label:"Inlet Spacing"},
+  ];
+  const r = state.rainfall;
+  if (r.pipe25Check && r.pipeStorm !== "25yr") {
+    tabs.push({id:"pipe-sizing-25",  label:"Pipe Sizing — 25-yr"});
+    tabs.push({id:"structures-25",   label:"Junction Structures — 25-yr"});
+  }
+  return tabs;
+}
 
 function renderNav(){
+  const tabs = getTabs();
+  if (!tabs.find(t => t.id === state.active)) state.active = "pipes";
   const nav = document.getElementById("nav");
   nav.innerHTML = "";
-  TABS.forEach((t,i)=>{
+  tabs.forEach((t,i)=>{
     const btn = el("button", {
       class: "nav-btn" + (state.active===t.id ? " active":""),
       onclick: ()=>{ state.active=t.id; renderAll(); }
     }, [ el("span",{class:"nav-num"}, String(i+1).padStart(2,"0")), t.label ]);
     nav.appendChild(btn);
   });
-  document.getElementById("tabLabel").textContent = TABS.find(t=>t.id===state.active).label;
+  const activeTab = tabs.find(t=>t.id===state.active);
+  document.getElementById("tabLabel").textContent = activeTab ? activeTab.label : "";
 }
 function showActiveView(){
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id==="view-"+state.active));
@@ -1907,12 +1957,13 @@ function renderOverview(){
 
   const steps = [
     ["1","Drainage Area \u2014 Q = C \u00b7 i \u00b7 A", "Enter tributary area (A, acres), runoff coefficient (C), and design rainfall intensity (i, in/hr) for each catchment. Computes ", "Q = Cf \u00d7 C \u00d7 i \u00d7 A", "."],
-    ["2","Junction Structures", "One row per physical structure (inlet, manhole, bend, junction, flow splitter, or outfall). Link a Drainage Area to capture its runoff. ", "Total Flow = Captured Q + \u03a3(Q of every pipe flowing into this structure)", ". The tool finds those inflow pipes automatically from the Pipe tab."],
-    ["3","Pipes \u2014 each one connects two structures", "Pick a From structure and a To structure, plus the angle the pipe makes entering the To structure. Design Q is pulled automatically as the From structure's Total Flow (or its Primary/Secondary share, for a pipe leaving a Flow Splitter) \u2014 you never re-enter it."],
-    ["4","Structure loss, automatically", "At each structure the tool counts inflow pipes: 0 \u2192 nominal entrance condition, 1 \u2192 Kb at that pipe's angle, 2 \u2192 the controlling-angle method (the angle belonging to the smaller computed loss governs), >2 \u2192 flagged as unsupported. Combined with friction loss on the outgoing pipe, this produces each structure's upstream HGL, checked against Crown+1ft and Rim\u22121ft."],
-    ["5","Flow Splitter", "A structure type for a diversion manhole or prefab structure downstream of an outlet \u2014 divides its Total Flow between a Primary and a Secondary outgoing pipe, either capacity-limited (Primary = MIN(Total, Capacity), Secondary = the remainder) or by a fixed ratio. Assign each outgoing pipe's Role on the Pipe Sizing tab."],
-    ["6","Outlet Control Structure", "A separate stage-discharge rating curve for a BMP/SWM/ESD outlet \u2014 add Orifice, Weir, or Pipe devices and their flows combine at every stage. Orifice/Pipe partial flow uses the exact wetted circular-segment area and centroid (not an approximation); full and submerged flow follow standard orifice equations. Weirs get free-flow and Villemonte-submerged regimes. Tailwater can link live to a Junction Structure's Upstream HGL."],
-    ["7","Detail & Print", "Every row has a \u2921 Detail button that opens a full calculation sheet \u2014 inputs, formulas, substituted numbers, results. Print just that sheet, or print the entire project's sheets as one package, from inside that window."],
+    ["2","Rainfall & IDF", "Select rainfall source (NOAA Atlas 14 county, MDSHA, or MoCo agency table) and design storms. The Pipe & HGL Storm drives Q in Drainage Area and pipe capacity. The Inlet Storm drives inlet spacing intensity. Optionally enable the 25-yr check tabs for an additional capacity verification. The IDF table shows intensities at standard Tc values."],
+    ["3","Junction Structures", "One row per physical structure (inlet, manhole, bend, junction, flow splitter, or outfall). Link a Drainage Area to capture its runoff. ", "Total Flow = Captured Q + \u03a3(Q of every pipe flowing into this structure)", ". The tool finds those inflow pipes automatically from the Pipe tab."],
+    ["4","Pipes \u2014 each one connects two structures", "Pick a From structure and a To structure, plus the angle the pipe makes entering the To structure. Design Q is pulled automatically as the From structure's Total Flow (or its Primary/Secondary share, for a pipe leaving a Flow Splitter) \u2014 you never re-enter it."],
+    ["5","Structure loss, automatically", "At each structure the tool counts inflow pipes: 0 \u2192 nominal entrance condition, 1 \u2192 Kb at that pipe's angle, 2 \u2192 the controlling-angle method (the angle belonging to the smaller computed loss governs), >2 \u2192 flagged as unsupported. Combined with friction loss on the outgoing pipe, this produces each structure's upstream HGL, checked against Crown+1ft and Rim\u22121ft."],
+    ["6","Flow Splitter", "A structure type for a diversion manhole or prefab structure downstream of an outlet \u2014 divides its Total Flow between a Primary and a Secondary outgoing pipe, either capacity-limited (Primary = MIN(Total, Capacity), Secondary = the remainder) or by a fixed ratio. Assign each outgoing pipe's Role on the Pipe Sizing tab."],
+    ["7","Outlet Control Structure", "A separate stage-discharge rating curve for a BMP/SWM/ESD outlet \u2014 add Orifice, Weir, or Pipe devices and their flows combine at every stage. Orifice/Pipe partial flow uses the exact wetted circular-segment area and centroid (not an approximation); full and submerged flow follow standard orifice equations. Weirs get free-flow and Villemonte-submerged regimes. Tailwater can link live to a Junction Structure's Upstream HGL."],
+    ["8","Detail & Print", "Every row has a \u2921 Detail button that opens a full calculation sheet \u2014 inputs, formulas, substituted numbers, results. Print just that sheet, or print the entire project's sheets as one package, from inside that window."],
   ];
   const wrap = el("div",{class:"section"});
   wrap.appendChild(el("h2",{},"How the pieces connect"));
@@ -1955,28 +2006,56 @@ function renderDrainage(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Drainage areas"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.drainage.push({id:nextId(), structureId:"", desc:"", area:"", C:"", i:"", tc:"", cf:1.0, tcMethod:"direct", tr55:{segments:[]}}); renderDrainage(); }}, "+ Add row")
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.drainage.push({id:nextId(), structureId:"", desc:"", area:"", C:"", iOverride:"", tc:"", cf:1.0, tcMethod:"direct", tr55:{segments:[]}}); renderDrainage(); }}, "+ Add row")
   ]));
 
   const tableWrap = el("div",{class:"table-wrap"});
   const table = el("table",{class:"data"});
+  const storms = availableStorms(state.rainfall.rainfallSource);
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"ID"), el("th",{},"Description"), el("th",{},"Area A (ac)"),
-    el("th",{},"C"), el("th",{},"i (in/hr)"), el("th",{},"Tc (min)"), el("th",{},"Cf"),
-    el("th",{class:"computed"},"Q (cfs)"), el("th",{},""), el("th",{},"")
+    el("th",{},"C"),
+    el("th",{class:"computed"},"CA"),
+    el("th",{},"i override\n(in/hr)"),
+    el("th",{},"Tc (min)"), el("th",{},"Cf"),
+    ...storms.map(s => {
+      const isPipe  = s === state.rainfall.pipeStorm;
+      const isInlet = s === state.rainfall.inletStorm;
+      const accent  = isPipe ? "#4a9eff" : (isInlet ? "#f0a500" : "");
+      const lbl = {"2yr":"Q₂","10yr":"Q₁₀","25yr":"Q₂₅","5yr":"Q₅"}[s] || ("Q "+s);
+      return el("th", {class:"computed", style: accent?"color:"+accent+";":""}, lbl+"\n(cfs)");
+    }),
+    el("th",{},""), el("th",{},"")
   ])));
   const tbody = el("tbody");
   state.drainage.forEach(row=>{
     const calc = calcDrainageRow(row);
+    const iOverrideCell = el("input", {
+      class:"cell-input" + (calc.iOverridden ? " i-override" : ""),
+      type:"text", inputmode:"decimal", style:"width:65px;",
+      "data-focus-key":"drainage:"+row.id+":iOverride",
+      value: row.iOverride !== undefined ? row.iOverride : "",
+      placeholder: calc.iOverridden ? "" : "auto",
+      oninput: (e) => { row.iOverride = e.target.value; withFocusPreserved(renderAll); }
+    });
     tbody.appendChild(el("tr",{},[
       el("td",{}, txt(row,"structureId",90)),
       el("td",{}, txt(row,"desc",160)),
       el("td",{}, num(row,"area",70)),
       el("td",{}, num(row,"C",60)),
-      el("td",{}, num(row,"i",60)),
+      el("td",{class:"out computed-cell"}, fmt(calc.CA, 3)),
+      el("td",{class: calc.iOverridden ? "i-override" : ""}, iOverrideCell),
       el("td",{}, tcCell(row)),
       el("td",{}, num(row,"cf",55)),
-      el("td",{class:"out computed-cell"}, fmt(calc.Q,2)),
+      ...calc.storms.map(s => {
+        const isPipe  = s === state.rainfall.pipeStorm;
+        const isInlet = s === state.rainfall.inletStorm;
+        const accent  = isPipe ? "#4a9eff" : (isInlet ? "#f0a500" : "");
+        return el("td", {
+          class:"out computed-cell",
+          style: accent ? "font-weight:600;border-bottom:2px solid "+accent+";" : ""
+        }, fmt(calc.Qs[s], 2));
+      }),
       el("td",{}, detailBtn(()=>openDetailModal(buildDrainageSheet(row)))),
       el("td",{}, delBtn(()=>{ state.drainage=state.drainage.filter(r=>r!==row); renderAll(); }))
     ]));
@@ -2010,9 +2089,7 @@ function renderDrainage(){
   }
 }
 function patchDrainageRow(row){
-  const idx = state.drainage.indexOf(row);
-  const tr = document.querySelectorAll("#view-drainage tbody tr")[idx];
-  if(tr){ tr.children[7].textContent = fmt(calcDrainageRow(row).Q,2); }
+  renderDrainage();
   if(state.active==="structures") renderStructures();
 }
 
@@ -2669,6 +2746,352 @@ function renderKb(){
 }
 
 /* ---------------------------------------------------------------------
+   Rainfall & IDF tab
+--------------------------------------------------------------------- */
+function renderRainfallIdfTable(c) {
+  const r = state.rainfall;
+  const storms = availableStorms(r.rainfallSource);
+  const pipeAccent = "#4a9eff";
+  const inletAccent = "#f0a500";
+
+  const idfSec = el("div", {class:"section"});
+  const srcLabels = {noaa:"NOAA Atlas 14", mdsha:"MDSHA Agency Table", moco:"MoCo Agency Table"};
+  const subtitle = r.rainfallSource === "noaa" && r.county !== "Custom"
+    ? srcLabels.noaa + " — " + r.county
+    : srcLabels[r.rainfallSource] || r.rainfallSource;
+  idfSec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Intensity Reference — " + subtitle)]));
+
+  const tableWrap = el("div", {class:"table-wrap"});
+  const tbl = el("table", {class:"data"});
+
+  // Header row
+  const headRow = el("tr", {});
+  headRow.appendChild(el("th", {}, "Tc (min)"));
+  storms.forEach(s => {
+    const isPipe  = s === r.pipeStorm;
+    const isInlet = s === r.inletStorm;
+    const accent  = isPipe ? pipeAccent : (isInlet ? inletAccent : "");
+    const shortLbl = {"2yr":"2-yr","10yr":"10-yr","25yr":"25-yr","5yr":"5-yr"}[s] || s;
+    const tag = (isPipe && isInlet) ? " (Pipe & Inlet)" : isPipe ? " (Pipe)" : isInlet ? " (Inlet)" : "";
+    headRow.appendChild(el("th", {style: accent ? "background:"+accent+"22;color:"+accent+";" : ""}, shortLbl + tag + "\ni (in/hr)"));
+  });
+  tbl.appendChild(el("thead", {}, headRow));
+
+  const tbody = el("tbody", {});
+  const stdTcs = [5, 7, 10, 15, 20, 30, 60];
+  stdTcs.forEach(tc => {
+    const tr = el("tr", {});
+    tr.appendChild(el("td", {}, String(tc)));
+    storms.forEach(s => {
+      const isPipe  = s === r.pipeStorm;
+      const isInlet = s === r.inletStorm;
+      const accent  = isPipe ? pipeAccent : (isInlet ? inletAccent : "");
+      const i = lookupIntensity(tc, r.rainfallSource, s, r.county, r.customNoaa || {});
+      tr.appendChild(el("td", {
+        class:"out computed-cell",
+        style: accent ? "background:"+accent+"11;font-weight:"+(isPipe||isInlet?"600":"400")+";" : ""
+      }, (i > 0 ? i.toFixed(2) : "—")));
+    });
+    tbody.appendChild(tr);
+  });
+
+  // Custom Tc row
+  const customTc = r._customIdfTc || "";
+  const customTr = el("tr", {});
+  const tcInput = el("input", {
+    class:"cell-input", type:"text", inputmode:"decimal", style:"width:70px;",
+    "data-focus-key":"rf:customTc",
+    value: customTc,
+    placeholder:"custom",
+    oninput: (e) => { r._customIdfTc = e.target.value; withFocusPreserved(renderAll); }
+  });
+  const tcTd = el("td", {});
+  tcTd.appendChild(tcInput);
+  customTr.appendChild(tcTd);
+  const parsedTc = parseFloat(customTc);
+  storms.forEach(s => {
+    const isPipe  = s === r.pipeStorm;
+    const isInlet = s === r.inletStorm;
+    const accent  = isPipe ? pipeAccent : (isInlet ? inletAccent : "");
+    const i = (isFinite(parsedTc) && parsedTc > 0)
+      ? lookupIntensity(parsedTc, r.rainfallSource, s, r.county, r.customNoaa || {})
+      : null;
+    customTr.appendChild(el("td", {
+      class:"out computed-cell",
+      style: accent ? "background:"+accent+"11;" : ""
+    }, i !== null ? i.toFixed(2) : "—"));
+  });
+  tbody.appendChild(customTr);
+
+  tbl.appendChild(tbody);
+  tableWrap.appendChild(tbl);
+  idfSec.appendChild(tableWrap);
+  c.appendChild(idfSec);
+}
+
+function renderRainfall() {
+  const c = document.getElementById("view-rainfall");
+  if (!c) return;
+  c.innerHTML = "";
+  const r = state.rainfall;
+
+  c.appendChild(el("h1", {}, "Rainfall & IDF"));
+  c.appendChild(el("p", {class:"view-desc"},
+    "Shared rainfall settings for the entire project. Pipe & HGL tabs use the Pipe design storm; " +
+    "Inlet Spacing uses the Inlet design storm. The IDF table shows intensities at standard Tₜ values."));
+
+  // ---- Settings section ----
+  const settingsSec = el("div", {class:"section"});
+  settingsSec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Project Rainfall Settings")]));
+  const sRow = el("div", {style:"display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:12px 0;"});
+
+  // Source
+  const srcField = el("div", {class:"field"});
+  srcField.appendChild(el("label", {}, "Rainfall Source"));
+  const srcSel = el("select", {class:"cell-input", style:"width:200px;",
+    "data-focus-key":"rf:source",
+    onchange: (e) => {
+      r.rainfallSource = e.target.value;
+      const valid = availableStorms(r.rainfallSource);
+      if (!valid.includes(r.pipeStorm))  r.pipeStorm  = "10yr";
+      if (!valid.includes(r.inletStorm)) r.inletStorm = "2yr";
+      withFocusPreserved(renderAll);
+    }});
+  [["noaa","NOAA Atlas 14 (per county)"],["mdsha","MDSHA Agency Table"],["moco","MoCo Agency Table"]].forEach(([v,l]) => {
+    const o = el("option", {value:v}, l);
+    if (r.rainfallSource === v) o.selected = true;
+    srcSel.appendChild(o);
+  });
+  srcField.appendChild(srcSel);
+  sRow.appendChild(srcField);
+
+  // County (NOAA only)
+  if (r.rainfallSource === "noaa") {
+    const ctyField = el("div", {class:"field"});
+    ctyField.appendChild(el("label", {}, "County"));
+    const ctySel = el("select", {class:"cell-input", style:"width:180px;",
+      "data-focus-key":"rf:county",
+      onchange: (e) => { r.county = e.target.value; withFocusPreserved(renderAll); }});
+    NOAA_COUNTY_LIST.forEach(cty => {
+      const o = el("option", {value:cty}, cty);
+      if (r.county === cty) o.selected = true;
+      ctySel.appendChild(o);
+    });
+    const oCustom = el("option", {value:"Custom"}, "Custom (enter below)");
+    if (r.county === "Custom") oCustom.selected = true;
+    ctySel.appendChild(oCustom);
+    ctyField.appendChild(ctySel);
+    sRow.appendChild(ctyField);
+  }
+
+  settingsSec.appendChild(sRow);
+
+  // Custom NOAA intensity inputs
+  if (r.rainfallSource === "noaa" && r.county === "Custom") {
+    const customRow = el("div", {style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:8px 0;"});
+    customRow.appendChild(el("span", {style:"font-size:0.85em;opacity:0.7;align-self:center;"}, "Custom intensities (in/hr):"));
+    [5,10,15,30,60].forEach(d => {
+      const f = el("div", {class:"field"});
+      f.appendChild(el("label", {}, d+"-min"));
+      f.appendChild(el("input", {class:"cell-input", type:"text", inputmode:"decimal", style:"width:70px;",
+        "data-focus-key":"rf:custom:"+d,
+        value: (r.customNoaa && r.customNoaa[d] !== undefined) ? r.customNoaa[d] : "",
+        oninput: (e) => {
+          r.customNoaa = Object.assign({}, r.customNoaa);
+          r.customNoaa[d] = e.target.value;
+          withFocusPreserved(renderAll);
+        }}));
+      customRow.appendChild(f);
+    });
+    settingsSec.appendChild(customRow);
+  }
+
+  // NOAA validation link + county point note
+  if (r.rainfallSource === "noaa" && r.county !== "Custom" && NOAA_ATLAS14[r.county]) {
+    const entry = NOAA_ATLAS14[r.county];
+    const href = "https://hdsc.nws.noaa.gov/pfds/pfds_point_cu.html?lat=" + entry.lat +
+                 "&lon=" + entry.lon + "&data=intensity&units=us&series=pds";
+    const noteDiv = el("div", {style:"padding:6px 0 4px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;"});
+    noteDiv.appendChild(el("a", {href, target:"_blank", style:"font-size:0.9em;"}, "Validate on NOAA Atlas 14 ↗"));
+    noteDiv.appendChild(el("span", {style:"font-size:0.8em;opacity:0.6;"},
+      "Represents lat " + entry.lat + ", lon " + entry.lon +
+      " (county centroid, pulled 2026-09-09). Values vary within the county; use Custom for project-specific accuracy."));
+    settingsSec.appendChild(noteDiv);
+  }
+
+  c.appendChild(settingsSec);
+
+  // ---- Design Storms section ----
+  const stormSec = el("div", {class:"section"});
+  stormSec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Design Storms")]));
+  const stRow = el("div", {style:"display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;padding:12px 0;"});
+
+  const storms = availableStorms(r.rainfallSource);
+  const stormLabels = {"2yr":"2-year","5yr":"5-year","10yr":"10-year","25yr":"25-year"};
+
+  // Pipe & HGL storm
+  const pipeStormField = el("div", {class:"field"});
+  pipeStormField.appendChild(el("label", {}, "Pipe & HGL Design Storm"));
+  const pipeSel = el("select", {class:"cell-input", style:"width:130px;",
+    "data-focus-key":"rf:pipeStorm",
+    onchange: (e) => { r.pipeStorm = e.target.value; withFocusPreserved(renderAll); }});
+  storms.forEach(s => {
+    const o = el("option", {value:s}, stormLabels[s]||s);
+    if (r.pipeStorm === s) o.selected = true;
+    pipeSel.appendChild(o);
+  });
+  pipeStormField.appendChild(pipeSel);
+  stRow.appendChild(pipeStormField);
+
+  // Inlet storm
+  const inletStormField = el("div", {class:"field"});
+  inletStormField.appendChild(el("label", {}, "Inlet Design Storm"));
+  const inletSel = el("select", {class:"cell-input", style:"width:130px;",
+    "data-focus-key":"rf:inletStorm",
+    onchange: (e) => { r.inletStorm = e.target.value; withFocusPreserved(renderAll); }});
+  storms.forEach(s => {
+    const o = el("option", {value:s}, stormLabels[s]||s);
+    if (r.inletStorm === s) o.selected = true;
+    inletSel.appendChild(o);
+  });
+  inletStormField.appendChild(inletSel);
+  stRow.appendChild(inletStormField);
+
+  // 25-yr check checkbox (hidden when pipeStorm is already 25yr)
+  if (r.pipeStorm !== "25yr") {
+    const chkField = el("div", {class:"field"});
+    chkField.appendChild(el("label", {}, " "));
+    const chkLabel = el("label", {style:"display:flex;align-items:center;gap:8px;cursor:pointer;"});
+    const chk = el("input", {type:"checkbox",
+      "data-focus-key":"rf:pipe25Check",
+      onchange: (e) => { r.pipe25Check = e.target.checked; withFocusPreserved(renderAll); }});
+    chk.checked = r.pipe25Check;
+    chkLabel.appendChild(chk);
+    chkLabel.appendChild(document.createTextNode("Also compute 25-yr pipe & HGL check"));
+    chkField.appendChild(chkLabel);
+    stRow.appendChild(chkField);
+  }
+
+  stormSec.appendChild(stRow);
+  c.appendChild(stormSec);
+
+  // IDF table — implemented in Task 5
+  renderRainfallIdfTable(c);
+}
+
+/* ---------------------------------------------------------------------
+   Pipe Sizing — 25-yr Check tab
+--------------------------------------------------------------------- */
+function renderPipeSizing25() {
+  const c = document.getElementById("view-pipe-sizing-25");
+  if (!c) return;
+  c.innerHTML = "";
+  c.appendChild(el("h1", {}, "Pipe Sizing — 25-yr Check"));
+  c.appendChild(el("p", {class:"view-desc"},
+    "25-yr check — read only. Pipe geometry is unchanged from the primary Pipe Sizing tab. " +
+    "Design Q uses Q₂₅ from each linked drainage area."));
+
+  const section = el("div", {class:"section"});
+  section.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Pipe capacity check — 25-yr storm")]));
+  const tableWrap = el("div", {class:"table-wrap"});
+  const table = el("table", {class:"data"});
+  table.appendChild(el("thead", {}, el("tr", {}, [
+    el("th",{},"From"), el("th",{},"To"), el("th",{},"Shape / Size"),
+    el("th",{class:"computed"},"Design Q₂₅\n(cfs)"),
+    el("th",{class:"computed"},"Q_full (cfs)"),
+    el("th",{class:"computed"},"V (fps)"),
+    el("th",{class:"computed"},"Pass?"),
+  ])));
+  const tbody = el("tbody");
+  state.pipes.forEach(row => {
+    const geo   = pipeGeometry(row);
+    const q25   = pipeDesignQ(row, null, "25yr");
+    const n     = parseFloat(row.n);
+    const S     = parseFloat(row.slope);
+    let qfull = null, v = null, pass = null;
+    if (geo && isFinite(n) && isFinite(S) && S > 0) {
+      const mf = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
+      qfull = mf.Qfull; v = mf.V;
+      pass = isFinite(q25) && isFinite(qfull) ? q25 <= qfull : null;
+    }
+    const fromSt = findStructure(row.fromStructureId);
+    const toSt   = findStructure(row.toStructureId);
+    const sizeLabel = row.shape === "elliptical"
+      ? (row.size || "?") + " ellip."
+      : (row.size || "?") + '" circ.';
+    tbody.appendChild(el("tr", {}, [
+      el("td",{}, fromSt ? (fromSt.structureId||fromSt.id) : (row.fromStructureId||"?")),
+      el("td",{}, toSt   ? (toSt.structureId||toSt.id)     : (row.toStructureId||"?")),
+      el("td",{}, sizeLabel),
+      el("td",{class:"out computed-cell"}, isFinite(q25)   ? fmt(q25,2)   : "—"),
+      el("td",{class:"out computed-cell"}, isFinite(qfull) ? fmt(qfull,2) : "—"),
+      el("td",{class:"out computed-cell"}, isFinite(v)     ? fmt(v,2)     : "—"),
+      el("td",{class:"out computed-cell", style: pass===false?"color:#e05;font-weight:700;":""},
+        pass===null ? "—" : pass ? "✓" : "✗ OVER"),
+    ]));
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  if (state.pipes.length === 0) section.appendChild(el("p",{class:"hint"},"No pipes defined."));
+  c.appendChild(section);
+}
+
+/* ---------------------------------------------------------------------
+   Junction Structures — 25-yr Check tab
+--------------------------------------------------------------------- */
+function renderStructures25(){
+  const c = document.getElementById("view-structures-25");
+  if (!c) return;
+  c.innerHTML = "";
+  c.appendChild(el("h1", {}, "Junction Structures — 25-yr Check"));
+  c.appendChild(el("p", {class:"view-desc"},
+    "25-yr check — read only. Structure geometry and elevations are unchanged from the primary " +
+    "Junction Structures tab. HGL is propagated with Q₂₅ flows."));
+
+  const section = el("div", {class:"section"});
+  section.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "HGL check — 25-yr storm")]));
+  const tableWrap = el("div", {class:"table-wrap"});
+  const table = el("table", {class:"data"});
+  table.appendChild(el("thead", {}, el("tr", {}, [
+    el("th",{},"Structure ID"), el("th",{},"Type"), el("th",{},"Crown (ft)"), el("th",{},"Rim (ft)"),
+    el("th",{class:"computed"},"Total Flow Q₂₅\n(cfs)"),
+    el("th",{class:"computed"},"Upstream HGL\n(ft)"),
+    el("th",{class:"computed"},"Crown\nCheck"),
+    el("th",{class:"computed"},"Rim\nCheck"),
+  ])));
+  const tbody = el("tbody");
+  state.structures.forEach(row => {
+    const tf   = computeTotalFlow(row.id, null, "25yr");
+    const calc = computeStructureCalc(row.id, null, "25yr");
+    const hgl  = calc ? calc.elevation : null;
+    const crown = parseFloat(row.crown);
+    const rim   = parseFloat(row.rim);
+    const crownCheck = (isFinite(hgl) && isFinite(crown)) ? hgl <= crown + 1.0 : null;
+    const rimCheck   = (isFinite(hgl) && isFinite(rim))   ? hgl <= rim  - 1.0 : null;
+    const crownStyle = crownCheck === false ? "color:#e05;font-weight:700;" : "";
+    const rimStyle   = rimCheck   === false ? "color:#e05;font-weight:700;" : "";
+    tbody.appendChild(el("tr", {}, [
+      el("td",{}, row.structureId||row.id),
+      el("td",{}, row.type||""),
+      el("td",{}, isFinite(crown) ? fmt(crown,2) : "—"),
+      el("td",{}, isFinite(rim)   ? fmt(rim,2)   : "—"),
+      el("td",{class:"out computed-cell"}, isFinite(tf.Q) ? fmt(tf.Q,2) : "—"),
+      el("td",{class:"out computed-cell"}, isFinite(hgl)  ? fmt(hgl,2)  : "—"),
+      el("td",{class:"out computed-cell", style:crownStyle},
+        crownCheck === null ? "—" : crownCheck ? "✓" : "✗ > crown+1"),
+      el("td",{class:"out computed-cell", style:rimStyle},
+        rimCheck === null ? "—" : rimCheck ? "✓" : "✗ FLOOD"),
+    ]));
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  if (state.structures.length === 0) section.appendChild(el("p",{class:"hint"},"No structures defined."));
+  c.appendChild(section);
+}
+
+/* ---------------------------------------------------------------------
    Inlet Spacing tab
 --------------------------------------------------------------------- */
 function renderInletSpacing(){
@@ -2695,62 +3118,6 @@ function renderInletSpacing(){
     oninput:(e)=>{ s.street=e.target.value; withFocusPreserved(renderAll); }}));
   gRow.appendChild(streetField);
 
-  // Rainfall source
-  const srcField = el("div",{class:"field"});
-  srcField.appendChild(el("label",{},"Rainfall source"));
-  const srcSel = el("select",{class:"cell-input",style:"width:220px;",
-    "data-focus-key":"is:global:source",
-    onchange:(e)=>{
-      s.rainfallSource=e.target.value;
-      // Coerce storm to one valid for the new source (moco has no 25yr; mdsha/noaa have no 5yr)
-      const valid = s.rainfallSource==="moco" ? ["2yr","5yr","10yr"] : ["2yr","10yr","25yr"];
-      if(!valid.includes(s.storm)) s.storm="10yr";
-      withFocusPreserved(renderAll);
-    }});
-  [["noaa","NOAA Atlas 14 (per county)"],["mdsha","MDSHA Agency Table"],["moco","MoCo Agency Table"]].forEach(([v,l])=>{
-    const o = el("option",{value:v},l);
-    if(s.rainfallSource===v) o.selected=true;
-    srcSel.appendChild(o);
-  });
-  srcField.appendChild(srcSel);
-  gRow.appendChild(srcField);
-
-  // County (NOAA only)
-  if(s.rainfallSource==="noaa"){
-    const countyField = el("div",{class:"field"});
-    countyField.appendChild(el("label",{},"County"));
-    const countySel = el("select",{class:"cell-input",style:"width:170px;",
-      "data-focus-key":"is:global:county",
-      onchange:(e)=>{ s.county=e.target.value; withFocusPreserved(renderAll); }});
-    NOAA_COUNTY_LIST.forEach(cty=>{
-      const o = el("option",{value:cty},cty);
-      if(s.county===cty) o.selected=true;
-      countySel.appendChild(o);
-    });
-    const oCustom = el("option",{value:"Custom"},"Custom");
-    if(s.county==="Custom") oCustom.selected=true;
-    countySel.appendChild(oCustom);
-    countyField.appendChild(countySel);
-    gRow.appendChild(countyField);
-  }
-
-  // Storm frequency
-  const stormField = el("div",{class:"field"});
-  stormField.appendChild(el("label",{},"Storm"));
-  const stormSel = el("select",{class:"cell-input",style:"width:110px;",
-    "data-focus-key":"is:global:storm",
-    onchange:(e)=>{ s.storm=e.target.value; withFocusPreserved(renderAll); }});
-  (s.rainfallSource==="moco"
-    ? [["2yr","2-year"],["5yr","5-year"],["10yr","10-year"]]
-    : [["2yr","2-year"],["10yr","10-year"],["25yr","25-year"]]
-  ).forEach(([v,l])=>{
-    const o = el("option",{value:v},l);
-    if(s.storm===v) o.selected=true;
-    stormSel.appendChild(o);
-  });
-  stormField.appendChild(stormSel);
-  gRow.appendChild(stormField);
-
   // Default allowable spread
   const allowField = el("div",{class:"field"});
   allowField.appendChild(el("label",{},"Default allowable spread (ft)"));
@@ -2762,28 +3129,13 @@ function renderInletSpacing(){
 
   gSection.appendChild(gRow);
 
-  // Custom NOAA point intensities (only when county==="Custom")
-  if(s.rainfallSource==="noaa" && s.county==="Custom"){
-    const customRow = el("div",{style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:4px;"});
-    [5,10,15,30,60].forEach(d=>{
-      const f = el("div",{class:"field",style:"margin-bottom:0;"});
-      f.appendChild(el("label",{},d+"-min"));
-      f.appendChild(el("input",{type:"text",inputmode:"decimal",class:"cell-input",style:"width:70px;",
-        value:(s.customNoaa && s.customNoaa[d]!==undefined && s.customNoaa[d]!==null) ? s.customNoaa[d] : "",
-        "data-focus-key":"is:global:custom:"+d,
-        oninput:(e)=>{ s.customNoaa=Object.assign({},s.customNoaa); s.customNoaa[d]=e.target.value; withFocusPreserved(renderAll); }}));
-      customRow.appendChild(f);
-    });
-    gSection.appendChild(el("p",{class:"hint",style:"margin:0 0 10px 0;"},
-      "Enter point precipitation depths as intensities (in/hr) for your project location. Interpolation between the entered durations is linear; values below/above the entered range clamp to the nearest entry."));
-    gSection.appendChild(customRow);
-  }
-  // County provenance note (real county selected)
-  else if(s.rainfallSource==="noaa" && NOAA_ATLAS14[s.county]){
-    gSection.appendChild(el("div",{class:"note"},
-      "County point: " + s.county + " — intensities represent lat " + NOAA_ATLAS14[s.county].lat +
-      ", lon " + NOAA_ATLAS14[s.county].lon + " (NOAA Atlas 14 PDS, pulled 2026-09-09). Values vary within the county; use Custom for a project-specific point."));
-  }
+  // Rainfall info note (settings managed in Rainfall tab)
+  const rf = state.rainfall;
+  const rfSrcLabel = rf.rainfallSource==="noaa"
+    ? "NOAA Atlas 14 ("+rf.county+")"
+    : rf.rainfallSource==="moco" ? "MoCo Agency Table" : "MDSHA Agency Table";
+  gSection.appendChild(el("div",{class:"note"},
+    "Rainfall: "+rfSrcLabel+", inlet storm: "+rf.inletStorm+". Change in the Rainfall Settings tab."));
 
   c.appendChild(gSection);
 
@@ -2793,6 +3145,16 @@ function renderInletSpacing(){
     el("h2",{},"Inlets"),
     el("button",{class:"btn btn-sm", onclick:()=>{ state.inletSpacing.push(defaultInletSpacingRow()); withFocusPreserved(renderAll); }}, "+ Add Inlet")
   ]));
+
+  // Build inletCtx for detail sheets (has all rainfall fields for display)
+  const inletCtx = {
+    street:          s.street,
+    allowableSpread: s.allowableSpread,
+    rainfallSource:  state.rainfall.rainfallSource,
+    county:          state.rainfall.county,
+    storm:           state.rainfall.inletStorm,
+    customNoaa:      state.rainfall.customNoaa || {},
+  };
 
   // Compute the chain once for the whole table
   const chain = computeInletChain(rows, s);
@@ -2856,7 +3218,7 @@ function renderInletSpacing(){
       el("td",{class:"out computed-cell"}, cc.pickupPct!=null ? cc.pickupPct.toFixed(1)+"%" : "—"),
       el("td",{}, bypassSelect(row)),
       el("td",{class:"out computed-cell"}, cc.bypassCA>0 ? cc.bypassCA.toFixed(5) : "0"),
-      el("td",{}, detailBtn(()=>openDetailModal(buildInletSpacingSheet(row, comp[row.id], s)))),
+      el("td",{}, detailBtn(()=>openDetailModal(buildInletSpacingSheet(row, comp[row.id], inletCtx)))),
       el("td",{}, delBtn(()=>{ state.inletSpacing=state.inletSpacing.filter(r=>r!==row); withFocusPreserved(renderAll); }))
     ]));
   });
@@ -2932,6 +3294,9 @@ function renderAll(){
   renderTable46();
   renderKb();
   renderInletSpacing();
+  renderRainfall();
+  renderPipeSizing25();
+  renderStructures25();
 }
 
 /* =======================================================================
@@ -2968,21 +3333,37 @@ function sheetWrapper(kind, title, sub, bodyNodes){
 
 function buildDrainageSheet(row){
   const calc = calcDrainageRow(row);
+  const r    = state.rainfall;
+  const srcLabel = r.rainfallSource === "noaa"
+    ? "NOAA Atlas 14 \u2014 " + r.county
+    : r.rainfallSource === "moco" ? "MoCo Agency Table" : "MDSHA Agency Table";
+
+  const iRows = calc.iOverridden
+    ? [["Intensity source", "Manual override"],
+       ["i used (all storms)", fmt(Number(row.iOverride), 3) + " in/hr \u26a0 verify against source"]]
+    : [["Intensity source", srcLabel],
+       ["Time of concentration, Tc", (row.tc !== "" && row.tc != null ? fmt(parseFloat(row.tc), 1) + " min" : "\u2014")]];
+
+  const qRows = calc.storms.map(s => {
+    const label = {"2yr":"Q\u2082","10yr":"Q\u2081\u2080","25yr":"Q\u2082\u2085","5yr":"Q\u2085"}[s] || ("Q "+s);
+    const tag = s === r.pipeStorm ? " \u2190 pipe design storm" : s === r.inletStorm ? " \u2190 inlet design storm" : "";
+    return [label, fmt(calc.Qs[s], 3) + " cfs" + tag];
+  });
+
   const body = [
     csSection("Inputs", csTable([
-      ["Tributary area, A", fmt(calc.A,2)+" ac"],
-      ["Runoff coefficient, C", fmt(calc.C,2)],
-      ["Rainfall intensity, i", fmt(calc.i,2)+" in/hr"],
-      ["Time of concentration, Tc", (row.tc!==""&&row.tc!=null?fmt(parseFloat(row.tc),1)+" min":"\u2014")],
-      ["Frequency correction, Cf", fmt(calc.cf,2)],
+      ["Tributary area, A", fmt(calc.A, 2) + " ac"],
+      ["Runoff coefficient, C", fmt(calc.C, 2)],
+      ["CA = C \u00d7 A", fmt(calc.CA, 3)],
+      ["Frequency correction, Cf", fmt(calc.cf, 2)],
+      ...iRows,
     ])),
-    csSection("Rational Method", el("div",{},[
-      csFormula(["Q = Cf \u00d7 C \u00d7 i \u00d7 A"]),
-      csFormula(["Q = "+fmt(calc.cf,2)+" \u00d7 "+fmt(calc.C,2)+" \u00d7 "+fmt(calc.i,2)+" \u00d7 "+fmt(calc.A,2)]),
-      csResult("Q", fmt(calc.Q,2)+" cfs"),
+    csSection("Rational Method \u2014 Q = Cf \u00d7 CA \u00d7 i", el("div", {}, [
+      csTable(qRows),
     ])),
   ];
-  return sheetWrapper("drainage", "Drainage Area \u2014 "+(row.structureId||row.id), row.desc||"Rational Method (Q = C\u00b7i\u00b7A)", body);
+  return sheetWrapper("drainage", "Drainage Area \u2014 " + (row.structureId || row.id),
+    row.desc || "Rational Method (Q = Cf\u00b7C\u00b7i\u00b7A)", body);
 }
 
 function buildPipeSheet(row){
@@ -3052,7 +3433,7 @@ function buildStructureSheet(structureId){
   if(st.drainageAreaId){
     const da = findDrainage(st.drainageAreaId);
     body.push(csSection("Captured Q (from linked drainage area)", el("div",{},[
-      da ? csResult("Captured Q", fmt(calcDrainageRow(da).Q,2)+" cfs (from "+(da.structureId||da.id)+")") : csWarn("Linked drainage area not found."),
+      da ? csResult("Captured Q", fmt(calcDrainageRow(da).designQ,2)+" cfs (from "+(da.structureId||da.id)+")") : csWarn("Linked drainage area not found."),
     ])));
   } else {
     body.push(csSection("Captured Q", csResult("Captured Q", "0.00 cfs (no drainage area linked)")));
@@ -3259,10 +3640,11 @@ function buildFormulasReferenceSheet(){
   b1.push(csFormula(["Q = Cf \u00d7 C \u00d7 i \u00d7 A"]));
   b1.push(csTable([["Cf","Frequency correction factor (1.0 for storms \u2264 25-yr)"],["C","Runoff coefficient"],["i","Rainfall intensity, in/hr, for the design storm"],["A","Tributary area, acres"]]));
   if(daEx){
+    const daDesignI = (daCalc.cf > 0 && daCalc.CA > 0) ? daCalc.designQ / (daCalc.cf * daCalc.CA) : 0;
     b1.push(el("div",{class:"cs-block-title", style:"margin-top:10px;"}, "Worked example \u2014 "+(daEx.structureId||daEx.id)));
-    b1.push(csTable([["Cf",fmt(daCalc.cf,2)],["C",fmt(daCalc.C,2)],["i",fmt(daCalc.i,2)+" in/hr"],["A",fmt(daCalc.A,2)+" ac"]]));
-    b1.push(csFormula(["Q = "+fmt(daCalc.cf,2)+" \u00d7 "+fmt(daCalc.C,2)+" \u00d7 "+fmt(daCalc.i,2)+" \u00d7 "+fmt(daCalc.A,2)]));
-    b1.push(csResult("Q", fmt(daCalc.Q,3)+" cfs"));
+    b1.push(csTable([["Cf",fmt(daCalc.cf,2)],["C",fmt(daCalc.C,2)],["i ("+s.rainfall.pipeStorm+" design storm)",fmt(daDesignI,3)+" in/hr"],["A",fmt(daCalc.A,2)+" ac"]]));
+    b1.push(csFormula(["Q = "+fmt(daCalc.cf,2)+" \u00d7 "+fmt(daCalc.C,2)+" \u00d7 "+fmt(daDesignI,3)+" \u00d7 "+fmt(daCalc.A,2)]));
+    b1.push(csResult("Q ("+s.rainfall.pipeStorm+")", fmt(daCalc.designQ,3)+" cfs"));
   }
   body.push(csSection("1. Rational Method (Drainage Area tab)", el("div",{}, b1)));
 
@@ -3661,12 +4043,12 @@ function buildInletSpacingSheet(row, comp, settings){
     ["Bypass CA in (from upstream)", f(bypassCAIn>0?bypassCAIn:0,5)+" ac"],
     ["Total CA", f(comp.totalCA,5)+" ac"],
     ["Time of concentration, Tc", row.tc ? row.tc+" min" : "\u2014"],
-    ["Rainfall intensity, i", f(iVal,3)+" in/hr"+(row.iOverride?"\u00b9":"")],
+    ["Rainfall intensity, i", f(iVal,3)+" in/hr"+(row.iOverride!==""&&row.iOverride!=null?"\u00b9":"")],
     [isSump ? "Grade" : "Longitudinal slope, S", isSump ? "SUMP" : f(S,4)+" ft/ft"],
     [isSump ? "Cross-slope, Sx" : "Cross-slope, Sx", isSump ? "\u2014 (sump)" : f(Sx,4)+" ft/ft"],
     ["Allowable spread, T\u2090", ((row.allowableSpread||"")!==""?row.allowableSpread:settings.allowableSpread)+" ft"],
   ])));
-  if(row.iOverride){
+  if(row.iOverride!==""&&row.iOverride!=null){
     body.push(el("div",{class:"cs-note"},
       "\u00b9 Rainfall intensity manually overridden. Auto (curve) value: "+f(comp.iComputed,3)+" in/hr."));
   }
@@ -3772,8 +4154,18 @@ function printAllSheets(){
     rows.forEach(r=>nodes.push(buildOutletStageSheet(r, os)));
   });
   if(state.inletSpacing.length){
-    const isChain = computeInletChain(state.inletSpacing, state.inletSpacingSettings);
-    state.inletSpacing.forEach(r=>nodes.push(buildInletSpacingSheet(r, isChain.results[r.id], state.inletSpacingSettings)));
+    const _is = state.inletSpacingSettings;
+    const _rf = state.rainfall;
+    const _isCtx = {
+      street:          _is.street,
+      allowableSpread: _is.allowableSpread,
+      rainfallSource:  _rf.rainfallSource,
+      county:          _rf.county,
+      storm:           _rf.inletStorm,
+      customNoaa:      _rf.customNoaa || {},
+    };
+    const isChain = computeInletChain(state.inletSpacing, _is);
+    state.inletSpacing.forEach(r=>nodes.push(buildInletSpacingSheet(r, isChain.results[r.id], _isCtx)));
   }
   if(nodes.length===0){ toast("Nothing to print yet \u2014 add some rows first.", true); return; }
   printNodes(nodes);
@@ -3839,18 +4231,46 @@ function buildWorkbook(){
   wsOv["!cols"] = [{wch:100}];
   XLSX.utils.book_append_sheet(wb, wsOv, "Overview");
 
+  // ---- Rainfall Settings ----
+  const rf = state.rainfall;
+  const rfAoa = [
+    ["Rainfall Source",          rf.rainfallSource||"noaa"],
+    ["County",                   rf.county||"Montgomery"],
+    ["Pipe & HGL Design Storm",  rf.pipeStorm||"10yr"],
+    ["25-yr Check",              rf.pipe25Check ? "TRUE" : "FALSE"],
+    ["Inlet Design Storm",       rf.inletStorm||"2yr"],
+    ["Custom NOAA 5-min (in/hr)",  (rf.customNoaa&&rf.customNoaa[5]!=null&&rf.customNoaa[5]!=="")?rf.customNoaa[5]:""],
+    ["Custom NOAA 10-min (in/hr)", (rf.customNoaa&&rf.customNoaa[10]!=null&&rf.customNoaa[10]!=="")?rf.customNoaa[10]:""],
+    ["Custom NOAA 15-min (in/hr)", (rf.customNoaa&&rf.customNoaa[15]!=null&&rf.customNoaa[15]!=="")?rf.customNoaa[15]:""],
+    ["Custom NOAA 30-min (in/hr)", (rf.customNoaa&&rf.customNoaa[30]!=null&&rf.customNoaa[30]!=="")?rf.customNoaa[30]:""],
+    ["Custom NOAA 60-min (in/hr)", (rf.customNoaa&&rf.customNoaa[60]!=null&&rf.customNoaa[60]!=="")?rf.customNoaa[60]:""],
+  ];
+  const wsRf = XLSX.utils.aoa_to_sheet(rfAoa);
+  wsRf["!cols"] = [{wch:30},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, wsRf, "Rainfall Settings");
+
   // ---- Drainage Area ----
-  const daHeader = ["ID","Description","Area A (ac)","C","i (in/hr)","Tc (min)","Cf","Q (cfs)","Tc Method"];
-  const daRows = [daHeader];
-  state.drainage.forEach(r=>{
-    daRows.push([r.structureId||r.id, r.desc||"", num(r.area), num(r.C), num(r.i), num(r.tc), num(r.cf,1), null, r.tcMethod||"direct"]);
+  const rfSrc    = state.rainfall.rainfallSource;
+  const daStorms = availableStorms(rfSrc);
+  const daQHdrs  = daStorms.map(s => "Q_" + s + " (cfs)");
+  const daHeader = ["ID","Description","Area A (ac)","C","CA","i Override (in/hr)","Tc (min)","Cf","Tc Method", ...daQHdrs];
+  const daRows   = [daHeader];
+  state.drainage.forEach(r => {
+    const calc = calcDrainageRow(r);
+    const qVals = daStorms.map(s => round(calc.Qs[s] || 0, 3));
+    daRows.push([
+      r.structureId||r.id, r.desc||"",
+      num(r.area), num(r.C),
+      round(calc.CA, 3),
+      (r.iOverride !== "" && r.iOverride != null) ? num(r.iOverride) : "",
+      num(r.tc), num(r.cf, 1),
+      r.tcMethod||"direct",
+      ...qVals
+    ]);
   });
   const wsDa = XLSX.utils.aoa_to_sheet(daRows);
-  state.drainage.forEach((r,i)=>{
-    const row=i+2, calc=calcDrainageRow(r);
-    setFormula(wsDa, "H"+row, "=C"+row+"*D"+row+"*E"+row+"*G"+row, round(calc.Q,4));
-  });
-  wsDa["!cols"] = [{wch:12},{wch:26},{wch:11},{wch:8},{wch:10},{wch:9},{wch:7},{wch:10},{wch:11}];
+  wsDa["!cols"] = [{wch:12},{wch:26},{wch:11},{wch:8},{wch:8},{wch:14},{wch:9},{wch:7},{wch:11},
+    ...daStorms.map(()=>({wch:10}))];
   XLSX.utils.book_append_sheet(wb, wsDa, "Drainage Area");
 
   // ---- TR-55 Segments (variable-length list per Drainage Area, so it gets
@@ -3901,7 +4321,7 @@ function buildWorkbook(){
   const wsSt = XLSX.utils.aoa_to_sheet(stAoa);
 
   // Now fill live formulas. Column letters:
-  // Drainage Area: A id ... H Q
+  // Drainage Area: A id B desc C area D C E CA F iOverride G tc H cf I tcMethod J+ Q per storm (static values)
   // Pipe Sizing:   A id B from C to D angle E shape F size G n H slope I len J designQ K area L qfull M vel N status O splitRole P from|role key
   // Structure:     A id B desc C daId D type E force F startElev G crown H rim
   //                I capturedQ J qFromPipes K totalFlow L outPipeId M Hf N Kb O Hb P Vout Q upstreamHGL R downstreamId S crownChk T rimChk
@@ -4126,15 +4546,7 @@ function buildWorkbook(){
   const isChain = computeInletChain(state.inletSpacing, is);
   const isAoa = [
     ["Street", is.street||""],
-    ["Rainfall Source", is.rainfallSource||"noaa"],
-    ["County", is.county||"Montgomery"],
-    ["Storm", is.storm||"10yr"],
     ["Default Allowable Spread (ft)", is.allowableSpread!=null?is.allowableSpread:""],
-    ["Custom NOAA 5-min (in/hr)",  (is.customNoaa&&is.customNoaa[5]!=null)?is.customNoaa[5]:""],
-    ["Custom NOAA 10-min (in/hr)", (is.customNoaa&&is.customNoaa[10]!=null)?is.customNoaa[10]:""],
-    ["Custom NOAA 15-min (in/hr)", (is.customNoaa&&is.customNoaa[15]!=null)?is.customNoaa[15]:""],
-    ["Custom NOAA 30-min (in/hr)", (is.customNoaa&&is.customNoaa[30]!=null)?is.customNoaa[30]:""],
-    ["Custom NOAA 60-min (in/hr)", (is.customNoaa&&is.customNoaa[60]!=null)?is.customNoaa[60]:""],
     [],
     ["Label","Structure Type","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
      "S","Sx","W (ft)","a (ft)","n","Allowable Spread (ft)","Bypass To",
@@ -4205,6 +4617,25 @@ function importExcel(file){
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, {type:"array", cellFormula:false});
 
+      // ---- Rainfall Settings ----
+      const rfWs = wb.Sheets["Rainfall Settings"];
+      if (rfWs) {
+        const rfAoaRaw = XLSX.utils.sheet_to_json(rfWs, {header:1, raw:false, defval:""});
+        const rfMap = {};
+        rfAoaRaw.forEach(r => { if (r[0]) rfMap[String(r[0]).trim()] = r[1]; });
+        const newRf = defaultRainfallSettings();
+        if (rfMap["Rainfall Source"])         newRf.rainfallSource = rfMap["Rainfall Source"];
+        if (rfMap["County"])                  newRf.county         = rfMap["County"];
+        if (rfMap["Pipe & HGL Design Storm"]) newRf.pipeStorm      = rfMap["Pipe & HGL Design Storm"];
+        if (rfMap["25-yr Check"])             newRf.pipe25Check    = rfMap["25-yr Check"] === "TRUE";
+        if (rfMap["Inlet Design Storm"])      newRf.inletStorm     = rfMap["Inlet Design Storm"];
+        [5,10,15,30,60].forEach(d => {
+          const v = rfMap["Custom NOAA "+d+"-min (in/hr)"];
+          if (v !== "" && v != null) newRf.customNoaa[d] = String(v);
+        });
+        state.rainfall = newRf;
+      }
+
       const da = sheetToRows(wb, "Drainage Area");
       const daIdMap = {}; // label -> new internal id
       if(da){
@@ -4213,7 +4644,16 @@ function importExcel(file){
           const label = r["ID"]||"";
           if(label) daIdMap[label]=id;
           return {
-            id, structureId: label, desc:r["Description"]||"", area:r["Area A (ac)"]||"", C:r["C"]||"", i:r["i (in/hr)"]||"", tc:r["Tc (min)"]||"", cf: r["Cf"]===""||r["Cf"]==null?1:r["Cf"],
+            id, structureId: label, desc:r["Description"]||"", area:r["Area A (ac)"]||"", C:r["C"]||"",
+            iOverride: (()=>{
+              const override = r["i Override (in/hr)"];
+              if (override !== "" && override != null && isFinite(Number(override))) return String(override);
+              // Migration: old exports had 'i (in/hr)' — treat as iOverride
+              const oldI = r["i (in/hr)"];
+              if (oldI !== "" && oldI != null && isFinite(Number(oldI))) return String(oldI);
+              return "";
+            })(),
+            tc:r["Tc (min)"]||"", cf: r["Cf"]===""||r["Cf"]==null?1:r["Cf"],
             tcMethod: r["Tc Method"]==="tr55" ? "tr55" : "direct",
             tr55: { segments: [] },
           };
@@ -4365,15 +4805,7 @@ function importExcel(file){
           const k = String(row[0]||"").trim();
           const v = row[1];
           if(k==="Street") newSettings.street=String(v||"");
-          else if(k==="Rainfall Source") newSettings.rainfallSource=String(v||"noaa");
-          else if(k==="County") newSettings.county=String(v||"Montgomery");
-          else if(k==="Storm") newSettings.storm=String(v||"10yr");
           else if(k==="Default Allowable Spread (ft)") newSettings.allowableSpread=(v!==""&&v!=null)?v:8;
-          else if(k==="Custom NOAA 5-min (in/hr)")  newSettings.customNoaa[5]=(v!==""&&v!=null)?String(v):"";
-          else if(k==="Custom NOAA 10-min (in/hr)") newSettings.customNoaa[10]=(v!==""&&v!=null)?String(v):"";
-          else if(k==="Custom NOAA 15-min (in/hr)") newSettings.customNoaa[15]=(v!==""&&v!=null)?String(v):"";
-          else if(k==="Custom NOAA 30-min (in/hr)") newSettings.customNoaa[30]=(v!==""&&v!=null)?String(v):"";
-          else if(k==="Custom NOAA 60-min (in/hr)") newSettings.customNoaa[60]=(v!==""&&v!=null)?String(v):"";
           else if(k==="Label") dataHeaderIdx=i;
         });
         if(dataHeaderIdx>=0){
@@ -4456,7 +4888,8 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   TR55_SHEET_N, TR55_CHANNEL_N, TR55_SEGMENT_TYPES, tr55SegmentCalc, tr55DefaultSegment,
   lookupIntensity, interpolatePL, computeSxEff, computeSpread, computeInterception, computeInletRow,
   computeInletChain, computeRowIntensity, buildInletSpacingSheet,
-  defaultInletSpacingRow, defaultInletSpacingSettings,
+  defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
+  defaultRainfallSettings, getTabs,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET };
 
 })();
