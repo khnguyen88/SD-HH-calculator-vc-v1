@@ -317,3 +317,78 @@ test("buildWorkbook: Drainage Area has CA column, no old i column", () => {
   assert.ok(!headers.includes("i (in/hr)"), "old i column should be gone");
   assert.ok(headers.includes("i Override (in/hr)"), "iOverride header missing");
 });
+
+test("resolvedInletFields: returns row values when no linkedStructureId", () => {
+  const row = { linkedStructureId:"", area:"0.5", C:"0.8", tc:"10" };
+  const r = sdc.resolvedInletFields(row);
+  assert.equal(r.area, "0.5");
+  assert.equal(r.areaFromDA, false);
+});
+
+test("resolvedInletFields: auto-fills blank area/C/tc from linked DA", () => {
+  const daId = sdc.state.drainage[0] && sdc.state.drainage[0].id;
+  const st = sdc.state.structures[0];
+  if (!st || !daId) return;
+  const origLinked = st.drainageAreaId;
+  st.drainageAreaId = daId;
+  const da = sdc.findDrainage(daId);
+  da.area = "1.2"; da.C = "0.7"; da.tc = "15";
+  const row = { linkedStructureId: st.id, area:"", C:"", tc:"" };
+  const r = sdc.resolvedInletFields(row);
+  assert.equal(r.area, "1.2");
+  assert.equal(r.C,    "0.7");
+  assert.equal(r.tc,   "15");
+  assert.equal(r.areaFromDA, true);
+  assert.equal(r.CFromDA,    true);
+  assert.equal(r.tcFromDA,   true);
+  st.drainageAreaId = origLinked;
+});
+
+test("resolvedInletFields: non-blank row field is kept as override", () => {
+  const daId = sdc.state.drainage[0] && sdc.state.drainage[0].id;
+  const st = sdc.state.structures[0];
+  if (!st || !daId) return;
+  const origLinked = st.drainageAreaId;
+  st.drainageAreaId = daId;
+  const da = sdc.findDrainage(daId);
+  da.area = "1.2"; da.C = "0.7"; da.tc = "15";
+  const row = { linkedStructureId: st.id, area:"0.5", C:"", tc:"" };
+  const r = sdc.resolvedInletFields(row);
+  assert.equal(r.area, "0.5");
+  assert.equal(r.areaFromDA, false);
+  assert.equal(r.C, "0.7");
+  assert.equal(r.CFromDA, true);
+  st.drainageAreaId = origLinked;
+});
+
+test("buildWorkbook: Inlet Spacing sheet has Linked Structure column", () => {
+  const wb = sdc.buildWorkbook();
+  const XLSX = window.XLSX;
+  const ws = wb.Sheets["Inlet Spacing"];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+  // Find the data header row (first row where first cell is "Linked Structure" OR second cell is "Label")
+  const headerRow = aoa.find(r => r[0] === "Linked Structure" || r[1] === "Label");
+  assert.ok(headerRow, "Linked Structure column header row not found");
+  assert.equal(headerRow[0], "Linked Structure", "First column should be Linked Structure");
+});
+
+test("computeInletRow uses linkedStructureId DA auto-fill for area/C/tc", () => {
+  const da = sdc.state.drainage[0];
+  const st = sdc.state.structures[0];
+  if (!da || !st) return;
+  const origDA = st.drainageAreaId;
+  da.area = "1.0"; da.C = "0.9"; da.tc = "8";
+  st.drainageAreaId = da.id;
+  const row = {
+    id:"test-linked", linkedStructureId: st.id,
+    area:"", C:"", tc:"",       // all blank → auto-fill from DA
+    iOverride:"", S:"0.04", Sx:"0.02", W:1.33, a:0.0833, n:0.013, L:"10",
+    allowableSpread:"", bypassTo:""
+  };
+  const is = sdc.state.inletSpacingSettings;
+  const result = sdc.computeInletRow(row, is, 0, 0);
+  // area=1.0, C=0.9 → localCA=0.9
+  assert.ok(result.totalCA >= 0.89 && result.totalCA <= 0.91,
+    "totalCA should be ~0.9 (got " + result.totalCA + ")");
+  st.drainageAreaId = origDA;
+});

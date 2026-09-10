@@ -492,8 +492,9 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
       <div class="view" id="view-kb"></div>
       <div class="view" id="view-inlet-spacing"></div>
       <div class="view" id="view-rainfall"></div>
+      <div class="view" id="view-hgl"></div>
       <div class="view" id="view-pipe-sizing-25"></div>
-      <div class="view" id="view-structures-25"></div>
+      <div class="view" id="view-hgl-25"></div>
     </div>
   </div>
 </div>
@@ -999,11 +1000,34 @@ function computeInterception(L, Q, S, n, SxEff, a) {
   return { Lt, E, bypass_frac: 1 - E };
 }
 
+function resolvedInletFields(row) {
+  const out = {
+    area: row.area, C: row.C, tc: row.tc,
+    areaFromDA: false, CFromDA: false, tcFromDA: false,
+  };
+  if (!row.linkedStructureId) return out;
+  const st = state.structures.find(s => s.id === row.linkedStructureId);
+  if (!st || !st.drainageAreaId) return out;
+  const da = findDrainage(st.drainageAreaId);
+  if (!da) return out;
+  if (row.area === "" || row.area == null) { out.area = da.area; out.areaFromDA = true; }
+  if (row.C   === "" || row.C   == null)  { out.C   = da.C;    out.CFromDA   = true; }
+  if (row.tc  === "" || row.tc  == null)  { out.tc  = da.tc;   out.tcFromDA  = true; }
+  return out;
+}
+
+function resolvedInletLabel(row) {
+  if (!row.linkedStructureId) return row.label;
+  const st = state.structures.find(s => s.id === row.linkedStructureId);
+  return st ? (st.structureId || st.id) : row.label;
+}
+
 function computeInletRow(row, settings, bypassQIn, bypassCAIn) {
   const isSump = String(row.S).toUpperCase() === "SUMP";
-  const tc = Number(row.tc);
-  const area = Number(row.area);
-  const C    = Number(row.C);
+  const rif  = resolvedInletFields(row);
+  const tc   = Number(rif.tc);
+  const area = Number(rif.area);
+  const C    = Number(rif.C);
   const S    = isSump ? 0 : Number(row.S);
   const Sx   = Number(row.Sx);
   const W    = Number(row.W);
@@ -1172,6 +1196,7 @@ function defaultInletSpacingSettings() {
 function defaultInletSpacingRow() {
   return {
     id: nextId(),
+    linkedStructureId: "",   // internal id of a type="inlet" structure, or "" = custom
     label: "",
     structureType: "",  // INLET_STRUCTURES id or ""
     area: "",
@@ -1565,7 +1590,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
   if(isSplitter){
     const primary = outPipes.find(p=>p.splitRole==="primary");
     const secondary = outPipes.find(p=>p.splitRole==="secondary");
-    if(!primary || !secondary) warnings.push("Flow splitter needs one Primary and one Secondary outgoing pipe (set Role on the Pipe Sizing tab).");
+    if(!primary || !secondary) warnings.push("Flow splitter needs one Primary and one Secondary outgoing pipe (set Role on the Pipe Sizing & Capacity tab).");
     if(outPipes.length>2) warnings.push("More than 2 outgoing pipes found on a flow splitter \u2014 only Primary/Secondary are used.");
     outPipe = primary || outPipes[0] || null;
     outPipeFlow = splitInfo.primaryQ;
@@ -1911,17 +1936,18 @@ function getTabs() {
     {id:"rainfall",       label:"Rainfall & IDF"},
     {id:"drainage",       label:"Drainage Area (Q=CiA)"},
     {id:"structures",     label:"Junction Structures"},
-    {id:"pipes",          label:"Pipe Sizing"},
+    {id:"inlet-spacing",  label:"Inlet Spacing"},
+    {id:"pipes",          label:"Pipe Sizing & Capacity"},
+    {id:"hgl",            label:"HGL"},
     {id:"outlet",         label:"Outlet Structure"},
     {id:"formulas",       label:"Formulas & Examples"},
     {id:"table46",        label:"Table 4-6 Reference"},
     {id:"kb",             label:"Kb Coefficients"},
-    {id:"inlet-spacing",  label:"Inlet Spacing"},
   ];
   const r = state.rainfall;
   if (r.pipe25Check && r.pipeStorm !== "25yr") {
-    tabs.push({id:"pipe-sizing-25",  label:"Pipe Sizing — 25-yr"});
-    tabs.push({id:"structures-25",   label:"Junction Structures — 25-yr"});
+    tabs.push({id:"pipe-sizing-25",  label:"Pipe Sizing & Capacity — 25-yr"});
+    tabs.push({id:"hgl-25",          label:"HGL — 25-yr"});
   }
   return tabs;
 }
@@ -1956,14 +1982,17 @@ function renderOverview(){
     "This tool models the drainage network as three linked pieces \u2014 Drainage Areas feed Junction Structures, Pipes connect one structure to another \u2014 and walks the hydraulic grade line upstream from the outfall automatically. Everything runs locally in your browser. Click \u2921 Detail on any row to see the full calculation, and print it (or the whole package) from that window."));
 
   const steps = [
-    ["1","Drainage Area \u2014 Q = C \u00b7 i \u00b7 A", "Enter tributary area (A, acres), runoff coefficient (C), and design rainfall intensity (i, in/hr) for each catchment. Computes ", "Q = Cf \u00d7 C \u00d7 i \u00d7 A", "."],
+    ["1","Overview", "Start here; review the workflow and how the tabs connect before entering data."],
     ["2","Rainfall & IDF", "Select rainfall source (NOAA Atlas 14 county, MDSHA, or MoCo agency table) and design storms. The Pipe & HGL Storm drives Q in Drainage Area and pipe capacity. The Inlet Storm drives inlet spacing intensity. Optionally enable the 25-yr check tabs for an additional capacity verification. The IDF table shows intensities at standard Tc values."],
-    ["3","Junction Structures", "One row per physical structure (inlet, manhole, bend, junction, flow splitter, or outfall). Link a Drainage Area to capture its runoff. ", "Total Flow = Captured Q + \u03a3(Q of every pipe flowing into this structure)", ". The tool finds those inflow pipes automatically from the Pipe tab."],
-    ["4","Pipes \u2014 each one connects two structures", "Pick a From structure and a To structure, plus the angle the pipe makes entering the To structure. Design Q is pulled automatically as the From structure's Total Flow (or its Primary/Secondary share, for a pipe leaving a Flow Splitter) \u2014 you never re-enter it."],
-    ["5","Structure loss, automatically", "At each structure the tool counts inflow pipes: 0 \u2192 nominal entrance condition, 1 \u2192 Kb at that pipe's angle, 2 \u2192 the controlling-angle method (the angle belonging to the smaller computed loss governs), >2 \u2192 flagged as unsupported. Combined with friction loss on the outgoing pipe, this produces each structure's upstream HGL, checked against Crown+1ft and Rim\u22121ft."],
-    ["6","Flow Splitter", "A structure type for a diversion manhole or prefab structure downstream of an outlet \u2014 divides its Total Flow between a Primary and a Secondary outgoing pipe, either capacity-limited (Primary = MIN(Total, Capacity), Secondary = the remainder) or by a fixed ratio. Assign each outgoing pipe's Role on the Pipe Sizing tab."],
-    ["7","Outlet Control Structure", "A separate stage-discharge rating curve for a BMP/SWM/ESD outlet \u2014 add Orifice, Weir, or Pipe devices and their flows combine at every stage. Orifice/Pipe partial flow uses the exact wetted circular-segment area and centroid (not an approximation); full and submerged flow follow standard orifice equations. Weirs get free-flow and Villemonte-submerged regimes. Tailwater can link live to a Junction Structure's Upstream HGL."],
-    ["8","Detail & Print", "Every row has a \u2921 Detail button that opens a full calculation sheet \u2014 inputs, formulas, substituted numbers, results. Print just that sheet, or print the entire project's sheets as one package, from inside that window."],
+    ["3","Drainage Area \u2014 Q = C \u00b7 i \u00b7 A", "Define drainage areas with area (A, acres), runoff coefficient (C), and time of concentration (Tc). Q values are auto-computed from ", "Q = Cf \u00d7 C \u00d7 i \u00d7 A", "."],
+    ["4","Junction Structures", "One row per physical structure (inlet, manhole, bend, junction, flow splitter, or outfall). Link a Drainage Area to capture its runoff. ", "Total Flow = Captured Q + \u03a3(Q of every pipe flowing into this structure)", ". Inlet-type structures can be linked to Inlet Spacing rows to auto-fill area, C, and Tc from the associated drainage area."],
+    ["5","Inlet Spacing", "Size grate inlets along a curb profile using HEC-22 methods. Pick a Junction Structure to auto-fill area, C, and Tc from its linked drainage area."],
+    ["6","Pipe Sizing & Capacity", "Pick a From structure and a To structure, plus the angle the pipe makes entering the To structure. Design Q is pulled automatically as the From structure\u2019s Total Flow (or its Primary/Secondary share, for a pipe leaving a Flow Splitter) \u2014 you never re-enter it. Size pipes between structures using Manning\u2019s equation."],
+    ["7","HGL", "Review the hydraulic grade line for each structure. The tool walks upstream from the outfall, computing upstream HGL, and checks each structure against Crown+1\u00a0ft and Rim\u22121\u00a0ft limits."],
+    ["8","Structure Loss (Kb)", "Bend losses are computed automatically from each structure\u2019s outgoing pipe velocity and the Kb coefficient for its type and angle. Review results on the HGL tab; edit default Kb values on the Kb Coefficients tab to match your agency\u2019s Appendix B chart."],
+    ["9","Flow Splitter", "When one structure splits flow to two outgoing pipes (Primary + Secondary), set its type to \u201cFlow Splitter\u201d on the Junction Structures tab and assign both pipes. The pipe leaving a Flow Splitter draws its Design Q from the Primary or Secondary share you enter on that row."],
+    ["10","Outlet Control Structure", "Size the outlet using stage\u2013discharge rating curves. Enter orifices, weirs, and pipe devices on the Outlet Structure tab; the tool builds the combined rating curve and carries it through the HGL chain."],
+    ["11","Detail & Print", "Click the \u2921 Detail button on any row to open a formatted calculation sheet for that element. Use \u201cPrint All\u201d to generate the full package \u2014 all drainage areas, structures, pipes, and HGL sheets \u2014 in one print dialog."],
   ];
   const wrap = el("div",{class:"section"});
   wrap.appendChild(el("h2",{},"How the pieces connect"));
@@ -2025,6 +2054,7 @@ function renderDrainage(){
       const lbl = {"2yr":"Q₂","10yr":"Q₁₀","25yr":"Q₂₅","5yr":"Q₅"}[s] || ("Q "+s);
       return el("th", {class:"computed", style: accent?"color:"+accent+";":""}, lbl+"\n(cfs)");
     }),
+    el("th",{class:"computed"},"Structure"),
     el("th",{},""), el("th",{},"")
   ])));
   const tbody = el("tbody");
@@ -2056,6 +2086,10 @@ function renderDrainage(){
           style: accent ? "font-weight:600;border-bottom:2px solid "+accent+";" : ""
         }, fmt(calc.Qs[s], 2));
       }),
+      el("td",{class:"out computed-cell"}, (()=>{
+        const linked = state.structures.find(s => s.drainageAreaId === row.id);
+        return linked ? (linked.structureId || linked.id) : "—";
+      })()),
       el("td",{}, detailBtn(()=>openDetailModal(buildDrainageSheet(row)))),
       el("td",{}, delBtn(()=>{ state.drainage=state.drainage.filter(r=>r!==row); renderAll(); }))
     ]));
@@ -2100,7 +2134,7 @@ function renderStructures(){
   const c = document.getElementById("view-structures");
   c.innerHTML = "";
   c.appendChild(el("h1",{},"Junction Structures"));
-  c.appendChild(el("p",{class:"view-desc"},"One row per structure. Total Flow, Hf, Hb and Upstream HGL are computed automatically from linked drainage areas and connected pipes (set up on the Pipe Sizing tab). A Flow Splitter needs a Primary and a Secondary outgoing pipe \u2014 set each pipe's Role on the Pipe Sizing tab."));
+  c.appendChild(el("p",{class:"view-desc"},"One row per structure. Total Flow, Hf, Hb and Upstream HGL are computed automatically from linked drainage areas and connected pipes (set up on the Pipe Sizing & Capacity tab). A Flow Splitter needs a Primary and a Secondary outgoing pipe \u2014 set each pipe's Role on the Pipe Sizing & Capacity tab."));
 
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
@@ -2114,8 +2148,6 @@ function renderStructures(){
     el("th",{},"Structure ID"), el("th",{},"Description"), el("th",{},"Drainage Area"), el("th",{},"Type"), el("th",{},"Split config"),
     el("th",{},"Fixed?"), el("th",{},"Fixed/Start Elev"), el("th",{},"Crown (ft)"), el("th",{},"Rim/Grate (ft)"),
     el("th",{class:"computed"},"Captured Q"), el("th",{class:"computed"},"Inflow"), el("th",{class:"computed"},"Total Flow"),
-    el("th",{class:"computed"},"Hf"), el("th",{class:"computed"},"Kb"), el("th",{class:"computed"},"Hb"),
-    el("th",{class:"computed"},"Upstream HGL"), el("th",{class:"computed"},"Crown Chk"), el("th",{class:"computed"},"Rim Chk"),
     el("th",{},""), el("th",{},"")
   ])));
   const tbody = el("tbody");
@@ -2135,12 +2167,6 @@ function renderStructures(){
       el("td",{class:"out computed-cell"}, fmt(calc.captured,2)),
       el("td",{class:"out computed-cell"}, inflowCount + (calc.warnings.length? " \u26a0":"")),
       el("td",{class:"out computed-cell", style:"font-weight:700"}, fmt(calc.totalFlow,2)),
-      el("td",{class:"out computed-cell"}, fmt(calc.Hf,3)),
-      el("td",{class:"out computed-cell"}, calc.kb==null?"\u2014":fmt(calc.kb,2)),
-      el("td",{class:"out computed-cell"}, fmt(calc.Hb,3)),
-      el("td",{class:"out computed-cell", style:"font-weight:700"}, fmt(calc.elevation,2)),
-      el("td",{class:"computed-cell"}, checkBadge(calc.crownPass)),
-      el("td",{class:"computed-cell"}, checkBadge(calc.rimPass)),
       el("td",{}, detailBtn(()=>openDetailModal(buildStructureSheet(row.id)))),
       el("td",{}, delBtn(()=>{ state.structures=state.structures.filter(r=>r!==row); renderAll(); }))
     ]);
@@ -2212,12 +2238,12 @@ function renderStructures(){
 }
 
 /* ---------------------------------------------------------------------
-   Pipe Sizing tab
+   Pipe Sizing & Capacity tab
 --------------------------------------------------------------------- */
 function renderPipes(){
   const c = document.getElementById("view-pipes");
   c.innerHTML = "";
-  c.appendChild(el("h1",{},"Pipe Sizing \u2014 Manning's Equation"));
+  c.appendChild(el("h1",{},"Pipe Sizing & Capacity \u2014 Manning's Equation"));
   c.appendChild(el("p",{class:"view-desc"},"Every pipe connects a From structure to a To structure. Design Q is pulled automatically from the From structure's Total Flow. Angle is this pipe's deflection entering the To structure (used for structure-loss calculations there). For elliptical pipes, enter Size as SPAN x RISE in inches (e.g. 38x24)."));
 
   const section = el("div",{class:"section"});
@@ -2980,15 +3006,15 @@ function renderRainfall() {
 }
 
 /* ---------------------------------------------------------------------
-   Pipe Sizing — 25-yr Check tab
+   Pipe Sizing & Capacity — 25-yr tab
 --------------------------------------------------------------------- */
 function renderPipeSizing25() {
   const c = document.getElementById("view-pipe-sizing-25");
   if (!c) return;
   c.innerHTML = "";
-  c.appendChild(el("h1", {}, "Pipe Sizing — 25-yr Check"));
+  c.appendChild(el("h1", {}, "Pipe Sizing & Capacity — 25-yr"));
   c.appendChild(el("p", {class:"view-desc"},
-    "25-yr check — read only. Pipe geometry is unchanged from the primary Pipe Sizing tab. " +
+    "25-yr check — read only. Pipe geometry is unchanged from the primary Pipe Sizing & Capacity tab. " +
     "Design Q uses Q₂₅ from each linked drainage area."));
 
   const section = el("div", {class:"section"});
@@ -3038,13 +3064,75 @@ function renderPipeSizing25() {
 }
 
 /* ---------------------------------------------------------------------
-   Junction Structures — 25-yr Check tab
+   HGL tab
 --------------------------------------------------------------------- */
-function renderStructures25(){
-  const c = document.getElementById("view-structures-25");
+function renderHgl() {
+  const c = document.getElementById("view-hgl");
   if (!c) return;
   c.innerHTML = "";
-  c.appendChild(el("h1", {}, "Junction Structures — 25-yr Check"));
+  c.appendChild(el("h1", {}, "HGL"));
+  c.appendChild(el("p", {class:"view-desc"},
+    "Hydraulic grade line results for the primary design storm. " +
+    "Define structures and pipes on the Junction Structures and Pipe Sizing & Capacity tabs first. " +
+    "This tab is read-only — all values are computed."));
+
+  const section = el("div", {class:"section"});
+  section.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Upstream HGL — Primary Design Storm")]));
+  const tableWrap = el("div", {class:"table-wrap"});
+  const table = el("table", {class:"data"});
+  table.appendChild(el("thead", {}, el("tr", {}, [
+    el("th",{},"Structure ID"),
+    el("th",{},"Type"),
+    el("th",{class:"computed"},"Total Q\n(cfs)"),
+    el("th",{class:"computed"},"Hf\n(ft)"),
+    el("th",{class:"computed"},"Kb"),
+    el("th",{class:"computed"},"Hb\n(ft)"),
+    el("th",{class:"computed"},"Upstream HGL\n(ft)"),
+    el("th",{},"Crown\n(ft)"),
+    el("th",{class:"computed"},"Crown\nCheck"),
+    el("th",{},"Rim\n(ft)"),
+    el("th",{class:"computed"},"Rim\nCheck"),
+  ])));
+  const tbody = el("tbody");
+  state.structures.forEach(row => {
+    const calc = computeStructureCalc(row.id);
+    const crown = parseFloat(row.crown);
+    const rim   = parseFloat(row.rim);
+    const crownStyle = calc && calc.crownPass === false ? "color:#e05;font-weight:700;" : "";
+    const rimStyle   = calc && calc.rimPass   === false ? "color:#e05;font-weight:700;" : "";
+    tbody.appendChild(el("tr", {}, [
+      el("td",{}, row.structureId||row.id),
+      el("td",{}, row.type||""),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.totalFlow) ? fmt(calc.totalFlow,2) : "—"),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hf)        ? fmt(calc.Hf,3)        : "—"),
+      el("td",{class:"out computed-cell"}, calc && calc.kb != null           ? fmt(calc.kb,2)         : "—"),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hb)        ? fmt(calc.Hb,3)        : "—"),
+      el("td",{class:"out computed-cell", style:"font-weight:700"},
+        calc && isFinite(calc.elevation) ? fmt(calc.elevation,2) : "—"),
+      el("td",{}, isFinite(crown) ? fmt(crown,2) : "—"),
+      el("td",{class:"out computed-cell", style:crownStyle},
+        !calc ? "—" : calc.crownPass === null ? "—" : calc.crownPass ? "✓" : "✗ > crown+1"),
+      el("td",{}, isFinite(rim) ? fmt(rim,2) : "—"),
+      el("td",{class:"out computed-cell", style:rimStyle},
+        !calc ? "—" : calc.rimPass === null ? "—" : calc.rimPass ? "✓" : "✗ FLOOD"),
+    ]));
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  if (state.structures.length === 0)
+    section.appendChild(el("p",{class:"hint"},"No structures defined. Add structures on the Junction Structures tab."));
+  c.appendChild(section);
+}
+
+/* ---------------------------------------------------------------------
+   HGL — 25-yr Check tab
+--------------------------------------------------------------------- */
+function renderHgl25(){
+  const c = document.getElementById("view-hgl-25");
+  if (!c) return;
+  c.innerHTML = "";
+  c.appendChild(el("h1", {}, "HGL — 25-yr"));
   c.appendChild(el("p", {class:"view-desc"},
     "25-yr check — read only. Structure geometry and elevations are unchanged from the primary " +
     "Junction Structures tab. HGL is propagated with Q₂₅ flows."));
@@ -3156,6 +3244,29 @@ function renderInletSpacing(){
     customNoaa:      state.rainfall.customNoaa || {},
   };
 
+  function structureDropdown(row) {
+    const sel = el("select", {
+      class: "cell-input",
+      style: "width:110px;",
+      "data-focus-key": "is:"+row.id+":linkedStructure",
+      onchange: (e) => {
+        row.linkedStructureId = e.target.value;
+        withFocusPreserved(renderAll);
+      }
+    });
+    const optCustom = el("option", {value:""}, "Custom");
+    if (!row.linkedStructureId) optCustom.selected = true;
+    sel.appendChild(optCustom);
+    state.structures
+      .filter(st => st.type === "inlet")
+      .forEach(st => {
+        const opt = el("option", {value: st.id}, st.structureId || st.id);
+        if (row.linkedStructureId === st.id) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    return sel;
+  }
+
   // Compute the chain once for the whole table
   const chain = computeInletChain(rows, s);
   const comp = chain.results;
@@ -3163,7 +3274,7 @@ function renderInletSpacing(){
   const tableWrap = el("div",{class:"table-wrap"});
   const table = el("table",{class:"data"});
   table.appendChild(el("thead",{},el("tr",{},[
-    el("th",{},"Label"), el("th",{},"Structure Type"), el("th",{},"L (ft)"), el("th",{},"Area (ac)"),
+    el("th",{},"Structure"), el("th",{},"Label"), el("th",{},"Structure Type"), el("th",{},"L (ft)"), el("th",{},"Area (ac)"),
     el("th",{},"C"), el("th",{},"Tc (min)"), el("th",{},"i (in/hr)"),
     el("th",{class:"computed"},"Q (cfs)"), el("th",{},"S"), el("th",{},"Sx"),
     el("th",{},"W (ft)"), el("th",{},"a (ft)"), el("th",{},"n"),
@@ -3178,6 +3289,30 @@ function renderInletSpacing(){
     if(cc.cycle) trAttrs.style = "background:rgba(220,60,60,0.10);";
     else if(cc.warn) trAttrs.style = "background:rgba(220,60,60,0.10);";
     if(cc.cycle) trAttrs.title = "In bypass cycle";
+
+    const rf = resolvedInletFields(row);
+    const displayLabel = resolvedInletLabel(row);
+    const isLinked = !!row.linkedStructureId;
+
+    const labelCell = isLinked
+      ? el("input", {class:"cell-input", type:"text", style:"width:120px;color:var(--dim,#888);",
+          "data-focus-key":"is:"+row.id+":label", value:displayLabel, disabled:true})
+      : el("input", {class:"cell-input", type:"text", style:"width:120px;",
+          "data-focus-key":"is:"+row.id+":label", value:row.label||"",
+          oninput:(e)=>{ row.label=e.target.value; withFocusPreserved(renderAll); }});
+
+    function autoField(field, fromDA, resolvedVal, width) {
+      const stored = row[field];
+      const isOverride = stored !== "" && stored != null;
+      return el("input", {
+        class: "cell-input" + (isOverride ? " i-override" : ""),
+        type:"text", inputmode:"decimal", style:"width:"+width+"px;",
+        "data-focus-key":"is:"+row.id+":"+field,
+        value: isOverride ? stored : "",
+        placeholder: fromDA ? String(resolvedVal) : "",
+        oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }
+      });
+    }
 
     // i input: shows override (highlighted) or empty with computed placeholder
     const iHasOverride = row.iOverride !== "" && row.iOverride != null;
@@ -3200,12 +3335,13 @@ function renderInletSpacing(){
     if(cc.warn) spreadAttrs.style = "color:var(--fail);font-weight:700;";
 
     tbody.appendChild(el("tr",trAttrs,[
-      el("td",{}, txtCell(row,"label",90)),
+      el("td",{}, structureDropdown(row)),
+      el("td",{}, labelCell),
       el("td",{}, stypeSelect(row)),
       el("td",{}, txtCell(row,"L",60)),
-      el("td",{}, txtCell(row,"area",70)),
-      el("td",{}, txtCell(row,"C",55)),
-      el("td",{}, txtCell(row,"tc",60)),
+      el("td",{}, autoField("area", rf.areaFromDA, rf.area, 70)),
+      el("td",{}, autoField("C", rf.CFromDA, rf.C, 55)),
+      el("td",{}, autoField("tc", rf.tcFromDA, rf.tc, 60)),
       iCell,
       el("td",{class:"out computed-cell"}, fmt(cc.Q,3)),
       el("td",{}, txtCell(row,"S",65)),
@@ -3262,9 +3398,11 @@ function renderInletSpacing(){
       onchange:(e)=>{ row.bypassTo=e.target.value; withFocusPreserved(renderAll); }});
     sel.appendChild(el("option",{value:""},"—"));
     rows.forEach(other=>{
-      if(other===row || !other.label) return;
-      const o = el("option",{value:other.label}, other.label);
-      if(row.bypassTo===other.label) o.selected=true;
+      if(other===row) return;
+      const lbl = resolvedInletLabel(other);
+      if(!lbl) return;
+      const o = el("option",{value:lbl}, lbl);
+      if(row.bypassTo===lbl) o.selected=true;
       sel.appendChild(o);
     });
     return sel;
@@ -3288,15 +3426,16 @@ function renderAll(){
   renderOverview();
   renderDrainage();
   renderStructures();
+  renderInletSpacing();
   renderPipes();
+  renderHgl();
   renderOutlet();
   renderFormulas();
   renderTable46();
   renderKb();
-  renderInletSpacing();
   renderRainfall();
   renderPipeSizing25();
-  renderStructures25();
+  renderHgl25();
 }
 
 /* =======================================================================
@@ -3468,7 +3607,7 @@ function buildStructureSheet(structureId){
     splitBody.push(csFormula(["Secondary Q = Total Flow \u2212 Primary Q = "+fmt(calc.totalFlow,2)+" \u2212 "+fmt(s.primaryQ,2)]));
     splitBody.push(csResult("Secondary Q", fmt(s.secondaryQ,2)+" cfs"));
     if(calc.warnings.some(w=>w.indexOf("Primary and one Secondary")>=0)){
-      splitBody.push(csWarn("Missing a Primary or Secondary outgoing pipe \u2014 assign Role on the Pipe Sizing tab."));
+      splitBody.push(csWarn("Missing a Primary or Secondary outgoing pipe \u2014 assign Role on the Pipe Sizing & Capacity tab."));
     }
     body.push(csSection("Flow split ("+(s.method==="ratio"?"fixed ratio":"capacity-limited primary")+")", el("div",{}, splitBody)));
   }
@@ -3665,7 +3804,7 @@ function buildFormulasReferenceSheet(){
     b2.push(csFormula(["Qfull = "+fmt(pipeCalc.V,3)+" \u00d7 "+fmt(pipeCalc.areaSf,4)]));
     b2.push(csResult("Qfull", fmt(pipeCalc.Qfull,3)+" cfs \u2014 Design Q = "+fmt(pipeCalc.designQ,3)+" cfs \u2192 "+(pipeCalc.pass?"PASS":"FAIL")));
   }
-  body.push(csSection("2. Manning's Equation (Pipe Sizing tab)", el("div",{}, b2)));
+  body.push(csSection("2. Manning's Equation (Pipe Sizing & Capacity tab)", el("div",{}, b2)));
 
   // ---------------- 3. Friction Loss ----------------
   const b3 = [];
@@ -4253,7 +4392,7 @@ function buildWorkbook(){
   const rfSrc    = state.rainfall.rainfallSource;
   const daStorms = availableStorms(rfSrc);
   const daQHdrs  = daStorms.map(s => "Q_" + s + " (cfs)");
-  const daHeader = ["ID","Description","Area A (ac)","C","CA","i Override (in/hr)","Tc (min)","Cf","Tc Method", ...daQHdrs];
+  const daHeader = ["ID","Description","Area A (ac)","C","CA","i Override (in/hr)","Tc (min)","Cf","Tc Method","Structure", ...daQHdrs];
   const daRows   = [daHeader];
   state.drainage.forEach(r => {
     const calc = calcDrainageRow(r);
@@ -4265,11 +4404,15 @@ function buildWorkbook(){
       (r.iOverride !== "" && r.iOverride != null) ? num(r.iOverride) : "",
       num(r.tc), num(r.cf, 1),
       r.tcMethod||"direct",
+      (()=>{
+        const linked = state.structures.find(s => s.drainageAreaId === r.id);
+        return linked ? (linked.structureId || "") : "";
+      })(),
       ...qVals
     ]);
   });
   const wsDa = XLSX.utils.aoa_to_sheet(daRows);
-  wsDa["!cols"] = [{wch:12},{wch:26},{wch:11},{wch:8},{wch:8},{wch:14},{wch:9},{wch:7},{wch:11},
+  wsDa["!cols"] = [{wch:12},{wch:26},{wch:11},{wch:8},{wch:8},{wch:14},{wch:9},{wch:7},{wch:11},{wch:12},
     ...daStorms.map(()=>({wch:10}))];
   XLSX.utils.book_append_sheet(wb, wsDa, "Drainage Area");
 
@@ -4548,13 +4691,18 @@ function buildWorkbook(){
     ["Street", is.street||""],
     ["Default Allowable Spread (ft)", is.allowableSpread!=null?is.allowableSpread:""],
     [],
-    ["Label","Structure Type","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
+    ["Linked Structure","Label","Structure Type","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
      "S","Sx","W (ft)","a (ft)","n","Allowable Spread (ft)","Bypass To",
      "Q (cfs)","Spread T (ft)","Pickup (%)","Bypass CA out"],
   ];
   state.inletSpacing.forEach(r=>{
     const cc = isChain.results[r.id]||{};
     isAoa.push([
+      (()=>{
+        if (!r.linkedStructureId) return "";
+        const st = state.structures.find(s => s.id === r.linkedStructureId);
+        return st ? (st.structureId || "") : "";
+      })(),
       r.label||"", r.structureType||"",
       r.L!==""&&r.L!=null?num(r.L):r.L,
       r.area!==""&&r.area!=null?num(r.area):r.area,
@@ -4574,7 +4722,7 @@ function buildWorkbook(){
     ]);
   });
   const wsIs = XLSX.utils.aoa_to_sheet(isAoa);
-  wsIs["!cols"] = [{wch:14},{wch:18},{wch:8},{wch:10},{wch:7},{wch:9},{wch:16},
+  wsIs["!cols"] = [{wch:14},{wch:14},{wch:18},{wch:8},{wch:10},{wch:7},{wch:9},{wch:16},
                    {wch:9},{wch:8},{wch:8},{wch:8},{wch:7},{wch:16},{wch:12},
                    {wch:10},{wch:12},{wch:11},{wch:14}];
   XLSX.utils.book_append_sheet(wb, wsIs, "Inlet Spacing");
@@ -4806,7 +4954,7 @@ function importExcel(file){
           const v = row[1];
           if(k==="Street") newSettings.street=String(v||"");
           else if(k==="Default Allowable Spread (ft)") newSettings.allowableSpread=(v!==""&&v!=null)?v:8;
-          else if(k==="Label") dataHeaderIdx=i;
+          else if(k==="Label" || k==="Linked Structure") dataHeaderIdx=i;
         });
         if(dataHeaderIdx>=0){
           const headers = isAoa[dataHeaderIdx].map(h=>String(h).trim());
@@ -4830,6 +4978,13 @@ function importExcel(file){
               row.n   = g("n")!==""?String(g("n")):row.n;
               row.allowableSpread = g("Allowable Spread (ft)")!==""?String(g("Allowable Spread (ft)")):"";
               row.bypassTo = String(g("Bypass To")||"");
+              const linkedStructName = String(g("Linked Structure")||"").trim();
+              if (linkedStructName) {
+                const matchSt = state.structures.find(s => (s.structureId||"") === linkedStructName);
+                row.linkedStructureId = matchSt ? matchSt.id : "";
+              } else {
+                row.linkedStructureId = "";
+              }
               return row;
             });
         }
@@ -4888,6 +5043,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   TR55_SHEET_N, TR55_CHANNEL_N, TR55_SEGMENT_TYPES, tr55SegmentCalc, tr55DefaultSegment,
   lookupIntensity, interpolatePL, computeSxEff, computeSpread, computeInterception, computeInletRow,
   computeInletChain, computeRowIntensity, buildInletSpacingSheet,
+  resolvedInletFields, resolvedInletLabel,
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET };
