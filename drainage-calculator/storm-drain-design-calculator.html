@@ -1993,6 +1993,40 @@ function setSaves(saves){
   }
 }
 
+function captureState(){
+  const snap = JSON.parse(JSON.stringify({
+    drainage: state.drainage,
+    structures: state.structures,
+    pipes: state.pipes,
+    kb: state.kb,
+    outletStructures: state.outletStructures,
+    outletDevices: state.outletDevices,
+    activeOutletId: state.activeOutletId,
+    outletShowGeometryDetail: state.outletShowGeometryDetail,
+    inletSpacing: state.inletSpacing,
+    inletSpacingSettings: state.inletSpacingSettings,
+    rainfall: state.rainfall,
+  }));
+  return snap;
+}
+
+function restoreState(snap, projectName){
+  state.drainage = snap.drainage || [];
+  state.structures = snap.structures || [];
+  state.pipes = snap.pipes || [];
+  state.kb = snap.kb || defaultKbRows();
+  state.outletStructures = snap.outletStructures || [];
+  state.outletDevices = snap.outletDevices || [];
+  state.activeOutletId = snap.activeOutletId || "";
+  state.outletShowGeometryDetail = snap.outletShowGeometryDetail !== undefined ? snap.outletShowGeometryDetail : true;
+  state.inletSpacing = snap.inletSpacing || [];
+  state.inletSpacingSettings = snap.inletSpacingSettings || defaultInletSpacingSettings();
+  state.rainfall = snap.rainfall || defaultRainfallSettings();
+  state.project = projectName;
+  document.getElementById("projectName").value = projectName;
+  renderAll();
+}
+
 function delBtn(onClick){
   return el("button",{class:"row-del", title:"Delete row", onclick:onClick}, "\u2715");
 }
