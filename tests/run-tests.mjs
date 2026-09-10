@@ -280,3 +280,16 @@ test("inlet spacing uses state.rainfall.inletStorm", () => {
   // MDSHA 2yr at Tc=5 = 5.016 in/hr → Q = 0.2 * 5.016 = 1.003
   assert.ok(Math.abs(r.Q - 1.003) < 0.05, "inlet Q uses inletStorm=2yr: " + r.Q);
 });
+
+test("computeTotalFlow stormOverride: Q25 > Q10 for same structure", () => {
+  const structs = sdc.state.structures;
+  if (!structs.length) { return; }
+  const firstInlet = structs.find(s => s.type === "inlet");
+  if (!firstInlet || !firstInlet.drainageAreaId) { return; }
+  sdc.state.rainfall.rainfallSource = "noaa";
+  sdc.state.rainfall.pipeStorm = "10yr";
+  const q10 = sdc.computeTotalFlow(firstInlet.id, null, "10yr").Q;
+  const q25 = sdc.computeTotalFlow(firstInlet.id, null, "25yr").Q;
+  // Q25 must be strictly greater than Q10 (different storm intensities, no iOverride)
+  assert.ok(q25 > q10, "Q25 should be > Q10 (stormOverride not wired): q10=" + q10 + " q25=" + q25);
+});

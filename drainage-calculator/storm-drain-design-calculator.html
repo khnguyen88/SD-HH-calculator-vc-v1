@@ -1472,10 +1472,12 @@ function getOutgoingPipes(structureId){ return state.pipes.filter(p=>p.fromStruc
 function getIncomingPipes(structureId){ return state.pipes.filter(p=>p.toStructureId===structureId); }
 function getOutgoingPipe(structureId){ const list=getOutgoingPipes(structureId); return list.length? list[0] : null; }
 
-function capturedQFor(structure){
+function capturedQFor(structure, stormOverride){
   if(!structure || !structure.drainageAreaId) return 0;
   const da = findDrainage(structure.drainageAreaId);
-  return da ? calcDrainageRow(da).designQ : 0;
+  if(!da) return 0;
+  const calc = calcDrainageRow(da);
+  return stormOverride ? (calc.Qs[stormOverride] || 0) : calc.designQ;
 }
 
 // Given a splitter structure and the total flow arriving at it, returns how
@@ -1498,27 +1500,27 @@ function computeSplitterSplit(st, totalFlow){
 // is that pipe's own designQ (pipeDesignQ), which is normally the full total
 // flow of its From structure -- unless that From structure is a Flow
 // Splitter, in which case only the Primary or Secondary share applies.
-function computeTotalFlow(structureId, seen){
+function computeTotalFlow(structureId, seen, stormOverride){
   seen = seen || new Set();
   const st = findStructure(structureId);
   if(!st) return {Q:0, captured:0, inflow:[], error:null};
   if(seen.has(structureId)) return {Q:0, captured:0, inflow:[], error:"circular"};
   const nextSeen = new Set(seen);
   nextSeen.add(structureId);
-  const captured = capturedQFor(st);
+  const captured = capturedQFor(st, stormOverride);
   const inflowPipes = getIncomingPipes(structureId);
   const inflow = inflowPipes.map(p=>{
-    const q = pipeDesignQ(p, nextSeen);
+    const q = pipeDesignQ(p, nextSeen, stormOverride);
     return { pipe:p, fromId:p.fromStructureId, Q: q, error:null };
   });
   const sum = inflow.reduce((a,b)=>a+(isFinite(b.Q)?b.Q:0), 0);
   return { Q: captured+sum, captured, inflow, error:null };
 }
 
-function pipeDesignQ(pipeRow, seen){
+function pipeDesignQ(pipeRow, seen, stormOverride){
   if(!pipeRow || !pipeRow.fromStructureId) return 0;
   const fromSt = findStructure(pipeRow.fromStructureId);
-  const totalFlow = computeTotalFlow(pipeRow.fromStructureId, seen).Q;
+  const totalFlow = computeTotalFlow(pipeRow.fromStructureId, seen, stormOverride).Q;
   if(fromSt && fromSt.type === "splitter"){
     const split = computeSplitterSplit(fromSt, totalFlow);
     if(pipeRow.splitRole === "primary") return split.primaryQ;
@@ -1547,13 +1549,13 @@ function calcPipeRow(row){
 // (for a Flow Splitter, the Secondary path is a separate branch that is
 // resolved independently by its own downstream chain, but does not feed
 // back into this structure's own elevation).
-function computeStructureCalc(structureId, seen){
+function computeStructureCalc(structureId, seen, stormOverride){
   seen = seen || new Set();
   const st = findStructure(structureId);
   const warnings = [];
   if(!st) return null;
 
-  const totalFlowInfo = computeTotalFlow(structureId);
+  const totalFlowInfo = computeTotalFlow(structureId, null, stormOverride);
   const totalFlow = totalFlowInfo.Q;
   const isSplitter = st.type === "splitter";
   const splitInfo = isSplitter ? computeSplitterSplit(st, totalFlow) : null;
@@ -1592,7 +1594,7 @@ function computeStructureCalc(structureId, seen){
   }
   seen.add(structureId);
 
-  const downstream = computeStructureCalc(outPipe.toStructureId, seen);
+  const downstream = computeStructureCalc(outPipe.toStructureId, seen, stormOverride);
   const downstreamElev = downstream ? downstream.elevation : 0;
 
   const geo = pipeGeometry(outPipe);
@@ -1617,7 +1619,7 @@ function computeStructureCalc(structureId, seen){
   } else if(inflowPipes.length===2){
     const [p1,p2] = inflowPipes;
     const a1 = parseFloat(p1.angle)||0, a2 = parseFloat(p2.angle)||0;
-    const Q1 = pipeDesignQ(p1), Q2 = pipeDesignQ(p2);
+    const Q1 = pipeDesignQ(p1, null, stormOverride), Q2 = pipeDesignQ(p2, null, stormOverride);
     const A3 = geo ? geo.areaSf : 0;
     const V1_3 = A3>0? Q1/A3:0, V2_3 = A3>0? Q2/A3:0;
     const Kb1 = interpKb(kbColumn, a1), Kb2 = interpKb(kbColumn, a2);
