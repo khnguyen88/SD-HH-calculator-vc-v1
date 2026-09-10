@@ -2051,6 +2051,7 @@ function renderDrainage(){
       const lbl = {"2yr":"Q₂","10yr":"Q₁₀","25yr":"Q₂₅","5yr":"Q₅"}[s] || ("Q "+s);
       return el("th", {class:"computed", style: accent?"color:"+accent+";":""}, lbl+"\n(cfs)");
     }),
+    el("th",{class:"computed"},"Structure"),
     el("th",{},""), el("th",{},"")
   ])));
   const tbody = el("tbody");
@@ -2082,6 +2083,10 @@ function renderDrainage(){
           style: accent ? "font-weight:600;border-bottom:2px solid "+accent+";" : ""
         }, fmt(calc.Qs[s], 2));
       }),
+      el("td",{class:"out computed-cell"}, (()=>{
+        const linked = state.structures.find(s => s.drainageAreaId === row.id);
+        return linked ? (linked.structureId || linked.id) : "—";
+      })()),
       el("td",{}, detailBtn(()=>openDetailModal(buildDrainageSheet(row)))),
       el("td",{}, delBtn(()=>{ state.drainage=state.drainage.filter(r=>r!==row); renderAll(); }))
     ]));
