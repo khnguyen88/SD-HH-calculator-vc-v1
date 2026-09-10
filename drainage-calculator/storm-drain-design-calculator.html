@@ -4043,12 +4043,12 @@ function buildInletSpacingSheet(row, comp, settings){
     ["Bypass CA in (from upstream)", f(bypassCAIn>0?bypassCAIn:0,5)+" ac"],
     ["Total CA", f(comp.totalCA,5)+" ac"],
     ["Time of concentration, Tc", row.tc ? row.tc+" min" : "\u2014"],
-    ["Rainfall intensity, i", f(iVal,3)+" in/hr"+(row.iOverride?"\u00b9":"")],
+    ["Rainfall intensity, i", f(iVal,3)+" in/hr"+(row.iOverride!==""&&row.iOverride!=null?"\u00b9":"")],
     [isSump ? "Grade" : "Longitudinal slope, S", isSump ? "SUMP" : f(S,4)+" ft/ft"],
     [isSump ? "Cross-slope, Sx" : "Cross-slope, Sx", isSump ? "\u2014 (sump)" : f(Sx,4)+" ft/ft"],
     ["Allowable spread, T\u2090", ((row.allowableSpread||"")!==""?row.allowableSpread:settings.allowableSpread)+" ft"],
   ])));
-  if(row.iOverride){
+  if(row.iOverride!==""&&row.iOverride!=null){
     body.push(el("div",{class:"cs-note"},
       "\u00b9 Rainfall intensity manually overridden. Auto (curve) value: "+f(comp.iComputed,3)+" in/hr."));
   }
