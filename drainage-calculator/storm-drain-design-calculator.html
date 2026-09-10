@@ -2631,6 +2631,12 @@ function renderKb(){
     el("h2",{},"Angle vs. Kb"),
     el("div",{},[
       el("button",{class:"btn btn-sm", style:"margin-right:8px;", onclick:()=>{ state.kb.push({angle:"", inlet:"", manhole:"", bend:""}); renderKb(); }}, "+ Add row"),
+      el("button",{class:"btn btn-sm", style:"margin-right:8px;", title:"Overwrites current table with MoCo Kb values from bburg-p-c.xlsx (Tables sheet). Generic AASHTO seed is the fresh-load default.",
+        onclick:()=>{
+          state.kb = MOCO_KB_PRESET.map(r=>({angle:r[0], inlet:r[1], manhole:r[2], bend:r[3]}));
+          renderAll();
+          toast("Kb table loaded from MoCo preset (bburg-p-c.xlsx Tables sheet).");
+        }}, "Load MoCo preset"),
       el("button",{class:"btn btn-sm btn-ghost", onclick:()=>{ state.kb=defaultKbRows(); renderAll(); toast("Kb table reset to default values."); }}, "Reset to default")
     ])
   ]));
@@ -3624,15 +3630,128 @@ function buildTr55Sheet(row){
   return sheetWrapper("tc55", "TR-55 Time of Concentration \u2014 "+(row.structureId||row.id), "NRCS TR-55 segmental method", body);
 }
 
-// PLACEHOLDER \u2014 replaced by the full per-inlet calculation sheet in Task 8.
 function buildInletSpacingSheet(row, comp, settings){
-  const body = [
-    csSection("Inlet", csTable([
-      ["Label", row.label || "(unlabeled)"],
-      ["Full calculation sheet", "coming in Task 8"],
-    ])),
-  ];
-  return sheetWrapper("inlet", "Inlet Spacing \u2014 "+(row.label||row.id), "HEC-22 grate inlet spacing", body);
+  if(!comp) comp = {};
+  const f = (v,d)=> (v==null||!isFinite(v)) ? "\u2014" : fmt(v, d!=null?d:4);
+  const isSump = comp.isSump;
+  const S  = parseFloat(row.S);
+  const Sx = parseFloat(row.Sx);
+  const W  = parseFloat(row.W);
+  const a  = parseFloat(row.a);
+  const n  = parseFloat(row.n);
+  const L  = parseFloat(row.L);
+  const Q  = comp.Q || 0;
+  const iVal = comp.i || 0;
+  const localCA = (parseFloat(row.C)||0) * (parseFloat(row.area)||0);
+  const bypassCAIn = (comp.totalCA||0) - localCA;
+
+  const body = [];
+
+  // 1. Inputs
+  body.push(csSection("Inputs", csTable([
+    ["Inlet label", row.label || "(unlabeled)"],
+    ["Structure type", row.structureType || "\u2014"],
+    ["Grate length, L", f(L,3)+" ft"],
+    ["Gutter width, W", f(W,3)+" ft"],
+    ["Gutter depression, a", f(a,4)+" ft"],
+    ["Manning's n", f(n,3)],
+    ["Tributary area, A", f(parseFloat(row.area),4)+" ac"],
+    ["Runoff coefficient, C", f(parseFloat(row.C),2)],
+    ["Local CA", f(localCA,5)+" ac"],
+    ["Bypass CA in (from upstream)", f(bypassCAIn>0?bypassCAIn:0,5)+" ac"],
+    ["Total CA", f(comp.totalCA,5)+" ac"],
+    ["Time of concentration, Tc", row.tc ? row.tc+" min" : "\u2014"],
+    ["Rainfall intensity, i", f(iVal,3)+" in/hr"+(row.iOverride?"\u00b9":"")],
+    [isSump ? "Grade" : "Longitudinal slope, S", isSump ? "SUMP" : f(S,4)+" ft/ft"],
+    [isSump ? "Cross-slope, Sx" : "Cross-slope, Sx", isSump ? "\u2014 (sump)" : f(Sx,4)+" ft/ft"],
+    ["Allowable spread, T\u2090", ((row.allowableSpread||"")!==""?row.allowableSpread:settings.allowableSpread)+" ft"],
+  ])));
+  if(row.iOverride){
+    body.push(el("div",{class:"cs-note"},
+      "\u00b9 Rainfall intensity manually overridden. Auto (curve) value: "+f(comp.iComputed,3)+" in/hr."));
+  }
+
+  // 2. Total flow
+  body.push(csSection("Total Flow (Q = total CA \u00d7 i)", el("div",{},[
+    csFormula(["Q\u209c\u2092\u209c\u2090\u2097 = (C\u2097\u2092\u2063\u2090\u2097 \u00d7 A\u2097\u2092\u2063\u2090\u2097 + CA\u2099\u2095\u2093\u2090\u2099\u2090\u2099\u2093) \u00d7 i"]),
+    csFormula(["Q = ("+f(localCA,5)+" + "+f(bypassCAIn>0?bypassCAIn:0,5)+") \u00d7 "+f(iVal,3)]),
+    csResult("Q", f(Q,4)+" cfs"),
+  ])));
+
+  if(isSump){
+    // Sump: 100% pickup, no spread or Lt calcs
+    body.push(csSection("Sump Inlet", el("div",{},[
+      el("div",{class:"cs-note"}, "Sump inlets intercept 100% of approaching flow (weir/orifice condition). No spread or length-of-flow calculation is performed."),
+      csResult("Pickup efficiency, E", "100%"),
+      csResult("Bypass CA out", "0"),
+    ])));
+  } else {
+    // 3. Composite effective cross-slope (Sx_eff) \u2014 workbook cols V/W/X
+    const VV = (a + Sx*W)/W;
+    const Qw = (0.56/n) * Math.pow(VV,1.667) * Math.pow(S,0.5) * Math.pow(W,2.667);
+    const Wratio = Qw>0&&Q>0 ? (a/(a+Sx*W)) * Math.min(Qw/Q,1.0) : 0;
+    const SxEff = comp.SxEff;
+    body.push(csSection("Effective Cross-Slope, S\u2093_\u2091\u2091\u2091 (composite gutter \u2014 workbook col X)", el("div",{},[
+      el("div",{class:"cs-note"},"Accounts for gutter depression a and width W (HEC-22 \u00a74.2 composite gutter)."),
+      csFormula(["V = (a + Sx\u00b7W) / W = ("+f(a,4)+" + "+f(Sx,4)+"\u00b7"+f(W,3)+") / "+f(W,3)+" = "+f(VV,4)]),
+      csFormula(["Q\u1d20 = (0.56/n)\u00b7V\u00b9\u02b7\u2076\u2076\u2077\u00b7S\u2070\u02b7\u2075\u00b7W\u00b2\u02b7\u2076\u2076\u2077"]),
+      csFormula(["Q\u1d20 = (0.56/"+f(n,3)+")\u00b7"+f(VV,4)+"\u00b9\u02b7\u2076\u2076\u2077\u00b7"+f(S,4)+"\u2070\u02b7\u2075\u00b7"+f(W,3)+"\u00b2\u02b7\u2076\u2076\u2077 = "+f(Qw,4)+" cfs"]),
+      csFormula(["W_ratio = (a/(a+Sx\u00b7W))\u00b7(Q\u1d20/Q) = ("+f(a,4)+"/("+f(a,4)+"+"+f(Sx,4)+"\u00b7"+f(W,3)+"))\u00b7("+f(Qw,4)+"/"+f(Q,4)+") = "+f(Wratio,4)]),
+      csFormula(["S\u2093_\u2091\u2091\u2091 = Sx + (a/W)\u00b7W_ratio = "+f(Sx,4)+" + ("+f(a,4)+"/"+f(W,3)+")\u00b7"+f(Wratio,4)]),
+      csResult("S\u2093_\u2091\u2091\u2091", f(SxEff,4)),
+    ])));
+
+    // 4. On-grade spread T
+    const T = comp.T;
+    const allowT = comp.allowT;
+    body.push(csSection("On-Grade Spread, T (HEC-22 Eq. 4-1)", el("div",{},[
+      csFormula(["T = (Q\u00b7n / (0.56\u00b7S\u2093_\u2091\u2091\u2091\u00b9\u02b7\u2076\u2077\u00b7S\u2070\u02b7\u2075))\u2070\u02b7\u00b3\u2077\u2074\u2075"]),
+      csFormula(["T = ("+f(Q,4)+"\u00b7"+f(n,3)+" / (0.56\u00b7"+f(SxEff,4)+"\u00b9\u02b7\u2076\u2077\u00b7"+f(S,4)+"\u2070\u02b7\u2075))\u2070\u02b7\u00b3\u2077\u2074\u2075"]),
+      csResult("T", f(T,3)+" ft"),
+      comp.warn
+        ? csWarn("Computed spread "+f(T,2)+" ft exceeds allowable "+f(allowT,1)+" ft")
+        : el("div",{class:"cs-note"}, "Spread \u2264 allowable ("+f(allowT,1)+" ft) \u2714"),
+    ])));
+
+    // 5. Length of flow Lt and efficiency E
+    const k = a===0 ? 0.60 : (L>=15 ? 0.54 : 0.58);
+    const Lt = comp.Lt;
+    const E  = comp.E;
+    body.push(csSection("Grate Length of Flow, L\u209c (HEC-22 Eq. 4-19)", el("div",{},[
+      csFormula(["L\u209c = k\u00b7Q\u2070\u02b7\u2074\u00b2\u00b7S\u2070\u02b7\u00b3\u00b7(1/(n\u00b7S\u2093_\u2091\u2091\u2091))\u2070\u02b7\u2076"]),
+      csFormula(["k = "+(a===0?"0.60 (no depression)":L>=15?"0.54 (L \u2265 15 ft)":"0.58 (L < 15 ft)")]),
+      csFormula(["L\u209c = "+f(k,2)+"\u00b7"+f(Q,4)+"\u2070\u02b7\u2074\u00b2\u00b7"+f(S,4)+"\u2070\u02b7\u00b3\u00b7(1/("+f(n,3)+"\u00b7"+f(SxEff,4)+"))\u2070\u02b7\u2076"]),
+      csResult("L\u209c", f(Lt,4)+" ft"),
+    ])));
+
+    body.push(csSection("Interception Efficiency, E (HEC-22 Eq. 4-20)", el("div",{},[
+      L>=Lt
+        ? csFormula(["L \u2265 L\u209c ("+f(L,1)+" \u2265 "+f(Lt,4)+") \u2192 E = 1.0 (100%)"])
+        : el("div",{},[
+            csFormula(["E = 1 \u2212 (1 \u2212 L/L\u209c)\u00b9\u02b7\u2078"]),
+            csFormula(["E = 1 \u2212 (1 \u2212 "+f(L,1)+"/"+f(Lt,4)+")\u00b9\u02b7\u2078"]),
+          ]),
+      csResult("E", f(E,4)+" = "+f(E*100,2)+"%"),
+    ])));
+
+    // 6. Bypass
+    const bypassCA = comp.bypassCA;
+    const bypassQ  = comp.bypassQ;
+    body.push(csSection("Bypass", el("div",{},[
+      csFormula(["Bypass CA = total CA \u00d7 (1 \u2212 E) = "+f(comp.totalCA,5)+" \u00d7 (1 \u2212 "+f(E,4)+")"]),
+      csResult("Bypass CA out", f(bypassCA,5)+" ac"),
+      csResult("Bypass Q out", f(bypassQ,4)+" cfs"),
+      row.bypassTo
+        ? el("div",{class:"cs-note"}, "Routes to inlet: "+row.bypassTo)
+        : el("div",{class:"cs-note"}, "No downstream bypass \u2014 flow leaves the gutter system."),
+    ])));
+  }
+
+  const srcLabel = settings.rainfallSource==="noaa"
+    ? "NOAA Atlas 14 ("+settings.county+")"
+    : settings.rainfallSource==="moco" ? "MoCo Agency Table" : "MDSHA Agency Table";
+  return sheetWrapper("inlet", "Inlet Spacing \u2014 "+(row.label||row.id),
+    "HEC-22 grate inlet \u2014 "+srcLabel+", "+settings.storm+", S="+(isSump?"SUMP":f(S,4)), body);
 }
 
 function printNodes(nodes){
@@ -3652,6 +3771,10 @@ function printAllSheets(){
     const { rows } = computeRatingCurve(os.id);
     rows.forEach(r=>nodes.push(buildOutletStageSheet(r, os)));
   });
+  if(state.inletSpacing.length){
+    const isChain = computeInletChain(state.inletSpacing, state.inletSpacingSettings);
+    state.inletSpacing.forEach(r=>nodes.push(buildInletSpacingSheet(r, isChain.results[r.id], state.inletSpacingSettings)));
+  }
   if(nodes.length===0){ toast("Nothing to print yet \u2014 add some rows first.", true); return; }
   printNodes(nodes);
 }
@@ -3699,7 +3822,13 @@ function buildWorkbook(){
     ["   belongs to. Each facility gets its own \"Rating - <label>\" sheet with every device's flow"],
     ["   and the combined total at every stage - facilities never mix. Tailwater can link to a"],
     ["   Junction Structure's live Upstream HGL."],
-    ["5. Table 4-6 Reference / 6. Kb Coefficients - supporting reference data (Kb is editable)."],
+    ["5. Table 4-6 Reference / 6. Kb Coefficients - supporting reference data (Kb is editable;"],
+    ["   Load MoCo Preset button on the Kb Coefficients tab to load MoCo agency values)."],
+    ["7. TR-55 Segments - optional TC calculation. 8. Inlet Spacing - HEC-22 grate-inlet on-grade"],
+    ["   spacing with bypass carryover. Each inlet's Q = (local CA + bypass CA in) x i, where"],
+    ["   carried bypass is CA (not Q) - the receiving inlet applies its own intensity. SUMP inlets"],
+    ["   capture 100%. Global settings: rainfall source (NOAA Atlas 14 per county / MDSHA / MoCo),"],
+    ["   storm frequency, and default allowable spread. Per-inlet: L, W, a, n, S, Sx, i override."],
     [],
     ["Note: Kb, structure-loss (Hb), and Rating sheet device flows are computed by the app"],
     ["(controlling-angle method; exact circular-segment orifice math; Villemonte weir submergence)"],
@@ -3992,6 +4121,52 @@ function buildWorkbook(){
   wsKb["!cols"] = [{wch:12},{wch:12},{wch:14},{wch:12}];
   XLSX.utils.book_append_sheet(wb, wsKb, "Kb Coefficients");
 
+  // ---- Inlet Spacing ----
+  const is = state.inletSpacingSettings;
+  const isChain = computeInletChain(state.inletSpacing, is);
+  const isAoa = [
+    ["Street", is.street||""],
+    ["Rainfall Source", is.rainfallSource||"noaa"],
+    ["County", is.county||"Montgomery"],
+    ["Storm", is.storm||"10yr"],
+    ["Default Allowable Spread (ft)", is.allowableSpread!=null?is.allowableSpread:""],
+    ["Custom NOAA 5-min (in/hr)",  (is.customNoaa&&is.customNoaa[5]!=null)?is.customNoaa[5]:""],
+    ["Custom NOAA 10-min (in/hr)", (is.customNoaa&&is.customNoaa[10]!=null)?is.customNoaa[10]:""],
+    ["Custom NOAA 15-min (in/hr)", (is.customNoaa&&is.customNoaa[15]!=null)?is.customNoaa[15]:""],
+    ["Custom NOAA 30-min (in/hr)", (is.customNoaa&&is.customNoaa[30]!=null)?is.customNoaa[30]:""],
+    ["Custom NOAA 60-min (in/hr)", (is.customNoaa&&is.customNoaa[60]!=null)?is.customNoaa[60]:""],
+    [],
+    ["Label","Structure Type","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
+     "S","Sx","W (ft)","a (ft)","n","Allowable Spread (ft)","Bypass To",
+     "Q (cfs)","Spread T (ft)","Pickup (%)","Bypass CA out"],
+  ];
+  state.inletSpacing.forEach(r=>{
+    const cc = isChain.results[r.id]||{};
+    isAoa.push([
+      r.label||"", r.structureType||"",
+      r.L!==""&&r.L!=null?num(r.L):r.L,
+      r.area!==""&&r.area!=null?num(r.area):r.area,
+      r.C!==""&&r.C!=null?num(r.C):r.C,
+      r.tc!==""&&r.tc!=null?num(r.tc):r.tc,
+      r.iOverride!==""&&r.iOverride!=null?num(r.iOverride):"",
+      r.S||"", r.Sx!==""&&r.Sx!=null?num(r.Sx):r.Sx,
+      r.W!==""&&r.W!=null?num(r.W):r.W,
+      r.a!==""&&r.a!=null?num(r.a):r.a,
+      r.n!==""&&r.n!=null?num(r.n):r.n,
+      r.allowableSpread!==""&&r.allowableSpread!=null?r.allowableSpread:"",
+      r.bypassTo||"",
+      cc.Q!=null?round(cc.Q,4):"",
+      cc.isSump?"SUMP":(cc.T!=null&&isFinite(cc.T)?round(cc.T,3):""),
+      cc.pickupPct!=null?round(cc.pickupPct,2):"",
+      cc.bypassCA!=null?round(cc.bypassCA,6):"",
+    ]);
+  });
+  const wsIs = XLSX.utils.aoa_to_sheet(isAoa);
+  wsIs["!cols"] = [{wch:14},{wch:18},{wch:8},{wch:10},{wch:7},{wch:9},{wch:16},
+                   {wch:9},{wch:8},{wch:8},{wch:8},{wch:7},{wch:16},{wch:12},
+                   {wch:10},{wch:12},{wch:11},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsIs, "Inlet Spacing");
+
   return wb;
 }
 
@@ -4178,6 +4353,55 @@ function importExcel(file){
       if(ov){
         const aoa = XLSX.utils.sheet_to_json(ov, {header:1});
         if(aoa[1] && aoa[1][1]) state.project = String(aoa[1][1]);
+      }
+
+      const isWs = wb.Sheets["Inlet Spacing"];
+      if(isWs){
+        const isAoa = XLSX.utils.sheet_to_json(isWs, {header:1, raw:true, defval:""});
+        const newSettings = defaultInletSpacingSettings();
+        // Rows 0-9 are settings key/value pairs; find data header row by sentinel "Label" in col 0
+        let dataHeaderIdx = -1;
+        isAoa.forEach((row,i)=>{
+          const k = String(row[0]||"").trim();
+          const v = row[1];
+          if(k==="Street") newSettings.street=String(v||"");
+          else if(k==="Rainfall Source") newSettings.rainfallSource=String(v||"noaa");
+          else if(k==="County") newSettings.county=String(v||"Montgomery");
+          else if(k==="Storm") newSettings.storm=String(v||"10yr");
+          else if(k==="Default Allowable Spread (ft)") newSettings.allowableSpread=(v!==""&&v!=null)?v:8;
+          else if(k==="Custom NOAA 5-min (in/hr)")  newSettings.customNoaa[5]=(v!==""&&v!=null)?String(v):"";
+          else if(k==="Custom NOAA 10-min (in/hr)") newSettings.customNoaa[10]=(v!==""&&v!=null)?String(v):"";
+          else if(k==="Custom NOAA 15-min (in/hr)") newSettings.customNoaa[15]=(v!==""&&v!=null)?String(v):"";
+          else if(k==="Custom NOAA 30-min (in/hr)") newSettings.customNoaa[30]=(v!==""&&v!=null)?String(v):"";
+          else if(k==="Custom NOAA 60-min (in/hr)") newSettings.customNoaa[60]=(v!==""&&v!=null)?String(v):"";
+          else if(k==="Label") dataHeaderIdx=i;
+        });
+        if(dataHeaderIdx>=0){
+          const headers = isAoa[dataHeaderIdx].map(h=>String(h).trim());
+          const hIdx = h => headers.indexOf(h);
+          state.inletSpacing = isAoa.slice(dataHeaderIdx+1)
+            .filter(r=>r.some(v=>v!==""&&v!=null))
+            .map(r=>{
+              const g = (h)=>{ const i=hIdx(h); return i>=0?(r[i]!=null?r[i]:""):""; };
+              const row = defaultInletSpacingRow();
+              row.label = String(g("Label")||"");
+              row.structureType = String(g("Structure Type")||"");
+              row.L   = g("L (ft)")!==""?String(g("L (ft)")):row.L;
+              row.area= g("Area (ac)")!==""?String(g("Area (ac)")):row.area;
+              row.C   = g("C")!==""?String(g("C")):row.C;
+              row.tc  = g("Tc (min)")!==""?String(g("Tc (min)")):row.tc;
+              row.iOverride = g("i Override (in/hr)")!==""?String(g("i Override (in/hr)")):"";
+              row.S   = g("S")!==""?String(g("S")):row.S;
+              row.Sx  = g("Sx")!==""?String(g("Sx")):row.Sx;
+              row.W   = g("W (ft)")!==""?String(g("W (ft)")):row.W;
+              row.a   = g("a (ft)")!==""?String(g("a (ft)")):row.a;
+              row.n   = g("n")!==""?String(g("n")):row.n;
+              row.allowableSpread = g("Allowable Spread (ft)")!==""?String(g("Allowable Spread (ft)")):"";
+              row.bypassTo = String(g("Bypass To")||"");
+              return row;
+            });
+        }
+        state.inletSpacingSettings = newSettings;
       }
 
       renderAll();
