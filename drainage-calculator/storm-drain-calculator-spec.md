@@ -11,7 +11,7 @@ This spec is written as a sequence of buildable phases, not one giant prompt. Fe
 - **Single HTML file.** Inline `<style>` and inline `<script>` blocks. No build step, no bundler, no CDN references of any kind — the file must open by double-clicking it with no internet connection.
 - **Vanilla JS only.** No React/Vue/framework. DOM built via a small hand-rolled helper (Section 3).
 - **Excel support via SheetJS, bundled inline as raw JS text inside a `<script>` tag** — not loaded from a CDN. Use the **`xlsx.full.min.js`** distributable, not `xlsx.core.min.js` (Section 7 explains why the core build silently produces invalid files).
-- **No localStorage/sessionStorage.** Persistence is via explicit Export/Import to `.xlsx` only.
+- **No auto-save via localStorage/sessionStorage.** Persistence for the permanent record is via explicit Export/Import to `.xlsx` only. A browser-local quick-save feature (up to 5 named snapshots, user-triggered) is the one permitted use of localStorage — see `docs/superpowers/specs/2026-09-10-localstorage-save-delete-design.md`.
 - **Dark, data-dense, professional engineering-tool aesthetic** — this is a calc-sheet browser, not a marketing page. Monospace font for all numeric values and inputs. System font stack only (no web fonts — offline requirement).
 - Every computed value shown anywhere in the app must be traceable to one governing equation, and that equation must be the same one used to build the Excel export. Never let the two drift.
 
