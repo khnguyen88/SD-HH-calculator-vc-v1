@@ -5201,6 +5201,25 @@ function init(){
   document.getElementById("projectName").value = state.project;
   document.getElementById("projectName").addEventListener("input", (e)=>{ state.project = e.target.value; });
 
+  updateSavesUI();
+
+  document.getElementById("saveCompBtn").addEventListener("click", saveComp);
+
+  document.getElementById("savesMenuBtn").addEventListener("click", (e)=>{
+    e.stopPropagation();
+    const pop = document.getElementById("savesPopover");
+    const isOpen = pop.classList.contains("open");
+    if(!isOpen) renderSavesPopover();
+    pop.classList.toggle("open", !isOpen);
+  });
+
+  document.addEventListener("click", (e)=>{
+    const pop = document.getElementById("savesPopover");
+    if(pop.classList.contains("open") && !pop.contains(e.target) && e.target.id !== "savesMenuBtn"){
+      closeSavesPopover();
+    }
+  });
+
   document.getElementById("exportBtn").addEventListener("click", exportExcel);
   const fileInput = document.getElementById("importFile");
   document.getElementById("importBtn").addEventListener("click", ()=> fileInput.click());
