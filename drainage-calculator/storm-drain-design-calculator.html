@@ -1141,14 +1141,25 @@ const KB_COLUMN_FOR_TYPE = { inlet:"inlet", manhole:"manhole", bend:"bend", junc
 let uid = 1;
 const nextId = () => "r" + (uid++);
 
+function defaultRainfallSettings() {
+  return {
+    rainfallSource: "noaa",
+    county: "Montgomery",
+    customNoaa: { 5:"", 10:"", 15:"", 30:"", 60:"" },
+    pipeStorm:   "10yr",
+    pipe25Check: false,
+    inletStorm:  "2yr",
+  };
+}
+
+function availableStorms(src) {
+  return src === "moco" ? ["2yr","5yr","10yr"] : ["2yr","10yr","25yr"];
+}
+
 function defaultInletSpacingSettings() {
   return {
     street: "",
-    rainfallSource: "noaa",     // "noaa"|"mdsha"|"moco"
-    county: "Montgomery",       // key in NOAA_ATLAS14 or "Custom"
-    storm: "10yr",              // "2yr"|"5yr"|"10yr"|"25yr"
     allowableSpread: 8,
-    customNoaa: { 5:"", 10:"", 15:"", 30:"", 60:"" },
   };
 }
 
@@ -1185,6 +1196,7 @@ const state = {
   outletShowGeometryDetail: true,
   inletSpacing: [],
   inletSpacingSettings: defaultInletSpacingSettings(),
+  rainfall: defaultRainfallSettings(),
 };
 
 function defaultOutletFields(){
@@ -1196,14 +1208,14 @@ function defaultDeviceFields(){
 
 function seedExample(){
   const da1 = nextId();
-  state.drainage.push({id:da1, structureId:"DA-1", desc:"Roof + lawn area to St.1", area:1.4, C:0.55, i:6.8, tc:91.65, cf:1.0, tcMethod:"tr55",
+  state.drainage.push({id:da1, structureId:"DA-1", desc:"Roof + lawn area to St.1", area:1.4, C:0.55, iOverride:"", tc:91.65, cf:1.0, tcMethod:"tr55",
     tr55:{segments:[
       {id:nextId(), type:"sheet", n:0.24, L:100, s:0.01, P2:3.6},
       {id:nextId(), type:"shallow", L:1400, s:0.01, surface:"unpaved"},
       {id:nextId(), type:"channel", L:7300, s:0.005, n:0.05, area:27, wp:28.2},
     ]}});
   const da2 = nextId();
-  state.drainage.push({id:da2, structureId:"DA-2", desc:"Parking area to St.2", area:0.9, C:0.85, i:6.8, tc:8, cf:1.0, tcMethod:"direct", tr55:{segments:[]}});
+  state.drainage.push({id:da2, structureId:"DA-2", desc:"Parking area to St.2", area:0.9, C:0.85, iOverride:"", tc:8, cf:1.0, tcMethod:"direct", tr55:{segments:[]}});
 
   const stOut = nextId();
   state.structures.push({id:stOut, structureId:"OUTFALL", desc:"Free outfall", drainageAreaId:"", type:"outfall", forceElev:true, startElev:100.0, crown:"", rim:""});
@@ -1955,7 +1967,7 @@ function renderDrainage(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Drainage areas"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.drainage.push({id:nextId(), structureId:"", desc:"", area:"", C:"", i:"", tc:"", cf:1.0, tcMethod:"direct", tr55:{segments:[]}}); renderDrainage(); }}, "+ Add row")
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.drainage.push({id:nextId(), structureId:"", desc:"", area:"", C:"", iOverride:"", tc:"", cf:1.0, tcMethod:"direct", tr55:{segments:[]}}); renderDrainage(); }}, "+ Add row")
   ]));
 
   const tableWrap = el("div",{class:"table-wrap"});
