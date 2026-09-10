@@ -3235,6 +3235,29 @@ function renderInletSpacing(){
     customNoaa:      state.rainfall.customNoaa || {},
   };
 
+  function structureDropdown(row) {
+    const sel = el("select", {
+      class: "cell-input",
+      style: "width:110px;",
+      "data-focus-key": "is:"+row.id+":linkedStructure",
+      onchange: (e) => {
+        row.linkedStructureId = e.target.value;
+        withFocusPreserved(renderAll);
+      }
+    });
+    const optCustom = el("option", {value:""}, "Custom");
+    if (!row.linkedStructureId) optCustom.selected = true;
+    sel.appendChild(optCustom);
+    state.structures
+      .filter(st => st.type === "inlet")
+      .forEach(st => {
+        const opt = el("option", {value: st.id}, st.structureId || st.id);
+        if (row.linkedStructureId === st.id) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    return sel;
+  }
+
   // Compute the chain once for the whole table
   const chain = computeInletChain(rows, s);
   const comp = chain.results;
@@ -3242,7 +3265,7 @@ function renderInletSpacing(){
   const tableWrap = el("div",{class:"table-wrap"});
   const table = el("table",{class:"data"});
   table.appendChild(el("thead",{},el("tr",{},[
-    el("th",{},"Label"), el("th",{},"Structure Type"), el("th",{},"L (ft)"), el("th",{},"Area (ac)"),
+    el("th",{},"Structure"), el("th",{},"Label"), el("th",{},"Structure Type"), el("th",{},"L (ft)"), el("th",{},"Area (ac)"),
     el("th",{},"C"), el("th",{},"Tc (min)"), el("th",{},"i (in/hr)"),
     el("th",{class:"computed"},"Q (cfs)"), el("th",{},"S"), el("th",{},"Sx"),
     el("th",{},"W (ft)"), el("th",{},"a (ft)"), el("th",{},"n"),
@@ -3257,6 +3280,30 @@ function renderInletSpacing(){
     if(cc.cycle) trAttrs.style = "background:rgba(220,60,60,0.10);";
     else if(cc.warn) trAttrs.style = "background:rgba(220,60,60,0.10);";
     if(cc.cycle) trAttrs.title = "In bypass cycle";
+
+    const rf = resolvedInletFields(row);
+    const displayLabel = resolvedInletLabel(row);
+    const isLinked = !!row.linkedStructureId;
+
+    const labelCell = isLinked
+      ? el("input", {class:"cell-input", type:"text", style:"width:120px;color:var(--dim,#888);",
+          "data-focus-key":"is:"+row.id+":label", value:displayLabel, disabled:true})
+      : el("input", {class:"cell-input", type:"text", style:"width:120px;",
+          "data-focus-key":"is:"+row.id+":label", value:row.label||"",
+          oninput:(e)=>{ row.label=e.target.value; withFocusPreserved(renderAll); }});
+
+    function autoField(field, fromDA, resolvedVal, width) {
+      const stored = row[field];
+      const isOverride = stored !== "" && stored != null;
+      return el("input", {
+        class: "cell-input" + (isOverride ? " i-override" : ""),
+        type:"text", inputmode:"decimal", style:"width:"+width+"px;",
+        "data-focus-key":"is:"+row.id+":"+field,
+        value: isOverride ? stored : "",
+        placeholder: fromDA ? String(resolvedVal) : "",
+        oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }
+      });
+    }
 
     // i input: shows override (highlighted) or empty with computed placeholder
     const iHasOverride = row.iOverride !== "" && row.iOverride != null;
@@ -3279,12 +3326,13 @@ function renderInletSpacing(){
     if(cc.warn) spreadAttrs.style = "color:var(--fail);font-weight:700;";
 
     tbody.appendChild(el("tr",trAttrs,[
-      el("td",{}, txtCell(row,"label",90)),
+      el("td",{}, structureDropdown(row)),
+      el("td",{}, labelCell),
       el("td",{}, stypeSelect(row)),
       el("td",{}, txtCell(row,"L",60)),
-      el("td",{}, txtCell(row,"area",70)),
-      el("td",{}, txtCell(row,"C",55)),
-      el("td",{}, txtCell(row,"tc",60)),
+      el("td",{}, autoField("area", rf.areaFromDA, rf.area, 70)),
+      el("td",{}, autoField("C", rf.CFromDA, rf.C, 55)),
+      el("td",{}, autoField("tc", rf.tcFromDA, rf.tc, 60)),
       iCell,
       el("td",{class:"out computed-cell"}, fmt(cc.Q,3)),
       el("td",{}, txtCell(row,"S",65)),
@@ -3341,9 +3389,11 @@ function renderInletSpacing(){
       onchange:(e)=>{ row.bypassTo=e.target.value; withFocusPreserved(renderAll); }});
     sel.appendChild(el("option",{value:""},"—"));
     rows.forEach(other=>{
-      if(other===row || !other.label) return;
-      const o = el("option",{value:other.label}, other.label);
-      if(row.bypassTo===other.label) o.selected=true;
+      if(other===row) return;
+      const lbl = resolvedInletLabel(other);
+      if(!lbl) return;
+      const o = el("option",{value:lbl}, lbl);
+      if(row.bypassTo===lbl) o.selected=true;
       sel.appendChild(o);
     });
     return sel;
