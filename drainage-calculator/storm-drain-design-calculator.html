@@ -488,6 +488,7 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
       <div class="view" id="view-formulas"></div>
       <div class="view" id="view-table46"></div>
       <div class="view" id="view-kb"></div>
+      <div class="view" id="view-inlet-spacing"></div>
     </div>
   </div>
 </div>
@@ -1054,6 +1055,37 @@ const KB_COLUMN_FOR_TYPE = { inlet:"inlet", manhole:"manhole", bend:"bend", junc
 let uid = 1;
 const nextId = () => "r" + (uid++);
 
+function defaultInletSpacingSettings() {
+  return {
+    street: "",
+    rainfallSource: "noaa",     // "noaa"|"mdsha"|"moco"
+    county: "Montgomery",       // key in NOAA_ATLAS14 or "Custom"
+    storm: "10yr",              // "2yr"|"5yr"|"10yr"|"25yr"
+    allowableSpread: 8,
+    customNoaa: { 5:"", 10:"", 15:"", 30:"", 60:"" },
+  };
+}
+
+function defaultInletSpacingRow() {
+  return {
+    id: nextId(),
+    label: "",
+    structureType: "",  // INLET_STRUCTURES id or ""
+    area: "",
+    C: "",
+    tc: "",
+    iOverride: "",      // non-empty string overrides computed i
+    S: "",              // longitudinal slope or "SUMP"
+    Sx: "",
+    W: 1.33,
+    a: 0.0833,
+    n: 0.013,
+    L: "",
+    allowableSpread: "", // blank = use global default
+    bypassTo: "",        // label of downstream inlet that receives this row's bypass
+  };
+}
+
 const state = {
   project: "Untitled Storm Drain Project",
   active: "overview",
@@ -1065,6 +1097,8 @@ const state = {
   outletDevices: [],
   activeOutletId: "",
   outletShowGeometryDetail: true,
+  inletSpacing: [],
+  inletSpacingSettings: defaultInletSpacingSettings(),
 };
 
 function defaultOutletFields(){
@@ -1756,6 +1790,7 @@ const TABS = [
   {id:"formulas",   label:"Formulas & Examples"},
   {id:"table46",    label:"Table 4-6 Reference"},
   {id:"kb",         label:"Kb Coefficients"},
+  {id:"inlet-spacing", label:"Inlet Spacing"},
 ];
 
 function renderNav(){
@@ -2542,6 +2577,17 @@ function renderKb(){
 }
 
 /* ---------------------------------------------------------------------
+   Inlet Spacing tab
+--------------------------------------------------------------------- */
+function renderInletSpacing(){
+  const c = document.getElementById("view-inlet-spacing");
+  if(!c) return;
+  c.innerHTML = "";
+  c.appendChild(el("h1",{},"Inlet Spacing"));
+  c.appendChild(el("p",{class:"view-desc"},"HEC-22 grate-inlet on-grade spacing with bypass carryover. Full UI coming in the next task."));
+}
+
+/* ---------------------------------------------------------------------
    Full render
 --------------------------------------------------------------------- */
 function renderAll(){
@@ -2555,6 +2601,7 @@ function renderAll(){
   renderFormulas();
   renderTable46();
   renderKb();
+  renderInletSpacing();
 }
 
 /* =======================================================================
@@ -3849,6 +3896,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   tr55SheetFlowTt, tr55ShallowVelocity, tr55TravelTime, tr55ChannelVelocity, computeTr55, TR55_SHALLOW_CP,
   TR55_SHEET_N, TR55_CHANNEL_N, TR55_SEGMENT_TYPES, tr55SegmentCalc, tr55DefaultSegment,
   lookupIntensity, interpolatePL, computeSxEff, computeSpread, computeInterception, computeInletRow,
+  defaultInletSpacingRow, defaultInletSpacingSettings,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET };
 
 })();

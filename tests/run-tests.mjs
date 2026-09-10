@@ -168,3 +168,11 @@ test("I-7: L=15 selects k=0.54, Lt≈40.50", () => {
   isClose(r.Lt, 40.505, 0.05, "I-7 Lt (k=0.54, workbook Y19)");
   isClose(r.E, 0.5651, 0.005, "I-7 E (workbook AB19)");
 });
+
+// ==================== Inlet spacing state model wiring ====================
+test("inlet spacing state model wired", () => {
+  assert.equal(typeof sdc.defaultInletSpacingRow, "function", "defaultInletSpacingRow missing");
+  assert.ok(Array.isArray(sdc.state.inletSpacing), "state.inletSpacing not array");
+  assert.equal(sdc.state.inletSpacingSettings.rainfallSource, "noaa", "settings default source");
+  assert.equal(sdc.state.inletSpacingSettings.county, "Montgomery", "settings default county");
+});
