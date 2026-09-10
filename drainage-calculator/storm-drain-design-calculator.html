@@ -3041,10 +3041,53 @@ function renderPipeSizing25() {
 --------------------------------------------------------------------- */
 function renderStructures25(){
   const c = document.getElementById("view-structures-25");
-  if(!c) return;
+  if (!c) return;
   c.innerHTML = "";
-  c.appendChild(el("h1",{},"Junction Structures — 25-yr Check"));
-  c.appendChild(el("p",{class:"view-desc"},"Stub — see Task 11."));
+  c.appendChild(el("h1", {}, "Junction Structures — 25-yr Check"));
+  c.appendChild(el("p", {class:"view-desc"},
+    "25-yr check — read only. Structure geometry and elevations are unchanged from the primary " +
+    "Junction Structures tab. HGL is propagated with Q₂₅ flows."));
+
+  const section = el("div", {class:"section"});
+  section.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "HGL check — 25-yr storm")]));
+  const tableWrap = el("div", {class:"table-wrap"});
+  const table = el("table", {class:"data"});
+  table.appendChild(el("thead", {}, el("tr", {}, [
+    el("th",{},"Structure ID"), el("th",{},"Type"), el("th",{},"Crown (ft)"), el("th",{},"Rim (ft)"),
+    el("th",{class:"computed"},"Total Flow Q₂₅\n(cfs)"),
+    el("th",{class:"computed"},"Upstream HGL\n(ft)"),
+    el("th",{class:"computed"},"Crown\nCheck"),
+    el("th",{class:"computed"},"Rim\nCheck"),
+  ])));
+  const tbody = el("tbody");
+  state.structures.forEach(row => {
+    const tf   = computeTotalFlow(row.id, null, "25yr");
+    const calc = computeStructureCalc(row.id, null, "25yr");
+    const hgl  = calc ? calc.elevation : null;
+    const crown = parseFloat(row.crown);
+    const rim   = parseFloat(row.rim);
+    const crownCheck = (isFinite(hgl) && isFinite(crown)) ? hgl <= crown + 1.0 : null;
+    const rimCheck   = (isFinite(hgl) && isFinite(rim))   ? hgl <= rim  - 1.0 : null;
+    const crownStyle = crownCheck === false ? "color:#e05;font-weight:700;" : "";
+    const rimStyle   = rimCheck   === false ? "color:#e05;font-weight:700;" : "";
+    tbody.appendChild(el("tr", {}, [
+      el("td",{}, row.structureId||row.id),
+      el("td",{}, row.type||""),
+      el("td",{}, isFinite(crown) ? fmt(crown,2) : "—"),
+      el("td",{}, isFinite(rim)   ? fmt(rim,2)   : "—"),
+      el("td",{class:"out computed-cell"}, isFinite(tf.Q) ? fmt(tf.Q,2) : "—"),
+      el("td",{class:"out computed-cell"}, isFinite(hgl)  ? fmt(hgl,2)  : "—"),
+      el("td",{class:"out computed-cell", style:crownStyle},
+        crownCheck === null ? "—" : crownCheck ? "✓" : "✗ > crown+1"),
+      el("td",{class:"out computed-cell", style:rimStyle},
+        rimCheck === null ? "—" : rimCheck ? "✓" : "✗ FLOOD"),
+    ]));
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  if (state.structures.length === 0) section.appendChild(el("p",{class:"hint"},"No structures defined."));
+  c.appendChild(section);
 }
 
 /* ---------------------------------------------------------------------
