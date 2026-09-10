@@ -1327,9 +1327,27 @@ function interpKb(columnKey, angleDeg){
   return rows[rows.length-1][columnKey];
 }
 
-function calcDrainageRow(row){
-  const A=parseFloat(row.area)||0, C=parseFloat(row.C)||0, i=parseFloat(row.i)||0, cf=parseFloat(row.cf)||1;
-  return { Q: cf*C*i*A, A, C, i, cf };
+function calcDrainageRow(row) {
+  const A  = parseFloat(row.area) || 0;
+  const C  = parseFloat(row.C)    || 0;
+  const cf = parseFloat(row.cf)   || 1;
+  const tc = parseFloat(row.tc);
+  const CA = C * A;
+  const r  = state.rainfall;
+
+  const iOverridden = row.iOverride !== "" && row.iOverride != null && isFinite(Number(row.iOverride));
+
+  function intensityFor(storm) {
+    if (iOverridden) return Number(row.iOverride);
+    if (!isFinite(tc) || tc <= 0) return 0;
+    return lookupIntensity(tc, r.rainfallSource, storm, r.county, r.customNoaa || {});
+  }
+
+  const storms = availableStorms(r.rainfallSource);
+  const Qs = {};
+  storms.forEach(s => { Qs[s] = cf * CA * intensityFor(s); });
+
+  return { CA, cf, A, C, Qs, storms, designQ: Qs[r.pipeStorm] || 0, iOverridden };
 }
 
 /* =======================================================================
@@ -1454,7 +1472,7 @@ function getOutgoingPipe(structureId){ const list=getOutgoingPipes(structureId);
 function capturedQFor(structure){
   if(!structure || !structure.drainageAreaId) return 0;
   const da = findDrainage(structure.drainageAreaId);
-  return da ? calcDrainageRow(da).Q : 0;
+  return da ? calcDrainageRow(da).designQ : 0;
 }
 
 // Given a splitter structure and the total flow arriving at it, returns how
@@ -2000,10 +2018,10 @@ function renderDrainage(){
       el("td",{}, txt(row,"desc",160)),
       el("td",{}, num(row,"area",70)),
       el("td",{}, num(row,"C",60)),
-      el("td",{}, num(row,"i",60)),
+      el("td",{}, num(row,"iOverride",60)),
       el("td",{}, tcCell(row)),
       el("td",{}, num(row,"cf",55)),
-      el("td",{class:"out computed-cell"}, fmt(calc.Q,2)),
+      el("td",{class:"out computed-cell"}, fmt(calc.designQ,2)),
       el("td",{}, detailBtn(()=>openDetailModal(buildDrainageSheet(row)))),
       el("td",{}, delBtn(()=>{ state.drainage=state.drainage.filter(r=>r!==row); renderAll(); }))
     ]));
@@ -2039,7 +2057,7 @@ function renderDrainage(){
 function patchDrainageRow(row){
   const idx = state.drainage.indexOf(row);
   const tr = document.querySelectorAll("#view-drainage tbody tr")[idx];
-  if(tr){ tr.children[7].textContent = fmt(calcDrainageRow(row).Q,2); }
+  if(tr){ tr.children[7].textContent = fmt(calcDrainageRow(row).designQ,2); }
   if(state.active==="structures") renderStructures();
 }
 
@@ -3254,18 +3272,21 @@ function sheetWrapper(kind, title, sub, bodyNodes){
 
 function buildDrainageSheet(row){
   const calc = calcDrainageRow(row);
+  const designStorm = state.rainfall.pipeStorm || "\u2014";
+  const designI = (calc.cf > 0 && calc.CA > 0) ? calc.designQ / (calc.cf * calc.CA) : 0;
+  const iLabel = calc.iOverridden ? "Rainfall intensity, i (override)" : "Rainfall intensity, i ("+designStorm+" design storm)";
   const body = [
     csSection("Inputs", csTable([
       ["Tributary area, A", fmt(calc.A,2)+" ac"],
       ["Runoff coefficient, C", fmt(calc.C,2)],
-      ["Rainfall intensity, i", fmt(calc.i,2)+" in/hr"],
+      [iLabel, fmt(designI,3)+" in/hr"],
       ["Time of concentration, Tc", (row.tc!==""&&row.tc!=null?fmt(parseFloat(row.tc),1)+" min":"\u2014")],
       ["Frequency correction, Cf", fmt(calc.cf,2)],
     ])),
     csSection("Rational Method", el("div",{},[
       csFormula(["Q = Cf \u00d7 C \u00d7 i \u00d7 A"]),
-      csFormula(["Q = "+fmt(calc.cf,2)+" \u00d7 "+fmt(calc.C,2)+" \u00d7 "+fmt(calc.i,2)+" \u00d7 "+fmt(calc.A,2)]),
-      csResult("Q", fmt(calc.Q,2)+" cfs"),
+      csFormula(["Q = "+fmt(calc.cf,2)+" \u00d7 "+fmt(calc.C,2)+" \u00d7 "+fmt(designI,3)+" \u00d7 "+fmt(calc.A,2)]),
+      csResult("Q ("+designStorm+")", fmt(calc.designQ,2)+" cfs"),
     ])),
   ];
   return sheetWrapper("drainage", "Drainage Area \u2014 "+(row.structureId||row.id), row.desc||"Rational Method (Q = C\u00b7i\u00b7A)", body);
@@ -3338,7 +3359,7 @@ function buildStructureSheet(structureId){
   if(st.drainageAreaId){
     const da = findDrainage(st.drainageAreaId);
     body.push(csSection("Captured Q (from linked drainage area)", el("div",{},[
-      da ? csResult("Captured Q", fmt(calcDrainageRow(da).Q,2)+" cfs (from "+(da.structureId||da.id)+")") : csWarn("Linked drainage area not found."),
+      da ? csResult("Captured Q", fmt(calcDrainageRow(da).designQ,2)+" cfs (from "+(da.structureId||da.id)+")") : csWarn("Linked drainage area not found."),
     ])));
   } else {
     body.push(csSection("Captured Q", csResult("Captured Q", "0.00 cfs (no drainage area linked)")));
@@ -3545,10 +3566,11 @@ function buildFormulasReferenceSheet(){
   b1.push(csFormula(["Q = Cf \u00d7 C \u00d7 i \u00d7 A"]));
   b1.push(csTable([["Cf","Frequency correction factor (1.0 for storms \u2264 25-yr)"],["C","Runoff coefficient"],["i","Rainfall intensity, in/hr, for the design storm"],["A","Tributary area, acres"]]));
   if(daEx){
+    const daDesignI = (daCalc.cf > 0 && daCalc.CA > 0) ? daCalc.designQ / (daCalc.cf * daCalc.CA) : 0;
     b1.push(el("div",{class:"cs-block-title", style:"margin-top:10px;"}, "Worked example \u2014 "+(daEx.structureId||daEx.id)));
-    b1.push(csTable([["Cf",fmt(daCalc.cf,2)],["C",fmt(daCalc.C,2)],["i",fmt(daCalc.i,2)+" in/hr"],["A",fmt(daCalc.A,2)+" ac"]]));
-    b1.push(csFormula(["Q = "+fmt(daCalc.cf,2)+" \u00d7 "+fmt(daCalc.C,2)+" \u00d7 "+fmt(daCalc.i,2)+" \u00d7 "+fmt(daCalc.A,2)]));
-    b1.push(csResult("Q", fmt(daCalc.Q,3)+" cfs"));
+    b1.push(csTable([["Cf",fmt(daCalc.cf,2)],["C",fmt(daCalc.C,2)],["i ("+s.rainfall.pipeStorm+" design storm)",fmt(daDesignI,3)+" in/hr"],["A",fmt(daCalc.A,2)+" ac"]]));
+    b1.push(csFormula(["Q = "+fmt(daCalc.cf,2)+" \u00d7 "+fmt(daCalc.C,2)+" \u00d7 "+fmt(daDesignI,3)+" \u00d7 "+fmt(daCalc.A,2)]));
+    b1.push(csResult("Q ("+s.rainfall.pipeStorm+")", fmt(daCalc.designQ,3)+" cfs"));
   }
   body.push(csSection("1. Rational Method (Drainage Area tab)", el("div",{}, b1)));
 
@@ -4126,15 +4148,15 @@ function buildWorkbook(){
   XLSX.utils.book_append_sheet(wb, wsOv, "Overview");
 
   // ---- Drainage Area ----
-  const daHeader = ["ID","Description","Area A (ac)","C","i (in/hr)","Tc (min)","Cf","Q (cfs)","Tc Method"];
+  const daHeader = ["ID","Description","Area A (ac)","C","i Override (in/hr)","Tc (min)","Cf","Q (cfs)","Tc Method"];
   const daRows = [daHeader];
   state.drainage.forEach(r=>{
-    daRows.push([r.structureId||r.id, r.desc||"", num(r.area), num(r.C), num(r.i), num(r.tc), num(r.cf,1), null, r.tcMethod||"direct"]);
+    daRows.push([r.structureId||r.id, r.desc||"", num(r.area), num(r.C), r.iOverride!==""&&r.iOverride!=null?num(r.iOverride):"", num(r.tc), num(r.cf,1), null, r.tcMethod||"direct"]);
   });
   const wsDa = XLSX.utils.aoa_to_sheet(daRows);
   state.drainage.forEach((r,i)=>{
     const row=i+2, calc=calcDrainageRow(r);
-    setFormula(wsDa, "H"+row, "=C"+row+"*D"+row+"*E"+row+"*G"+row, round(calc.Q,4));
+    setFormula(wsDa, "H"+row, "=C"+row+"*D"+row+"*E"+row+"*G"+row, round(calc.designQ,4));
   });
   wsDa["!cols"] = [{wch:12},{wch:26},{wch:11},{wch:8},{wch:10},{wch:9},{wch:7},{wch:10},{wch:11}];
   XLSX.utils.book_append_sheet(wb, wsDa, "Drainage Area");

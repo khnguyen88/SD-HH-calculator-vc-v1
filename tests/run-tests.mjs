@@ -232,3 +232,34 @@ test("availableStorms: noaa returns 3 storms", () => {
 test("availableStorms: mdsha returns 3 storms", () => {
   assert.deepEqual([...sdc.availableStorms("mdsha")], ["2yr","10yr","25yr"]);
 });
+
+// ==================== calcDrainageRow — multi-storm shape ====================
+test("calcDrainageRow: returns CA, Qs, designQ", () => {
+  sdc.state.rainfall.rainfallSource = "mdsha";
+  sdc.state.rainfall.pipeStorm = "10yr";
+  const row = { area:"1.0", C:"0.8", iOverride:"", tc:"10", cf:"1.0", tcMethod:"direct", tr55:{segments:[]} };
+  const result = sdc.calcDrainageRow(row);
+  assert.ok(Math.abs(result.CA - 0.8) < 0.001, "CA should be 0.8");
+  assert.ok(result.Qs["10yr"] !== undefined, "Qs should have 10yr key");
+  assert.ok(result.Qs["2yr"]  !== undefined, "Qs should have 2yr key");
+  assert.ok(Math.abs(result.designQ - result.Qs["10yr"]) < 0.001, "designQ should match pipeStorm Q");
+  // MDSHA 10yr at Tc=10 is 5.340 in/hr → Q = 1*0.8*1.0*5.340 = 4.272
+  assert.ok(Math.abs(result.Qs["10yr"] - 4.272) < 0.01, "Q10 ≈ 4.272 cfs: " + result.Qs["10yr"]);
+});
+
+test("calcDrainageRow: iOverride overrides all storm Qs", () => {
+  sdc.state.rainfall.rainfallSource = "mdsha";
+  sdc.state.rainfall.pipeStorm = "10yr";
+  const row = { area:"1.0", C:"0.8", iOverride:"5.0", tc:"10", cf:"1.0", tcMethod:"direct", tr55:{segments:[]} };
+  const result = sdc.calcDrainageRow(row);
+  ["2yr","10yr","25yr"].forEach(s => {
+    assert.ok(Math.abs(result.Qs[s] - 0.8*5.0) < 0.001, s + " Q should use iOverride: " + result.Qs[s]);
+  });
+});
+
+test("calcDrainageRow: zero CA when area blank", () => {
+  const row = { area:"", C:"0.8", iOverride:"", tc:"10", cf:"1.0", tcMethod:"direct", tr55:{segments:[]} };
+  const result = sdc.calcDrainageRow(row);
+  assert.equal(result.CA, 0, "CA should be 0 when area is blank");
+  assert.equal(result.designQ, 0, "designQ should be 0");
+});
