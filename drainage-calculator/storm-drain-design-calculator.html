@@ -1988,8 +1988,10 @@ function getSaves(){
 function setSaves(saves){
   try {
     localStorage.setItem(SAVES_KEY, JSON.stringify(saves));
+    return true;
   } catch(e) {
     toast("Browser storage unavailable — save not written.", true);
+    return false;
   }
 }
 
@@ -2050,7 +2052,7 @@ function saveComp(){
     state: captureState(),
   };
   saves.push(entry);
-  setSaves(saves);
+  if(!setSaves(saves)) return;
   updateSavesUI();
   toast("Saved <b>"+escapeHtml(entry.name)+"</b>.");
 }
@@ -2066,8 +2068,9 @@ function loadComp(id){
 
 function deleteComp(id){
   const saves = getSaves().filter(s => s.id !== id);
-  setSaves(saves);
+  if(!setSaves(saves)) return;
   updateSavesUI();
+  toast("Save deleted.");
 }
 
 function renderSavesPopover(){
