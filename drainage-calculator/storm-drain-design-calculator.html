@@ -1618,6 +1618,30 @@ function computeTotalFlow(structureId, seen, stormOverride){
   return { Q: captured+sum, captured, inflow, error:null };
 }
 
+function computeContributingArea(structureId, seen){
+  seen = seen || new Set();
+  if(seen.has(structureId)) return {sumA:0, sumCA:0, controlTc:0};
+  const newSeen = new Set(seen);
+  newSeen.add(structureId);
+  const st = findStructure(structureId);
+  if(!st) return {sumA:0, sumCA:0, controlTc:0};
+  let sumA=0, sumCA=0, controlTc=0;
+  if(st.drainageAreaId){
+    const da = findDrainage(st.drainageAreaId);
+    if(da){
+      const A=parseFloat(da.area)||0, C=parseFloat(da.C)||0;
+      sumA+=A; sumCA+=C*A;
+      controlTc=Math.max(controlTc, parseFloat(da.tc)||0);
+    }
+  }
+  getIncomingPipes(structureId).forEach(p=>{
+    const up = computeContributingArea(p.fromStructureId, newSeen);
+    sumA+=up.sumA; sumCA+=up.sumCA;
+    controlTc=Math.max(controlTc, up.controlTc);
+  });
+  return {sumA, sumCA, controlTc};
+}
+
 function pipeDesignQ(pipeRow, seen, stormOverride){
   if(!pipeRow || !pipeRow.fromStructureId) return 0;
   const fromSt = findStructure(pipeRow.fromStructureId);
