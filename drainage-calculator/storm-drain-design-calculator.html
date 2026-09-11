@@ -5019,6 +5019,38 @@ function printAllTableSheets(){
   printNodes(nodes, true);
 }
 
+function printDetailTableSheet(viewId, title){
+  if(viewId==="view-outlet"){
+    const nodes = buildOutletTablePrintSheet();
+    if(!nodes.length){ toast("No outlet data to print yet.", true); return; }
+    printNodes(nodes, true); return;
+  }
+  let sheet = null;
+  if     (viewId==="view-drainage")       sheet = buildDrainageDetailSheet();
+  else if(viewId==="view-structures")     sheet = buildStructuresDetailSheet();
+  else if(viewId==="view-pipes")          sheet = buildPipesDetailSheet();
+  else if(viewId==="view-inlet-spacing")  sheet = buildInletDetailSheet();
+  else if(viewId==="view-hgl")            sheet = buildHglDetailSheet();
+  else if(viewId==="view-pipe-sizing-25") sheet = buildPipesDetailSheet("25yr");
+  else if(viewId==="view-hgl-25")         sheet = buildHglDetailSheet("25yr");
+  if(!sheet){ toast("No rows to print yet.", true); return; }
+  printNodes([sheet], true);
+}
+
+function printAllDetailSheets(){
+  const nodes = [];
+  const drain   = buildDrainageDetailSheet();    if(drain)   nodes.push(drain);
+  const structs = buildStructuresDetailSheet();  if(structs) nodes.push(structs);
+  const pipes   = buildPipesDetailSheet();       if(pipes)   nodes.push(pipes);
+  buildOutletTablePrintSheet().forEach(n=>nodes.push(n));
+  const inlet   = buildInletDetailSheet();       if(inlet)   nodes.push(inlet);
+  const hgl     = buildHglDetailSheet();         if(hgl)     nodes.push(hgl);
+  const pipes25 = buildPipesDetailSheet("25yr"); if(pipes25) nodes.push(pipes25);
+  const hgl25   = buildHglDetailSheet("25yr");   if(hgl25)   nodes.push(hgl25);
+  if(!nodes.length){ toast("Nothing to print yet — add some rows first.", true); return; }
+  printNodes(nodes, true);
+}
+
 window.addEventListener("afterprint", ()=>{
   document.body.classList.remove("print-mode");
   document.getElementById("printArea").innerHTML = "";
