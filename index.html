@@ -56,6 +56,7 @@ button, input, select{ font-family:inherit; font-size:inherit; color:inherit; }
   display:flex;
   flex-direction:column;
   gap:18px;
+  overflow-y:auto;
 }
 
 .brand{
@@ -154,6 +155,7 @@ button, input, select{ font-family:inherit; font-size:inherit; color:inherit; }
 .btn-sm{ padding:5px 9px; font-size:11.5px; }
 .btn-danger{ color:var(--fail); }
 .btn-danger:hover{ background:var(--fail-soft); border-color:var(--fail); }
+.btn-active{ background:var(--accent-soft); color:var(--accent); border-color:rgba(56,198,180,0.35); }
 
 .content{ padding:22px 26px 60px 26px; overflow-y:auto; }
 .view{ display:none; max-width:1400px; }
@@ -680,6 +682,31 @@ const STRUCTURE_TYPES = [
   ["inlet","Inlet"], ["manhole","Manhole"], ["bend","Bend"],
   ["junction","Junction"], ["splitter","Flow Splitter"], ["outfall","Outfall"]
 ];
+
+const STRUCTURE_CATALOG = {
+  mcdot: [],
+  mdsha: [],
+  mdot:  [],
+  pgder: [
+    { id:"pgder-mh-48",        label:"48-in MH (SD 21.1)",        category:"access_hole", shape:"round",       innerDiameter:4.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mh-60",        label:"60-in MH (SD 21.2)",        category:"access_hole", shape:"round",       innerDiameter:5.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mh-72",        label:"72-in MH (SD 21.3)",        category:"access_hole", shape:"round",       innerDiameter:6.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mh-84",        label:"84-in MH (SD 21.4)",        category:"access_hole", shape:"round",       innerDiameter:7.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mh-96",        label:"96-in MH (SD 21.5)",        category:"access_hole", shape:"round",       innerDiameter:8.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mhA-48",       label:"Type A MH, 4 ft (SD 20.0)", category:"access_hole", shape:"round",       innerDiameter:4.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mhA-60",       label:"Type A MH, 5 ft (SD 20.0)", category:"access_hole", shape:"round",       innerDiameter:5.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mhA-72",       label:"Type A MH, 6 ft (SD 20.0)", category:"access_hole", shape:"round",       innerDiameter:6.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mhA-84",       label:"Type A MH, 7 ft (SD 20.0)", category:"access_hole", shape:"round",       innerDiameter:7.0, innerWidth:null, innerLength:null },
+    { id:"pgder-inlet-yardSD15", label:"Precast Yard Inlet (SD 15.0)", category:"inlet", shape:"square",       innerDiameter:null, innerWidth:4.0, innerLength:4.0 },
+    { id:"pgder-inlet-typeE",    label:"Type E Inlet (SD 16.0)",       category:"inlet", shape:"square",       innerDiameter:null, innerWidth:5.0, innerLength:5.0 },
+    { id:"pgder-inlet-typeK",    label:"Type K Inlet (SD 17.0)",       category:"inlet", shape:"square",       innerDiameter:null, innerWidth:3.0, innerLength:3.0 },
+    { id:"pgder-inlet-typeA",    label:"Type A Drop Inlet (SD 10.0)",  category:"inlet", shape:"rectangular",  innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"pgder-inlet-typeB",    label:"Type B Drop Inlet (SD 11.0)",  category:"inlet", shape:"rectangular",  innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"pgder-inlet-typeCI",   label:"Type CI Inlet (SD 13.0)",      category:"inlet", shape:"rectangular",  innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"pgder-inlet-typeD",    label:"Type D Inlet (SD 14.0)",       category:"inlet", shape:"rectangular",  innerDiameter:null, innerWidth:null, innerLength:null },
+  ],
+};
+
 // MDSHA (SHA Intensity sheet, bburg-p-c.xlsx). Intensities in/hr.
 // Clamp below Tc=5 → use 5-min value; clamp above last breakpoint → use last value.
 const MDSHA_INTENSITY = {
@@ -697,191 +724,293 @@ const MOCO_INTENSITY = {
 
 // NOAA Atlas 14 PDS intensities (in/hr) for Maryland counties and DC.
 // Source: NOAA PFDS API (https://hdsc.nws.noaa.gov/hdsc/pfds/), PDS series, US customary units.
-// Pull date: 2026-09-09
-// Coordinates: county seat or centroid per jurisdiction (listed per entry).
+// Pull date: 2026-09-09; PG County and Montgomery updated 2026-09-11 (verified against PDF reports).
+// Coordinates: representative location per jurisdiction (listed per entry).
 // Note: Values represent a single representative point; actual values vary within each county.
 // Users needing project-specific intensity should use the Custom county option.
 //
 // Method: Raw quantiles array fetched from NOAA PFDS API for each coordinate.
 //   Array structure: 19 durations × 10 return periods.
-//   Columns (0-indexed): 1-yr(0), 2-yr(1), 5-yr(2), 10-yr(3), 25-yr(4), ...
+//   Columns (0-indexed): 1-yr(0), 2-yr(1), 5-yr(2), 10-yr(3), 25-yr(4), 50-yr(5), 100-yr(6), 500-yr(8).
 //   Rows used: 5-min(0), 10-min(1), 15-min(2), 30-min(3), 60-min(4).
 //   Conversion: intensity (in/hr) = depth (in) / (duration_min / 60), rounded to 2 decimal places.
 const NOAA_ATLAS14 = {
   "Allegany": {
     lat: 39.6529, lon: -78.7625,
-    // depths: 5min=[0.349,0.485,0.566] 10min=[0.545,0.748,0.865] 15min=[0.667,0.921,1.07] 30min=[0.892,1.28,1.51] 60min=[1.10,1.63,1.96]
-    "2yr":  { 5: 4.19, 10: 3.27, 15: 2.67, 30: 1.78, 60: 1.10 },
+    "1yr": { 5: 3.53, 10: 2.74, 15: 2.24, 30: 1.48, 60: 0.91 },
+    "2yr": { 5: 4.19, 10: 3.27, 15: 2.67, 30: 1.78, 60: 1.1 },
+    "5yr": { 5: 5.1, 10: 3.97, 15: 3.24, 30: 2.22, 60: 1.39 },
     "10yr": { 5: 5.82, 10: 4.49, 15: 3.68, 30: 2.56, 60: 1.63 },
     "25yr": { 5: 6.79, 10: 5.19, 15: 4.28, 30: 3.02, 60: 1.96 },
+    "50yr": { 5: 7.55, 10: 5.72, 15: 4.72, 30: 3.38, 60: 2.22 },
+    "100yr": { 5: 8.34, 10: 6.3, 15: 5.2, 30: 3.76, 60: 2.51 },
+    "500yr": { 5: 10.4, 10: 7.68, 15: 6.36, 30: 4.72, 60: 3.26 },
   },
   "Anne Arundel": {
     lat: 38.9784, lon: -76.4922,
-    // depths: 5min=[0.417,0.554,0.626] 10min=[0.666,0.885,0.998] 15min=[0.838,1.12,1.26] 30min=[1.16,1.62,1.87] 60min=[1.45,2.11,2.49]
-    "2yr":  { 5: 5.00, 10: 4.00, 15: 3.35, 30: 2.32, 60: 1.45 },
+    "1yr": { 5: 4.19, 10: 3.34, 15: 2.78, 30: 1.91, 60: 1.19 },
+    "2yr": { 5: 5, 10: 4, 15: 3.35, 30: 2.32, 60: 1.45 },
+    "5yr": { 5: 5.95, 10: 4.77, 15: 4.04, 30: 2.86, 60: 1.83 },
     "10yr": { 5: 6.65, 10: 5.31, 15: 4.48, 30: 3.24, 60: 2.11 },
     "25yr": { 5: 7.51, 10: 5.99, 15: 5.04, 30: 3.74, 60: 2.49 },
+    "50yr": { 5: 8.16, 10: 6.48, 15: 5.48, 30: 4.12, 60: 2.8 },
+    "100yr": { 5: 8.8, 10: 6.96, 15: 5.88, 30: 4.5, 60: 3.1 },
+    "500yr": { 5: 10.14, 10: 8.04, 15: 6.72, 30: 5.36, 60: 3.84 },
   },
   "Baltimore City": {
     lat: 39.2904, lon: -76.6122,
-    // depths: 5min=[0.414,0.549,0.621] 10min=[0.662,0.879,0.990] 15min=[0.833,1.11,1.25] 30min=[1.15,1.61,1.86] 60min=[1.44,2.10,2.47]
-    "2yr":  { 5: 4.97, 10: 3.97, 15: 3.33, 30: 2.30, 60: 1.44 },
-    "10yr": { 5: 6.59, 10: 5.27, 15: 4.44, 30: 3.22, 60: 2.10 },
-    "25yr": { 5: 7.45, 10: 5.94, 15: 5.00, 30: 3.72, 60: 2.47 },
+    "1yr": { 5: 4.15, 10: 3.31, 15: 2.76, 30: 1.89, 60: 1.18 },
+    "2yr": { 5: 4.97, 10: 3.97, 15: 3.33, 30: 2.3, 60: 1.44 },
+    "5yr": { 5: 5.92, 10: 4.73, 15: 3.99, 30: 2.84, 60: 1.82 },
+    "10yr": { 5: 6.59, 10: 5.27, 15: 4.44, 30: 3.22, 60: 2.1 },
+    "25yr": { 5: 7.45, 10: 5.94, 15: 5, 30: 3.72, 60: 2.47 },
+    "50yr": { 5: 8.08, 10: 6.42, 15: 5.44, 30: 4.08, 60: 2.77 },
+    "100yr": { 5: 8.7, 10: 6.9, 15: 5.84, 30: 4.46, 60: 3.07 },
+    "500yr": { 5: 10.03, 10: 7.92, 15: 6.64, 30: 5.3, 60: 3.8 },
   },
   "Baltimore County": {
     lat: 39.3951, lon: -76.6017,
-    // depths: 5min=[0.419,0.554,0.625] 10min=[0.671,0.886,0.996] 15min=[0.843,1.12,1.26] 30min=[1.16,1.62,1.87] 60min=[1.46,2.11,2.49]
-    "2yr":  { 5: 5.03, 10: 4.03, 15: 3.37, 30: 2.32, 60: 1.46 },
+    "1yr": { 5: 4.2, 10: 3.35, 15: 2.79, 30: 1.92, 60: 1.19 },
+    "2yr": { 5: 5.03, 10: 4.03, 15: 3.37, 30: 2.32, 60: 1.46 },
+    "5yr": { 5: 5.98, 10: 4.78, 15: 4.04, 30: 2.86, 60: 1.84 },
     "10yr": { 5: 6.65, 10: 5.32, 15: 4.48, 30: 3.24, 60: 2.11 },
-    "25yr": { 5: 7.50, 10: 5.98, 15: 5.04, 30: 3.74, 60: 2.49 },
+    "25yr": { 5: 7.5, 10: 5.98, 15: 5.04, 30: 3.74, 60: 2.49 },
+    "50yr": { 5: 8.12, 10: 6.48, 15: 5.44, 30: 4.12, 60: 2.78 },
+    "100yr": { 5: 8.72, 10: 6.96, 15: 5.84, 30: 4.48, 60: 3.08 },
+    "500yr": { 5: 10.03, 10: 7.92, 15: 6.64, 30: 5.3, 60: 3.8 },
   },
   "Calvert": {
     lat: 38.5401, lon: -76.5858,
-    // depths: 5min=[0.432,0.573,0.648] 10min=[0.691,0.916,1.03] 15min=[0.869,1.16,1.31] 30min=[1.20,1.68,1.94] 60min=[1.51,2.19,2.58]
-    "2yr":  { 5: 5.18, 10: 4.15, 15: 3.48, 30: 2.40, 60: 1.51 },
-    "10yr": { 5: 6.88, 10: 5.50, 15: 4.64, 30: 3.36, 60: 2.19 },
+    "1yr": { 5: 4.33, 10: 3.46, 15: 2.88, 30: 1.97, 60: 1.23 },
+    "2yr": { 5: 5.18, 10: 4.15, 15: 3.48, 30: 2.4, 60: 1.51 },
+    "5yr": { 5: 6.17, 10: 4.94, 15: 4.16, 30: 2.96, 60: 1.9 },
+    "10yr": { 5: 6.88, 10: 5.5, 15: 4.64, 30: 3.36, 60: 2.19 },
     "25yr": { 5: 7.78, 10: 6.18, 15: 5.24, 30: 3.88, 60: 2.58 },
+    "50yr": { 5: 8.45, 10: 6.72, 15: 5.68, 30: 4.28, 60: 2.9 },
+    "100yr": { 5: 9.11, 10: 7.26, 15: 6.08, 30: 4.68, 60: 3.22 },
+    "500yr": { 5: 10.54, 10: 8.34, 15: 7, 30: 5.56, 60: 3.99 },
   },
   "Caroline": {
-    lat: 38.8890, lon: -75.8283,
-    // depths: 5min=[0.418,0.554,0.626] 10min=[0.669,0.886,0.998] 15min=[0.841,1.12,1.26] 30min=[1.16,1.62,1.87] 60min=[1.46,2.11,2.49]
-    "2yr":  { 5: 5.02, 10: 4.01, 15: 3.36, 30: 2.32, 60: 1.46 },
+    lat: 38.889, lon: -75.8283,
+    "1yr": { 5: 4.21, 10: 3.37, 15: 2.8, 30: 1.92, 60: 1.2 },
+    "2yr": { 5: 5.02, 10: 4.01, 15: 3.36, 30: 2.32, 60: 1.46 },
+    "5yr": { 5: 5.94, 10: 4.75, 15: 4, 30: 2.84, 60: 1.82 },
     "10yr": { 5: 6.65, 10: 5.32, 15: 4.48, 30: 3.24, 60: 2.11 },
     "25yr": { 5: 7.51, 10: 5.99, 15: 5.04, 30: 3.74, 60: 2.49 },
+    "50yr": { 5: 8.17, 10: 6.48, 15: 5.48, 30: 4.14, 60: 2.8 },
+    "100yr": { 5: 8.81, 10: 7.02, 15: 5.92, 30: 4.52, 60: 3.11 },
+    "500yr": { 5: 10.15, 10: 8.04, 15: 6.72, 30: 5.36, 60: 3.84 },
   },
   "Carroll": {
     lat: 39.5757, lon: -76.9958,
-    // depths: 5min=[0.397,0.523,0.593] 10min=[0.635,0.836,0.941] 15min=[0.796,1.05,1.19] 30min=[1.10,1.52,1.76] 60min=[1.37,1.98,2.34]
-    "2yr":  { 5: 4.76, 10: 3.81, 15: 3.18, 30: 2.20, 60: 1.37 },
-    "10yr": { 5: 6.28, 10: 5.02, 15: 4.20, 30: 3.04, 60: 1.98 },
+    "1yr": { 5: 4, 10: 3.18, 15: 2.65, 30: 1.81, 60: 1.13 },
+    "2yr": { 5: 4.76, 10: 3.81, 15: 3.18, 30: 2.2, 60: 1.37 },
+    "5yr": { 5: 5.64, 10: 4.51, 15: 3.79, 30: 2.68, 60: 1.72 },
+    "10yr": { 5: 6.28, 10: 5.02, 15: 4.2, 30: 3.04, 60: 1.98 },
     "25yr": { 5: 7.12, 10: 5.65, 15: 4.76, 30: 3.52, 60: 2.34 },
+    "50yr": { 5: 7.72, 10: 6.12, 15: 5.16, 30: 3.86, 60: 2.61 },
+    "100yr": { 5: 8.32, 10: 6.6, 15: 5.52, 30: 4.22, 60: 2.9 },
+    "500yr": { 5: 9.64, 10: 7.56, 15: 6.36, 30: 5.04, 60: 3.6 },
   },
   "Cecil": {
     lat: 39.6062, lon: -75.8333,
-    // depths: 5min=[0.412,0.537,0.599] 10min=[0.659,0.858,0.955] 15min=[0.828,1.08,1.21] 30min=[1.14,1.57,1.79] 60min=[1.44,2.05,2.39]
-    "2yr":  { 5: 4.94, 10: 3.95, 15: 3.31, 30: 2.28, 60: 1.44 },
+    "1yr": { 5: 4.15, 10: 3.31, 15: 2.76, 30: 1.89, 60: 1.18 },
+    "2yr": { 5: 4.94, 10: 3.95, 15: 3.31, 30: 2.28, 60: 1.44 },
+    "5yr": { 5: 5.82, 10: 4.66, 15: 3.93, 30: 2.8, 60: 1.79 },
     "10yr": { 5: 6.44, 10: 5.15, 15: 4.32, 30: 3.14, 60: 2.05 },
     "25yr": { 5: 7.19, 10: 5.73, 15: 4.84, 30: 3.58, 60: 2.39 },
+    "50yr": { 5: 7.72, 10: 6.12, 15: 5.2, 30: 3.9, 60: 2.64 },
+    "100yr": { 5: 8.23, 10: 6.54, 15: 5.52, 30: 4.22, 60: 2.91 },
+    "500yr": { 5: 9.23, 10: 7.32, 15: 6.12, 30: 4.88, 60: 3.49 },
   },
   "Charles": {
-    lat: 38.5287, lon: -76.9750,
-    // depths: 5min=[0.436,0.579,0.654] 10min=[0.698,0.924,1.04] 15min=[0.877,1.17,1.32] 30min=[1.21,1.69,1.96] 60min=[1.52,2.21,2.61]
-    "2yr":  { 5: 5.23, 10: 4.19, 15: 3.51, 30: 2.42, 60: 1.52 },
-    "10yr": { 5: 6.95, 10: 5.54, 15: 4.68, 30: 3.38, 60: 2.21 },
+    lat: 38.5287, lon: -76.975,
+    "1yr": { 5: 4.36, 10: 3.48, 15: 2.9, 30: 1.99, 60: 1.24 },
+    "2yr": { 5: 5.23, 10: 4.19, 15: 3.51, 30: 2.42, 60: 1.52 },
+    "5yr": { 5: 6.22, 10: 4.97, 15: 4.2, 30: 2.98, 60: 1.91 },
+    "10yr": { 5: 6.94, 10: 5.54, 15: 4.68, 30: 3.38, 60: 2.21 },
     "25yr": { 5: 7.85, 10: 6.24, 15: 5.28, 30: 3.92, 60: 2.61 },
+    "50yr": { 5: 8.53, 10: 6.78, 15: 5.72, 30: 4.32, 60: 2.93 },
+    "100yr": { 5: 9.22, 10: 7.32, 15: 6.16, 30: 4.72, 60: 3.25 },
+    "500yr": { 5: 10.73, 10: 8.46, 15: 7.12, 30: 5.66, 60: 4.06 },
   },
   "Dorchester": {
     lat: 38.5632, lon: -76.0788,
-    // depths: 5min=[0.428,0.570,0.645] 10min=[0.685,0.911,1.03] 15min=[0.861,1.15,1.30] 30min=[1.19,1.67,1.93] 60min=[1.49,2.17,2.57]
-    "2yr":  { 5: 5.14, 10: 4.11, 15: 3.44, 30: 2.38, 60: 1.49 },
-    "10yr": { 5: 6.84, 10: 5.47, 15: 4.60, 30: 3.34, 60: 2.17 },
-    "25yr": { 5: 7.74, 10: 6.18, 15: 5.20, 30: 3.86, 60: 2.57 },
+    "1yr": { 5: 4.3, 10: 3.43, 15: 2.86, 30: 1.96, 60: 1.22 },
+    "2yr": { 5: 5.14, 10: 4.11, 15: 3.44, 30: 2.38, 60: 1.49 },
+    "5yr": { 5: 6.13, 10: 4.91, 15: 4.12, 30: 2.94, 60: 1.88 },
+    "10yr": { 5: 6.84, 10: 5.47, 15: 4.6, 30: 3.34, 60: 2.17 },
+    "25yr": { 5: 7.74, 10: 6.18, 15: 5.2, 30: 3.86, 60: 2.57 },
+    "50yr": { 5: 8.41, 10: 6.72, 15: 5.64, 30: 4.26, 60: 2.88 },
+    "100yr": { 5: 9.08, 10: 7.2, 15: 6.08, 30: 4.66, 60: 3.21 },
+    "500yr": { 5: 10.51, 10: 8.34, 15: 6.96, 30: 5.56, 60: 3.98 },
   },
   "Frederick": {
     lat: 39.4143, lon: -77.4105,
-    // depths: 5min=[0.406,0.543,0.622] 10min=[0.645,0.861,0.979] 15min=[0.804,1.08,1.23] 30min=[1.10,1.54,1.80] 60min=[1.37,2.00,2.38]
-    "2yr":  { 5: 4.87, 10: 3.87, 15: 3.22, 30: 2.20, 60: 1.37 },
-    "10yr": { 5: 6.52, 10: 5.17, 15: 4.32, 30: 3.08, 60: 2.00 },
-    "25yr": { 5: 7.46, 10: 5.87, 15: 4.92, 30: 3.60, 60: 2.38 },
+    "1yr": { 5: 4.07, 10: 3.22, 15: 2.68, 30: 1.81, 60: 1.12 },
+    "2yr": { 5: 4.87, 10: 3.87, 15: 3.22, 30: 2.2, 60: 1.37 },
+    "5yr": { 5: 5.82, 10: 4.61, 15: 3.86, 30: 2.72, 60: 1.73 },
+    "10yr": { 5: 6.52, 10: 5.17, 15: 4.32, 30: 3.08, 60: 2 },
+    "25yr": { 5: 7.46, 10: 5.87, 15: 4.92, 30: 3.6, 60: 2.38 },
+    "50yr": { 5: 8.16, 10: 6.42, 15: 5.36, 30: 3.98, 60: 2.68 },
+    "100yr": { 5: 8.92, 10: 6.96, 15: 5.84, 30: 4.38, 60: 3 },
+    "500yr": { 5: 10.66, 10: 8.22, 15: 6.88, 30: 5.36, 60: 3.81 },
   },
   "Garrett": {
     lat: 39.4062, lon: -79.4067,
-    // depths: 5min=[0.329,0.444,0.513] 10min=[0.513,0.686,0.784] 15min=[0.627,0.844,0.969] 30min=[0.839,1.17,1.37] 60min=[1.03,1.49,1.77]
-    "2yr":  { 5: 3.95, 10: 3.08, 15: 2.51, 30: 1.68, 60: 1.03 },
+    "1yr": { 5: 3.68, 10: 2.86, 15: 2.34, 30: 1.55, 60: 0.95 },
+    "2yr": { 5: 3.95, 10: 3.08, 15: 2.51, 30: 1.68, 60: 1.03 },
+    "5yr": { 5: 4.37, 10: 3.4, 15: 2.78, 30: 1.9, 60: 1.2 },
     "10yr": { 5: 5.33, 10: 4.12, 15: 3.38, 30: 2.34, 60: 1.49 },
-    "25yr": { 5: 6.16, 10: 4.70, 15: 3.88, 30: 2.74, 60: 1.77 },
+    "25yr": { 5: 6.16, 10: 4.7, 15: 3.88, 30: 2.74, 60: 1.77 },
+    "50yr": { 5: 7.09, 10: 5.38, 15: 4.44, 30: 3.18, 60: 2.09 },
+    "100yr": { 5: 7.85, 10: 5.91, 15: 4.88, 30: 3.54, 60: 2.36 },
+    "500yr": { 5: 9.68, 10: 7.14, 15: 5.92, 30: 4.38, 60: 3.03 },
   },
   "Harford": {
     lat: 39.5351, lon: -76.3483,
-    // depths: 5min=[0.416,0.547,0.616] 10min=[0.665,0.875,0.982] 15min=[0.836,1.11,1.24] 30min=[1.16,1.60,1.84] 60min=[1.45,2.09,2.45]
-    "2yr":  { 5: 4.99, 10: 3.99, 15: 3.34, 30: 2.32, 60: 1.45 },
-    "10yr": { 5: 6.56, 10: 5.25, 15: 4.44, 30: 3.20, 60: 2.09 },
+    "1yr": { 5: 4.16, 10: 3.33, 15: 2.78, 30: 1.9, 60: 1.19 },
+    "2yr": { 5: 4.99, 10: 3.99, 15: 3.34, 30: 2.32, 60: 1.45 },
+    "5yr": { 5: 5.9, 10: 4.73, 15: 3.99, 30: 2.84, 60: 1.82 },
+    "10yr": { 5: 6.56, 10: 5.25, 15: 4.44, 30: 3.2, 60: 2.09 },
     "25yr": { 5: 7.39, 10: 5.89, 15: 4.96, 30: 3.68, 60: 2.45 },
+    "50yr": { 5: 7.98, 10: 6.36, 15: 5.36, 30: 4.04, 60: 2.74 },
+    "100yr": { 5: 8.57, 10: 6.78, 15: 5.72, 30: 4.4, 60: 3.02 },
+    "500yr": { 5: 9.79, 10: 7.74, 15: 6.48, 30: 5.16, 60: 3.71 },
   },
   "Howard": {
     lat: 39.2673, lon: -76.7983,
-    // depths: 5min=[0.412,0.545,0.616] 10min=[0.658,0.872,0.982] 15min=[0.827,1.10,1.24] 30min=[1.14,1.60,1.84] 60min=[1.43,2.08,2.46]
-    "2yr":  { 5: 4.94, 10: 3.95, 15: 3.31, 30: 2.28, 60: 1.43 },
-    "10yr": { 5: 6.54, 10: 5.23, 15: 4.40, 30: 3.20, 60: 2.08 },
+    "1yr": { 5: 4.13, 10: 3.29, 15: 2.75, 30: 1.88, 60: 1.17 },
+    "2yr": { 5: 4.94, 10: 3.95, 15: 3.31, 30: 2.28, 60: 1.43 },
+    "5yr": { 5: 5.87, 10: 4.7, 15: 3.96, 30: 2.82, 60: 1.8 },
+    "10yr": { 5: 6.54, 10: 5.23, 15: 4.4, 30: 3.2, 60: 2.08 },
     "25yr": { 5: 7.39, 10: 5.89, 15: 4.96, 30: 3.68, 60: 2.46 },
+    "50yr": { 5: 8.02, 10: 6.36, 15: 5.4, 30: 4.06, 60: 2.75 },
+    "100yr": { 5: 8.64, 10: 6.84, 15: 5.8, 30: 4.44, 60: 3.05 },
+    "500yr": { 5: 9.97, 10: 7.86, 15: 6.6, 30: 5.26, 60: 3.78 },
   },
   "Kent": {
-    lat: 39.2090, lon: -76.0650,
-    // depths: 5min=[0.417,0.551,0.622] 10min=[0.667,0.882,0.991] 15min=[0.839,1.12,1.26] 30min=[1.16,1.62,1.86] 60min=[1.45,2.10,2.48]
-    "2yr":  { 5: 5.00, 10: 4.00, 15: 3.36, 30: 2.32, 60: 1.45 },
-    "10yr": { 5: 6.61, 10: 5.29, 15: 4.48, 30: 3.24, 60: 2.10 },
+    lat: 39.209, lon: -76.065,
+    "1yr": { 5: 4.19, 10: 3.34, 15: 2.79, 30: 1.91, 60: 1.19 },
+    "2yr": { 5: 5, 10: 4, 15: 3.36, 30: 2.32, 60: 1.45 },
+    "5yr": { 5: 5.95, 10: 4.76, 15: 4, 30: 2.86, 60: 1.83 },
+    "10yr": { 5: 6.61, 10: 5.29, 15: 4.48, 30: 3.24, 60: 2.1 },
     "25yr": { 5: 7.46, 10: 5.95, 15: 5.04, 30: 3.72, 60: 2.48 },
+    "50yr": { 5: 8.08, 10: 6.42, 15: 5.44, 30: 4.08, 60: 2.77 },
+    "100yr": { 5: 8.69, 10: 6.9, 15: 5.8, 30: 4.46, 60: 3.07 },
+    "500yr": { 5: 9.96, 10: 7.86, 15: 6.6, 30: 5.26, 60: 3.77 },
   },
   "Montgomery": {
-    lat: 39.0840, lon: -77.1528,
-    // depths: 5min=[0.413,0.550,0.624] 10min=[0.661,0.879,0.994] 15min=[0.830,1.11,1.26] 30min=[1.15,1.61,1.87] 60min=[1.44,2.10,2.48]
-    "2yr":  { 5: 4.96, 10: 3.97, 15: 3.32, 30: 2.30, 60: 1.44 },
-    "10yr": { 5: 6.60, 10: 5.27, 15: 4.44, 30: 3.22, 60: 2.10 },
-    "25yr": { 5: 7.49, 10: 5.96, 15: 5.04, 30: 3.74, 60: 2.48 },
+    lat: 39.0431, lon: -77.0532,
+    // verified against NOAA14 PDF 2026-09-11
+    "1yr": { 5: 4.16, 10: 3.33, 15: 2.78, 30: 1.9, 60: 1.19 },
+    "2yr": { 5: 4.99, 10: 3.99, 15: 3.34, 30: 2.31, 60: 1.45 },
+    "5yr": { 5: 5.94, 10: 4.76, 15: 4.01, 30: 2.85, 60: 1.83 },
+    "10yr": { 5: 6.64, 10: 5.31, 15: 4.48, 30: 3.24, 60: 2.11 },
+    "25yr": { 5: 7.51, 10: 5.99, 15: 5.06, 30: 3.75, 60: 2.5 },
+    "50yr": { 5: 8.17, 10: 6.51, 15: 5.49, 30: 4.14, 60: 2.8 },
+    "100yr": { 5: 8.82, 10: 7.01, 15: 5.91, 30: 4.52, 60: 3.12 },
+    "500yr": { 5: 10.2, 10: 8.11, 15: 6.8, 30: 5.41, 60: 3.88 },
   },
   "Prince George's": {
-    lat: 38.8179, lon: -76.7497,
-    // depths: 5min=[0.421,0.559,0.632] 10min=[0.673,0.894,1.01] 15min=[0.846,1.13,1.28] 30min=[1.17,1.64,1.89] 60min=[1.47,2.13,2.52]
-    "2yr":  { 5: 5.05, 10: 4.04, 15: 3.38, 30: 2.34, 60: 1.47 },
-    "10yr": { 5: 6.71, 10: 5.36, 15: 4.52, 30: 3.28, 60: 2.13 },
-    "25yr": { 5: 7.58, 10: 6.06, 15: 5.12, 30: 3.78, 60: 2.52 },
+    lat: 38.9428, lon: -76.9329,
+    // verified against NOAA14 PDF 2026-09-11
+    "1yr": { 5: 4.2, 10: 3.35, 15: 2.79, 30: 1.91, 60: 1.19 },
+    "2yr": { 5: 5.02, 10: 4.01, 15: 3.36, 30: 2.32, 60: 1.46 },
+    "5yr": { 5: 5.98, 10: 4.79, 15: 4.04, 30: 2.87, 60: 1.84 },
+    "10yr": { 5: 6.68, 10: 5.34, 15: 4.5, 30: 3.26, 60: 2.12 },
+    "25yr": { 5: 7.56, 10: 6.02, 15: 5.09, 30: 3.77, 60: 2.51 },
+    "50yr": { 5: 8.22, 10: 6.55, 15: 5.52, 30: 4.16, 60: 2.82 },
+    "100yr": { 5: 8.87, 10: 7.04, 15: 5.94, 30: 4.54, 60: 3.13 },
+    "500yr": { 5: 10.3, 10: 8.12, 15: 6.82, 30: 5.42, 60: 3.89 },
   },
   "Queen Anne's": {
-    lat: 39.0390, lon: -76.0688,
-    // depths: 5min=[0.416,0.552,0.624] 10min=[0.666,0.883,0.994] 15min=[0.837,1.12,1.26] 30min=[1.16,1.62,1.87] 60min=[1.45,2.11,2.48]
-    "2yr":  { 5: 4.99, 10: 4.00, 15: 3.35, 30: 2.32, 60: 1.45 },
-    "10yr": { 5: 6.62, 10: 5.30, 15: 4.48, 30: 3.24, 60: 2.11 },
+    lat: 39.039, lon: -76.0688,
+    "1yr": { 5: 4.19, 10: 3.34, 15: 2.78, 30: 1.91, 60: 1.19 },
+    "2yr": { 5: 4.99, 10: 4, 15: 3.35, 30: 2.32, 60: 1.45 },
+    "5yr": { 5: 5.95, 10: 4.76, 15: 4, 30: 2.86, 60: 1.83 },
+    "10yr": { 5: 6.62, 10: 5.3, 15: 4.48, 30: 3.24, 60: 2.11 },
     "25yr": { 5: 7.49, 10: 5.96, 15: 5.04, 30: 3.74, 60: 2.48 },
+    "50yr": { 5: 8.11, 10: 6.48, 15: 5.44, 30: 4.1, 60: 2.78 },
+    "100yr": { 5: 8.74, 10: 6.96, 15: 5.84, 30: 4.48, 60: 3.08 },
+    "500yr": { 5: 10.04, 10: 7.92, 15: 6.68, 30: 5.3, 60: 3.81 },
   },
   "Saint Mary's": {
     lat: 38.2918, lon: -76.6358,
-    // depths: 5min=[0.436,0.579,0.655] 10min=[0.698,0.926,1.04] 15min=[0.877,1.17,1.32] 30min=[1.21,1.70,1.96] 60min=[1.52,2.21,2.61]
-    "2yr":  { 5: 5.23, 10: 4.19, 15: 3.51, 30: 2.42, 60: 1.52 },
-    "10yr": { 5: 6.95, 10: 5.56, 15: 4.68, 30: 3.40, 60: 2.21 },
+    "1yr": { 5: 4.37, 10: 3.49, 15: 2.91, 30: 1.99, 60: 1.24 },
+    "2yr": { 5: 5.23, 10: 4.19, 15: 3.51, 30: 2.42, 60: 1.52 },
+    "5yr": { 5: 6.23, 10: 4.99, 15: 4.2, 30: 2.98, 60: 1.91 },
+    "10yr": { 5: 6.95, 10: 5.56, 15: 4.68, 30: 3.4, 60: 2.21 },
     "25yr": { 5: 7.86, 10: 6.24, 15: 5.28, 30: 3.92, 60: 2.61 },
+    "50yr": { 5: 8.54, 10: 6.78, 15: 5.76, 30: 4.32, 60: 2.93 },
+    "100yr": { 5: 9.23, 10: 7.32, 15: 6.16, 30: 4.72, 60: 3.26 },
+    "500yr": { 5: 10.67, 10: 8.46, 15: 7.08, 30: 5.64, 60: 4.04 },
   },
   "Somerset": {
     lat: 38.1979, lon: -75.6927,
-    // depths: 5min=[0.429,0.568,0.643] 10min=[0.687,0.908,1.02] 15min=[0.863,1.15,1.30] 30min=[1.19,1.66,1.92] 60min=[1.50,2.17,2.56]
-    "2yr":  { 5: 5.15, 10: 4.12, 15: 3.45, 30: 2.38, 60: 1.50 },
-    "10yr": { 5: 6.82, 10: 5.45, 15: 4.60, 30: 3.32, 60: 2.17 },
-    "25yr": { 5: 7.72, 10: 6.12, 15: 5.20, 30: 3.84, 60: 2.56 },
+    "1yr": { 5: 4.33, 10: 3.46, 15: 2.88, 30: 1.98, 60: 1.23 },
+    "2yr": { 5: 5.15, 10: 4.12, 15: 3.45, 30: 2.38, 60: 1.5 },
+    "5yr": { 5: 6.04, 10: 4.83, 15: 4.08, 30: 2.9, 60: 1.86 },
+    "10yr": { 5: 6.82, 10: 5.45, 15: 4.6, 30: 3.32, 60: 2.17 },
+    "25yr": { 5: 7.72, 10: 6.12, 15: 5.2, 30: 3.84, 60: 2.56 },
+    "50yr": { 5: 8.44, 10: 6.72, 15: 5.68, 30: 4.28, 60: 2.89 },
+    "100yr": { 5: 9.11, 10: 7.26, 15: 6.08, 30: 4.68, 60: 3.22 },
+    "500yr": { 5: 10.55, 10: 8.34, 15: 7, 30: 5.56, 60: 4 },
   },
   "Talbot": {
     lat: 38.7743, lon: -76.0763,
-    // depths: 5min=[0.423,0.562,0.636] 10min=[0.677,0.899,1.01] 15min=[0.850,1.14,1.28] 30min=[1.18,1.65,1.90] 60min=[1.47,2.14,2.54]
-    "2yr":  { 5: 5.08, 10: 4.06, 15: 3.40, 30: 2.36, 60: 1.47 },
-    "10yr": { 5: 6.74, 10: 5.39, 15: 4.56, 30: 3.30, 60: 2.14 },
-    "25yr": { 5: 7.63, 10: 6.06, 15: 5.12, 30: 3.80, 60: 2.54 },
+    "1yr": { 5: 4.25, 10: 3.39, 15: 2.82, 30: 1.94, 60: 1.21 },
+    "2yr": { 5: 5.08, 10: 4.06, 15: 3.4, 30: 2.36, 60: 1.47 },
+    "5yr": { 5: 6.05, 10: 4.84, 15: 4.08, 30: 2.9, 60: 1.86 },
+    "10yr": { 5: 6.74, 10: 5.39, 15: 4.56, 30: 3.3, 60: 2.14 },
+    "25yr": { 5: 7.63, 10: 6.06, 15: 5.12, 30: 3.8, 60: 2.54 },
+    "50yr": { 5: 8.29, 10: 6.6, 15: 5.56, 30: 4.2, 60: 2.84 },
+    "100yr": { 5: 8.94, 10: 7.08, 15: 6, 30: 4.58, 60: 3.16 },
+    "500yr": { 5: 10.33, 10: 8.16, 15: 6.84, 30: 5.46, 60: 3.91 },
   },
   "Washington": {
     lat: 39.6418, lon: -77.7199,
-    // depths: 5min=[0.397,0.547,0.636] 10min=[0.621,0.847,0.976] 15min=[0.762,1.05,1.21] 30min=[1.02,1.46,1.72] 60min=[1.26,1.86,2.23]
-    "2yr":  { 5: 4.76, 10: 3.73, 15: 3.05, 30: 2.04, 60: 1.26 },
-    "10yr": { 5: 6.56, 10: 5.08, 15: 4.20, 30: 2.92, 60: 1.86 },
+    "1yr": { 5: 3.98, 10: 3.11, 15: 2.55, 30: 1.69, 60: 1.04 },
+    "2yr": { 5: 4.76, 10: 3.73, 15: 3.05, 30: 2.04, 60: 1.26 },
+    "5yr": { 5: 5.77, 10: 4.49, 15: 3.7, 30: 2.54, 60: 1.6 },
+    "10yr": { 5: 6.56, 10: 5.08, 15: 4.2, 30: 2.92, 60: 1.86 },
     "25yr": { 5: 7.63, 10: 5.86, 15: 4.84, 30: 3.44, 60: 2.23 },
+    "50yr": { 5: 8.47, 10: 6.48, 15: 5.36, 30: 3.84, 60: 2.54 },
+    "100yr": { 5: 9.35, 10: 7.08, 15: 5.88, 30: 4.26, 60: 2.86 },
+    "500yr": { 5: 11.63, 10: 8.58, 15: 7.16, 30: 5.34, 60: 3.71 },
   },
   "Wicomico": {
     lat: 38.3607, lon: -75.5994,
-    // depths: 5min=[0.426,0.564,0.639] 10min=[0.682,0.903,1.02] 15min=[0.857,1.14,1.29] 30min=[1.18,1.65,1.91] 60min=[1.48,2.15,2.54]
-    "2yr":  { 5: 5.11, 10: 4.09, 15: 3.43, 30: 2.36, 60: 1.48 },
-    "10yr": { 5: 6.77, 10: 5.42, 15: 4.56, 30: 3.30, 60: 2.15 },
+    "1yr": { 5: 4.3, 10: 3.43, 15: 2.86, 30: 1.96, 60: 1.22 },
+    "2yr": { 5: 5.11, 10: 4.09, 15: 3.43, 30: 2.36, 60: 1.48 },
+    "5yr": { 5: 5.99, 10: 4.8, 15: 4.04, 30: 2.88, 60: 1.84 },
+    "10yr": { 5: 6.77, 10: 5.42, 15: 4.56, 30: 3.3, 60: 2.15 },
     "25yr": { 5: 7.67, 10: 6.12, 15: 5.16, 30: 3.82, 60: 2.54 },
+    "50yr": { 5: 8.38, 10: 6.66, 15: 5.64, 30: 4.24, 60: 2.87 },
+    "100yr": { 5: 9.05, 10: 7.2, 15: 6.08, 30: 4.64, 60: 3.2 },
+    "500yr": { 5: 10.48, 10: 8.28, 15: 6.96, 30: 5.52, 60: 3.97 },
   },
   "Worcester": {
     lat: 38.1771, lon: -75.3927,
-    // depths: 5min=[0.434,0.573,0.648] 10min=[0.694,0.916,1.03] 15min=[0.872,1.16,1.31] 30min=[1.20,1.68,1.94] 60min=[1.51,2.19,2.58]
-    "2yr":  { 5: 5.21, 10: 4.16, 15: 3.49, 30: 2.40, 60: 1.51 },
-    "10yr": { 5: 6.88, 10: 5.50, 15: 4.64, 30: 3.36, 60: 2.19 },
+    "1yr": { 5: 4.38, 10: 3.5, 15: 2.91, 30: 2, 60: 1.24 },
+    "2yr": { 5: 5.21, 10: 4.16, 15: 3.49, 30: 2.4, 60: 1.51 },
+    "5yr": { 5: 6.08, 10: 4.87, 15: 4.12, 30: 2.92, 60: 1.87 },
+    "10yr": { 5: 6.88, 10: 5.5, 15: 4.64, 30: 3.36, 60: 2.19 },
     "25yr": { 5: 7.78, 10: 6.18, 15: 5.24, 30: 3.88, 60: 2.58 },
+    "50yr": { 5: 8.51, 10: 6.78, 15: 5.72, 30: 4.3, 60: 2.92 },
+    "100yr": { 5: 9.2, 10: 7.32, 15: 6.16, 30: 4.72, 60: 3.25 },
+    "500yr": { 5: 10.66, 10: 8.4, 15: 7.08, 30: 5.62, 60: 4.04 },
   },
   "DC": {
     lat: 38.9072, lon: -77.0369,
-    // depths: 5min=[0.425,0.564,0.639] 10min=[0.679,0.902,1.02] 15min=[0.854,1.14,1.29] 30min=[1.18,1.65,1.91] 60min=[1.48,2.15,2.55]
-    "2yr":  { 5: 5.10, 10: 4.07, 15: 3.42, 30: 2.36, 60: 1.48 },
-    "10yr": { 5: 6.77, 10: 5.41, 15: 4.56, 30: 3.30, 60: 2.15 },
+    "1yr": { 5: 4.25, 10: 3.4, 15: 2.83, 30: 1.94, 60: 1.21 },
+    "2yr": { 5: 5.1, 10: 4.07, 15: 3.42, 30: 2.36, 60: 1.48 },
+    "5yr": { 5: 6.06, 10: 4.85, 15: 4.08, 30: 2.9, 60: 1.86 },
+    "10yr": { 5: 6.77, 10: 5.41, 15: 4.56, 30: 3.3, 60: 2.15 },
     "25yr": { 5: 7.67, 10: 6.12, 15: 5.16, 30: 3.82, 60: 2.55 },
+    "50yr": { 5: 8.34, 10: 6.66, 15: 5.6, 30: 4.22, 60: 2.86 },
+    "100yr": { 5: 9, 10: 7.14, 15: 6, 30: 4.62, 60: 3.18 },
+    "500yr": { 5: 10.44, 10: 8.28, 15: 6.92, 30: 5.52, 60: 3.96 },
   },
 };
 
@@ -1260,7 +1389,10 @@ function defaultRainfallSettings() {
 }
 
 function availableStorms(src) {
-  return src === "moco" ? ["2yr","5yr","10yr"] : ["2yr","10yr","25yr"];
+  if (src === "moco")  return ["2yr","5yr","10yr"];
+  if (src === "mdsha") return ["2yr","10yr","25yr"];
+  // noaa — full Atlas 14 return periods
+  return ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"];
 }
 
 function defaultInletSpacingSettings() {
@@ -1275,7 +1407,6 @@ function defaultInletSpacingRow() {
     id: nextId(),
     linkedStructureId: "",   // internal id of a type="inlet" structure, or "" = custom
     label: "",
-    structureType: "",  // INLET_STRUCTURES id or ""
     area: "",
     C: "",
     tc: "",
@@ -1432,6 +1563,32 @@ function interpKb(columnKey, angleDeg){
   return rows[rows.length-1][columnKey];
 }
 
+function kAhFromAngle(structureCategory, deflectionDeg) {
+  const d = isFinite(parseFloat(deflectionDeg)) ? parseFloat(deflectionDeg) : 0;
+  const theta = 180 - d;  // interior angle; 180 = straight through
+  if (structureCategory === "inlet") {
+    // HEC-22 Table 9.4: straight→0.50, 90°→1.50; linear between
+    return 0.50 + (1.50 - 0.50) * ((180 - theta) / 90);
+  }
+  // access_hole (manhole / junction box): piecewise linear, HEC-22 Table 9.4
+  const pts = [[180, 0.15], [157.5, 0.45], [135, 0.75], [120, 0.85], [90, 1.00]];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [t1, k1] = pts[i], [t2, k2] = pts[i + 1];
+    if (theta >= t2) {
+      return k1 + (k2 - k1) * ((t1 - theta) / (t1 - t2));
+    }
+  }
+  return 1.00;  // clamp for deflection > 90°
+}
+
+function resolveStructureCategory(s) {
+  if (s.structureMode === "standard" && s.agency && s.standardStructureId) {
+    const entry = (STRUCTURE_CATALOG[s.agency] || []).find(e => e.id === s.standardStructureId);
+    return entry ? entry.category : "access_hole";
+  }
+  return s.structureCategory || "access_hole";
+}
+
 function calcDrainageRow(row) {
   const A  = parseFloat(row.area) || 0;
   const C  = parseFloat(row.C)    || 0;
@@ -1519,7 +1676,7 @@ function tr55TravelTime(L, V){
 function tr55ChannelVelocity(n, area, wp, s){
   if(![n,area,wp,s].every(v=>isFinite(v) && v>0)) return 0;
   const r = area/wp;
-  return (1.49/n) * Math.pow(r, 2/3) * Math.sqrt(s);
+  return (1.486/n) * Math.pow(r, 2/3) * Math.sqrt(s);
 }
 
 function tr55DefaultSegment(type){
@@ -1744,23 +1901,29 @@ function computeStructureCalc(structureId, seen, stormOverride){
   }
 
   const kbColumn = KB_COLUMN_FOR_TYPE[st.type] || "bend";
+  const useCatalogKah = st.structureMode === "standard" || st.structureMode === "custom";
+  function kbForAngle(angleDeg) {
+    return useCatalogKah
+      ? kAhFromAngle(resolveStructureCategory(st), angleDeg)
+      : interpKb(kbColumn, angleDeg);
+  }
   const inflowPipes = getIncomingPipes(structureId);
   let kb=0, Hb=0, controlling=null;
   if(inflowPipes.length===0){
-    kb = interpKb(kbColumn, 0); // nominal entrance condition, no piped inflow to reference
+    kb = kbForAngle(0);
   } else if(inflowPipes.length===1){
     const angle = parseFloat(inflowPipes[0].angle)||0;
-    kb = interpKb(kbColumn, angle);
+    kb = kbForAngle(angle);
   } else if(inflowPipes.length===2){
     const [p1,p2] = inflowPipes;
     const a1 = parseFloat(p1.angle)||0, a2 = parseFloat(p2.angle)||0;
     const Q1 = pipeDesignQ(p1, null, stormOverride), Q2 = pipeDesignQ(p2, null, stormOverride);
     const A3 = geo ? geo.areaSf : 0;
     const V1_3 = A3>0? Q1/A3:0, V2_3 = A3>0? Q2/A3:0;
-    const Kb1 = interpKb(kbColumn, a1), Kb2 = interpKb(kbColumn, a2);
+    const Kb1 = kbForAngle(a1), Kb2 = kbForAngle(a2);
     const Lv1 = Kb1*V1_3*V1_3/(2*G), Lv2 = Kb2*V2_3*V2_3/(2*G);
     const vc = Lv1>Lv2 ? a2 : a1;
-    kb = interpKb(kbColumn, vc);
+    kb = kbForAngle(vc);
     controlling = { p1,p2,a1,a2,Q1,Q2,V1_3,V2_3,Kb1,Kb2,Lv1,Lv2,vc };
   } else {
     warnings.push(inflowPipes.length+" inflow pipes found \u2014 the controlling-angle method only supports up to 2. Hb not computed; verify manually.");
@@ -1775,7 +1938,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
   return {
     structure: st, totalFlow, captured: totalFlowInfo.captured, inflow: totalFlowInfo.inflow,
     outPipe, outPipeFlow, downstream, downstreamElev, Sf, Hf, kbColumn, kb, Hb, Vout,
-    inflowCount: inflowPipes.length, inflowPipes, controlling,
+    inflowCount: inflowPipes.length, inflowPipes, controlling, useCatalogKah,
     elevation, isBase:false, warnings, isSplitter, splitInfo,
     crownPass: crown!==null ? elevation<=crown+1.0 : null,
     rimPass: rim!==null ? elevation<=rim-1.0 : null,
@@ -2326,9 +2489,25 @@ function renderDrainage(){
       el("td",{}, num(row,"area",70)),
       el("td",{}, num(row,"C",60)),
       el("td",{class:"out computed-cell"}, fmt(calc.CA, 3)),
-      el("td",{class: calc.iOverridden ? "i-override" : ""}, iOverrideCell),
+      (()=>{
+        const cell = el("td",{class: calc.iOverridden ? "i-override" : ""});
+        cell.appendChild(iOverrideCell);
+        if (row.iOverride) {
+          cell.appendChild(el("span",{title:"i override applies to ALL design storms — both 10-yr and 25-yr use this value",
+            style:"color:#f90;cursor:help;margin-left:3px;"},"⚠"));
+        }
+        return cell;
+      })(),
       el("td",{}, tcCell(row)),
-      el("td",{}, num(row,"cf",55)),
+      (()=>{
+        const cell = el("td",{});
+        cell.appendChild(num(row,"cf",55));
+        if (parseFloat(row.cf) > 1.0) {
+          cell.appendChild(el("span",{title:"Cf > 1.0 applies to ALL design storms including 10-yr",
+            style:"color:#f90;cursor:help;margin-left:3px;"},"⚠"));
+        }
+        return cell;
+      })(),
       ...calc.storms.map(s => {
         const isPipe  = s === state.rainfall.pipeStorm;
         const isInlet = s === state.rainfall.inletStorm;
@@ -2354,11 +2533,11 @@ function renderDrainage(){
 
   function txt(row,field,w){
     return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"drainage:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; patchDrainageRow(row); }});
+      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(()=>patchDrainageRow(row)); }});
   }
   function num(row,field,w){
     return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"drainage:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; patchDrainageRow(row); }});
+      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(()=>patchDrainageRow(row)); }});
   }
   function tcCell(row){
     const wrap = el("div",{style:"display:flex;gap:5px;align-items:center;flex-wrap:wrap;"});
@@ -2391,7 +2570,7 @@ function renderStructures(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Structures"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.structures.push({id:nextId(), structureId:"", desc:"", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", crown:"", rim:"", splitMethod:"capacity", splitCapacity:"", splitRatio:0.5}); renderAll(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.structures.push({id:nextId(), structureId:"", desc:"", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", crown:"", rim:"", splitMethod:"capacity", splitCapacity:"", splitRatio:0.5, structureMode:"standard", agency:"", standardStructureId:"", structureCategory:"", shape:"", innerDiameter:"", innerWidth:"", innerLength:""}); renderAll(); }}, "+ Add row"),
     el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-structures","Junction Structures")}, "\u{1F5A8} Print Table"),
     el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-structures","Junction Structures")}, "\u{1F4CA} Detail")
   ]));
@@ -2401,11 +2580,13 @@ function renderStructures(){
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"Structure ID"), el("th",{},"Description"), el("th",{},"Drainage Area"), el("th",{},"Type"), el("th",{},"Split config"),
     el("th",{},"Fixed?"), el("th",{},"Fixed/Start Elev"), el("th",{},"Crown (ft)"), el("th",{},"Rim/Grate (ft)"),
-    el("th",{class:"computed"},"Captured Q"), el("th",{class:"computed"},"Inflow"), el("th",{class:"computed"},"Total Flow"),
+    el("th",{},"Mode"), el("th",{},"Agency / Category"), el("th",{},"Structure / Shape"), el("th",{},"Inner Size"), el("th",{class:"computed",title:"K_ah used in Hb calculation (controlling angle for 2-inflow structures)"},"K_ah"),
+    el("th",{class:"computed"},"Captured Q"), el("th",{class:"computed"},"# In"), el("th",{class:"computed"},"Total Flow"),
     el("th",{},""), el("th",{},"")
   ])));
   const tbody = el("tbody");
   state.structures.forEach(row=>{
+    const isStandard = (row.structureMode || "standard") === "standard";
     const calc = computeStructureCalc(row.id);
     const inflowCount = calc ? (calc.inflow ? calc.inflow.length : 0) : 0;
     const tr = el("tr",{},[
@@ -2418,6 +2599,11 @@ function renderStructures(){
       el("td",{}, num(row,"startElev",80)),
       el("td",{}, num(row,"crown",75)),
       el("td",{}, num(row,"rim",75)),
+      el("td",{}, modeToggle(row)),
+      el("td",{}, isStandard ? agencySelect(row) : categorySelect(row)),
+      el("td",{}, isStandard ? catalogSelect(row) : shapeSelect(row)),
+      innerSizeCell(row),
+      el("td",{class:"out computed-cell"}, kAhDisplay(row, calc)),
       el("td",{class:"out computed-cell"}, fmt(calc.captured,2)),
       el("td",{class:"out computed-cell"}, inflowCount + (calc.warnings.length? " \u26a0":"")),
       el("td",{class:"out computed-cell", style:"font-weight:700"}, fmt(calc.totalFlow,2)),
@@ -2489,6 +2675,111 @@ function renderStructures(){
     if(pass===null) return el("span",{class:"badge neutral"},"\u2014");
     return el("span",{class:"badge "+(pass?"pass":"fail")}, pass?"OK":"EXCEEDS");
   }
+
+  function modeToggle(row) {
+    const isStd = (row.structureMode || "standard") === "standard";
+    const wrap = el("div",{style:"display:flex;gap:3px;"});
+    const btnStd = el("button",{
+      class:"btn btn-sm"+(isStd?" btn-active":""),
+      onclick:()=>{
+        row.structureMode="standard";
+        row.structureCategory=""; row.shape="";
+        row.innerDiameter=""; row.innerWidth=""; row.innerLength="";
+        withFocusPreserved(renderStructures);
+      }
+    },"Std");
+    const btnCust = el("button",{
+      class:"btn btn-sm"+(!isStd?" btn-active":""),
+      onclick:()=>{
+        row.structureMode="custom";
+        row.agency=""; row.standardStructureId="";
+        withFocusPreserved(renderStructures);
+      }
+    },"Cust");
+    wrap.appendChild(btnStd); wrap.appendChild(btnCust);
+    return wrap;
+  }
+
+  function agencySelect(row) {
+    const sel = el("select",{class:"cell-input",style:"width:90px",
+      "data-focus-key":"structures:"+row.id+":agency",
+      onchange:(e)=>{ row.agency=e.target.value; row.standardStructureId=""; withFocusPreserved(renderStructures); }});
+    sel.appendChild(el("option",{value:""},"\u2014 pick \u2014"));
+    [["mcdot","MCDOT"],["mdsha","MDSHA"],["mdot","MDOT"],["pgder","PG DER"]].forEach(([v,l])=>{
+      const o=el("option",{value:v},l); if(row.agency===v) o.selected=true; sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function catalogSelect(row) {
+    const entries = (STRUCTURE_CATALOG[row.agency]||[]);
+    const sel = el("select",{class:"cell-input",style:"width:190px",
+      "data-focus-key":"structures:"+row.id+":standardStructureId",
+      onchange:(e)=>{
+        row.standardStructureId=e.target.value;
+        const entry = entries.find(x=>x.id===e.target.value);
+        if(entry){
+          row.shape = entry.shape;
+          row.innerDiameter = entry.innerDiameter != null ? String(entry.innerDiameter) : "";
+          row.innerWidth = entry.innerWidth != null ? String(entry.innerWidth) : "";
+          row.innerLength = entry.innerLength != null ? String(entry.innerLength) : "";
+        }
+        withFocusPreserved(renderStructures);
+      }});
+    sel.appendChild(el("option",{value:""},entries.length?"\u2014 select \u2014":"\u2014 none \u2014"));
+    entries.forEach(e=>{
+      const o=el("option",{value:e.id},e.label); if(row.standardStructureId===e.id) o.selected=true; sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function categorySelect(row) {
+    const sel = el("select",{class:"cell-input",style:"width:110px",
+      "data-focus-key":"structures:"+row.id+":structureCategory",
+      onchange:(e)=>{ row.structureCategory=e.target.value; withFocusPreserved(renderStructures); }});
+    [["","\u2014 category \u2014"],["access_hole","Access Hole"],["inlet","Inlet"]].forEach(([v,l])=>{
+      const o=el("option",{value:v},l); if((row.structureCategory||"")===v) o.selected=true; sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function shapeSelect(row) {
+    const sel = el("select",{class:"cell-input",style:"width:100px",
+      "data-focus-key":"structures:"+row.id+":shape",
+      onchange:(e)=>{ row.shape=e.target.value; withFocusPreserved(renderStructures); }});
+    [["","\u2014 shape \u2014"],["round","Round"],["rectangular","Rectangular"],["square","Square"]].forEach(([v,l])=>{
+      const o=el("option",{value:v},l); if((row.shape||"")===v) o.selected=true; sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function innerSizeCell(row) {
+    const isStd = (row.structureMode||"standard") === "standard";
+    if(isStd){
+      const s = row.shape||"";
+      let text = "\u2014";
+      if(s==="round" && row.innerDiameter) text = row.innerDiameter+" ft dia";
+      else if((s==="square"||s==="rectangular") && row.innerWidth) {
+        text = row.innerWidth+(row.innerLength && row.innerLength!==row.innerWidth ? "\u00d7"+row.innerLength : "")+" ft";
+      }
+      return el("td",{class:"out computed-cell"}, text);
+    }
+    const s = row.shape||"";
+    const wrap = el("div",{style:"display:flex;gap:4px;align-items:center;"});
+    if(s==="round"){
+      wrap.appendChild(num(row,"innerDiameter",55)); wrap.appendChild(el("span",{},"ft dia"));
+    } else if(s==="rectangular"){
+      wrap.appendChild(num(row,"innerWidth",40)); wrap.appendChild(el("span",{},"\u00d7")); wrap.appendChild(num(row,"innerLength",40)); wrap.appendChild(el("span",{},"ft"));
+    } else if(s==="square"){
+      wrap.appendChild(num(row,"innerWidth",55)); wrap.appendChild(el("span",{},"ft sq"));
+    }
+    return el("td",{}, wrap);
+  }
+
+  function kAhDisplay(row, calc) {
+    if(!calc || calc.kb == null) return "\u2014";
+    return fmt(calc.kb, 3);
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -2543,7 +2834,16 @@ function renderPipes(){
       el("td",{class:"out computed-cell"}, calc.areaSf!=null?fmt(calc.areaSf,3):"\u2014"),
       el("td",{class:"out computed-cell"}, calc.Qfull!=null?fmt(calc.Qfull,2):"\u2014"),
       el("td",{class:"out computed-cell"}, calc.V!=null?fmt(calc.V,2):"\u2014"),
-      el("td",{class:"computed-cell"}, statusBadge(calc.pass)),
+      (()=>{
+        const S = pipeEffectiveSlope(row);
+        const slopeAdverse = isFinite(S) && S < 0;
+        const cell = el("td",{class:"computed-cell"});
+        cell.appendChild(statusBadge(calc.pass));
+        if (slopeAdverse) {
+          cell.appendChild(el("span",{style:"color:#f90;font-size:10px;margin-left:4px;",title:"Upstream invert is lower than downstream invert"},"\u2191 adverse slope"));
+        }
+        return cell;
+      })(),
       el("td",{}, detailBtn(()=>openDetailModal(buildPipeSheet(row)))),
       el("td",{}, delBtn(()=>{ state.pipes=state.pipes.filter(r=>r!==row); renderAll(); }))
     ]));
@@ -3064,7 +3364,8 @@ function renderRainfallIdfTable(c) {
     const isPipe  = s === r.pipeStorm;
     const isInlet = s === r.inletStorm;
     const accent  = isPipe ? pipeAccent : (isInlet ? inletAccent : "");
-    const shortLbl = {"2yr":"2-yr","10yr":"10-yr","25yr":"25-yr","5yr":"5-yr"}[s] || s;
+    const shortLbl = {"1yr":"1-yr","2yr":"2-yr","5yr":"5-yr","10yr":"10-yr","25yr":"25-yr",
+                      "50yr":"50-yr","100yr":"100-yr","500yr":"500-yr"}[s] || s;
     const tag = (isPipe && isInlet) ? " (Pipe & Inlet)" : isPipe ? " (Pipe)" : isInlet ? " (Inlet)" : "";
     headRow.appendChild(el("th", {style: accent ? "background:"+accent+"22;color:"+accent+";" : ""}, shortLbl + tag + "\ni (in/hr)"));
   });
@@ -3208,7 +3509,7 @@ function renderRainfall() {
     noteDiv.appendChild(el("a", {href, target:"_blank", style:"font-size:0.9em;"}, "Validate on NOAA Atlas 14 ↗"));
     noteDiv.appendChild(el("span", {style:"font-size:0.8em;opacity:0.6;"},
       "Represents lat " + entry.lat + ", lon " + entry.lon +
-      " (county centroid, pulled 2026-09-09). Values vary within the county; use Custom for project-specific accuracy."));
+      " (representative location, pulled 2026-09-09). Values vary within the county; use Custom for project-specific accuracy."));
     settingsSec.appendChild(noteDiv);
   }
 
@@ -3220,7 +3521,8 @@ function renderRainfall() {
   const stRow = el("div", {style:"display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;padding:12px 0;"});
 
   const storms = availableStorms(r.rainfallSource);
-  const stormLabels = {"2yr":"2-year","5yr":"5-year","10yr":"10-year","25yr":"25-year"};
+  const stormLabels = {"1yr":"1-year","2yr":"2-year","5yr":"5-year","10yr":"10-year","25yr":"25-year",
+                       "50yr":"50-year","100yr":"100-year","500yr":"500-year"};
 
   // Pipe & HGL storm
   const pipeStormField = el("div", {class:"field"});
@@ -3262,6 +3564,10 @@ function renderRainfall() {
     chkLabel.appendChild(chk);
     chkLabel.appendChild(document.createTextNode("Also compute 25-yr pipe & HGL check"));
     chkField.appendChild(chkLabel);
+    if (r.rainfallSource === "moco" && r.pipe25Check) {
+      chkField.appendChild(el("div",{class:"note warn",style:"margin-top:4px;color:#f90;font-size:11px;"},
+        "⚠ MoCo rainfall has no 25-yr data — 25-yr check uses 10-yr intensity as fallback."));
+    }
     stRow.appendChild(chkField);
   }
 
@@ -3324,7 +3630,7 @@ function renderPipeSizing25() {
       el("td",{class:"out computed-cell"}, isFinite(q25)   ? fmt(q25,2)   : "—"),
       el("td",{class:"out computed-cell"}, isFinite(qfull) ? fmt(qfull,2) : "—"),
       el("td",{class:"out computed-cell"}, isFinite(v)     ? fmt(v,2)     : "—"),
-      el("td",{class:"out computed-cell", style: pass===false?"color:#e05;font-weight:700;":""},
+      el("td",{class:"out computed-cell", style: pass===false?"color:var(--fail);font-weight:700;":""},
         pass===null ? "—" : pass ? "✓" : "✗ OVER"),
       el("td",{}, detailBtn(()=>openDetailModal(buildPipeSheet(row, "25yr")))),
     ]));
@@ -3378,8 +3684,8 @@ function renderHgl() {
     const calc = computeStructureCalc(row.id);
     const crown = parseFloat(row.crown);
     const rim   = parseFloat(row.rim);
-    const crownStyle = calc && calc.crownPass === false ? "color:#e05;font-weight:700;" : "";
-    const rimStyle   = calc && calc.rimPass   === false ? "color:#e05;font-weight:700;" : "";
+    const crownStyle = calc && calc.crownPass === false ? "color:var(--fail);font-weight:700;" : "";
+    const rimStyle   = calc && calc.rimPass   === false ? "color:var(--fail);font-weight:700;" : "";
     tbody.appendChild(el("tr", {}, [
       el("td",{}, row.structureId||row.id),
       el("td",{}, row.type||""),
@@ -3419,6 +3725,10 @@ function renderHgl25(){
   c.appendChild(el("p", {class:"view-desc"},
     "25-yr check — read only. Structure geometry and elevations are unchanged from the primary " +
     "Junction Structures tab. HGL is propagated with Q₂₅ flows."));
+  if (state.rainfall.rainfallSource === "moco") {
+    c.appendChild(el("div",{class:"note",style:"color:#f90;margin-bottom:8px;"},
+      "⚠ MoCo rainfall source has no 25-yr data. These results use 10-yr intensity."));
+  }
 
   const section = el("div", {class:"section"});
   section.appendChild(el("div", {class:"section-head"}, [
@@ -3431,6 +3741,9 @@ function renderHgl25(){
   table.appendChild(el("thead", {}, el("tr", {}, [
     el("th",{},"Structure ID"), el("th",{},"Type"), el("th",{},"Crown (ft)"), el("th",{},"Rim (ft)"),
     el("th",{class:"computed"},"Total Flow Q₂₅\n(cfs)"),
+    el("th",{class:"computed"},"Hf\n(ft)"),
+    el("th",{class:"computed"},"Kb/Kₐₕ"),
+    el("th",{class:"computed"},"Hb\n(ft)"),
     el("th",{class:"computed"},"Upstream HGL\n(ft)"),
     el("th",{},"US Inv\n(ft)"),
     el("th",{},"DS Inv\n(ft)"),
@@ -3447,14 +3760,17 @@ function renderHgl25(){
     const rim   = parseFloat(row.rim);
     const crownCheck = (isFinite(hgl) && isFinite(crown)) ? hgl <= crown + 1.0 : null;
     const rimCheck   = (isFinite(hgl) && isFinite(rim))   ? hgl <= rim  - 1.0 : null;
-    const crownStyle = crownCheck === false ? "color:#e05;font-weight:700;" : "";
-    const rimStyle   = rimCheck   === false ? "color:#e05;font-weight:700;" : "";
+    const crownStyle = crownCheck === false ? "color:var(--fail);font-weight:700;" : "";
+    const rimStyle   = rimCheck   === false ? "color:var(--fail);font-weight:700;" : "";
     tbody.appendChild(el("tr", {}, [
       el("td",{}, row.structureId||row.id),
       el("td",{}, row.type||""),
       el("td",{}, isFinite(crown) ? fmt(crown,2) : "—"),
       el("td",{}, isFinite(rim)   ? fmt(rim,2)   : "—"),
       el("td",{class:"out computed-cell"}, isFinite(tf.Q) ? fmt(tf.Q,2) : "—"),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hf) ? fmt(calc.Hf,3) : "—"),
+      el("td",{class:"out computed-cell"}, calc && calc.kb != null   ? fmt(calc.kb,2) : "—"),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hb) ? fmt(calc.Hb,3) : "—"),
       el("td",{class:"out computed-cell"}, isFinite(hgl)  ? fmt(hgl,2)  : "—"),
       el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.upstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
       el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.downstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
@@ -3569,7 +3885,7 @@ function renderInletSpacing(){
   const tableWrap = el("div",{class:"table-wrap"});
   const table = el("table",{class:"data"});
   table.appendChild(el("thead",{},el("tr",{},[
-    el("th",{},"Structure"), el("th",{},"Label"), el("th",{},"Structure Type"), el("th",{},"L (ft)"), el("th",{},"Area (ac)"),
+    el("th",{},"Structure"), el("th",{},"Label"), el("th",{},"L (ft)"), el("th",{},"Area (ac)"),
     el("th",{},"C"), el("th",{},"Tc (min)"), el("th",{},"i (in/hr)"),
     el("th",{class:"computed"},"Q (cfs)"), el("th",{},"S"), el("th",{},"Sx"),
     el("th",{},"W (ft)"), el("th",{},"a (ft)"), el("th",{},"n"),
@@ -3632,7 +3948,6 @@ function renderInletSpacing(){
     tbody.appendChild(el("tr",trAttrs,[
       el("td",{}, structureDropdown(row)),
       el("td",{}, labelCell),
-      el("td",{}, stypeSelect(row)),
       el("td",{}, txtCell(row,"L",60)),
       el("td",{}, autoField("area", rf.areaFromDA, rf.area, 70)),
       el("td",{}, autoField("C", rf.CFromDA, rf.C, 55)),
@@ -3664,27 +3979,6 @@ function renderInletSpacing(){
       value:(row[field]===undefined||row[field]===null)?"":row[field],
       "data-focus-key":"is:"+row.id+":"+field,
       oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }});
-  }
-
-  function stypeSelect(row){
-    const sel = el("select",{class:"cell-input",style:"width:150px",
-      "data-focus-key":"is:"+row.id+":stype",
-      onchange:(e)=>{
-        row.structureType=e.target.value;
-        const preset = INLET_STRUCTURES.find(st=>st.id===e.target.value);
-        if(preset){
-          row.W = preset.W; row.a = preset.a; row.n = preset.n;
-          if(row.L==="" || row.L==null) row.L = String(preset.Ls[0]);
-        }
-        withFocusPreserved(renderAll);
-      }});
-    sel.appendChild(el("option",{value:""},"— Select —"));
-    INLET_STRUCTURES.forEach(st=>{
-      const o = el("option",{value:st.id}, st.id+" "+st.label);
-      if(row.structureType===st.id) o.selected=true;
-      sel.appendChild(o);
-    });
-    return sel;
   }
 
   function bypassSelect(row){
@@ -3866,10 +4160,26 @@ function buildStructureSheet(structureId){
   const calc = computeStructureCalc(structureId);
   const body = [];
 
+  const catalogEntry = (st.structureMode==="standard" && st.agency && st.standardStructureId)
+    ? (STRUCTURE_CATALOG[st.agency]||[]).find(e=>e.id===st.standardStructureId) : null;
+  const agencyLabel = {"mcdot":"MCDOT","mdsha":"MDSHA","mdot":"MDOT","pgder":"PG DER"}[st.agency]||st.agency||"";
+  const catalogLabel = catalogEntry
+    ? catalogEntry.label+" ("+agencyLabel+")"
+    : st.structureMode==="custom"
+      ? "Custom \u2014 "+(st.shape||"?")+(st.shape==="round"&&st.innerDiameter?" ("+st.innerDiameter+" ft dia)":
+          ((st.shape==="square"||st.shape==="rectangular")&&st.innerWidth?" ("+st.innerWidth+(st.innerLength&&st.innerLength!==st.innerWidth?"\xd7"+st.innerLength:"")+" ft)":""))
+      : "\u2014 (legacy / Kb table)";
+  const innerSizeRow = catalogEntry&&catalogEntry.shape==="round"&&catalogEntry.innerDiameter!=null
+    ? [["Inner diameter", catalogEntry.innerDiameter+" ft"]]
+    : catalogEntry&&catalogEntry.innerWidth!=null
+      ? [["Inner size", catalogEntry.innerWidth+(catalogEntry.innerLength!=null&&catalogEntry.innerLength!==catalogEntry.innerWidth?"\xd7"+catalogEntry.innerLength:"")+" ft"]]
+      : [];
   body.push(csSection("Structure", csTable([
     ["Type", (STRUCTURE_TYPES.find(t=>t[0]===st.type)||["","?"])[1]],
     ["Description", st.desc||"\u2014"],
     ["Linked drainage area", st.drainageAreaId? ((findDrainage(st.drainageAreaId)||{}).structureId || st.drainageAreaId) : "none"],
+    ["Catalog / mode", catalogLabel],
+    ...innerSizeRow,
   ])));
 
   // Captured Q
@@ -3952,20 +4262,29 @@ function buildHglRowSheet(structureId, stormOverride){
       csResult("Hf", fmt(calc.Hf,4)+" ft"),
     ])));
     const structLossBody = [];
-    structLossBody.push(el("div",{class:"cs-note"}, "Inflow pipe count: "+calc.inflowCount+" \u2014 Kb column: "+(calc.kbColumn||"n/a")));
+    const kLabel = calc.useCatalogKah ? "K\u2090\u2095 (HEC-22 Approx.)" : "Kb";
+    const kSourceNote = calc.useCatalogKah
+      ? "Inflow pipe count: "+calc.inflowCount+" \u2014 K\u2090\u2095 from HEC-22 5th Ed. Table 8.5 Approx. Method ("+resolveStructureCategory(st)+")"
+      : "Inflow pipe count: "+calc.inflowCount+" \u2014 Kb column: "+(calc.kbColumn||"n/a")+" (legacy Kb table)";
+    structLossBody.push(el("div",{class:"cs-note"}, kSourceNote));
+    if (calc.useCatalogKah) {
+      structLossBody.push(el("div",{class:"cs-note"},
+        "Note: Controlling-angle convention follows HEC-22 \u00a78.5: the angle producing the smaller head loss governs (smaller-loss pipe\u2019s angle selected as controlling angle when 2 inflows present)."));
+    }
     if(calc.inflowCount===0){
-      structLossBody.push(el("div",{class:"cs-note"}, "No piped inflow \u2014 nominal entrance condition, Kb evaluated at 0\u00b0."));
+      structLossBody.push(el("div",{class:"cs-note"}, "No piped inflow \u2014 nominal entrance condition, "+kLabel+" evaluated at 0\u00b0."));
     } else if(calc.inflowCount===1){
-      structLossBody.push(el("div",{class:"cs-note"}, "Single inflow pipe \u2014 Kb taken directly at that pipe's angle."));
+      structLossBody.push(el("div",{class:"cs-note"}, "Single inflow pipe \u2014 "+kLabel+" taken directly at that pipe's angle."));
     } else if(calc.controlling){
       const ctl = calc.controlling;
+      const kShort = calc.useCatalogKah ? "K\u2090\u2095" : "Kb";
       structLossBody.push(csTable([
         ["Pipe 1: Q\u2081, \u03c5\u2081", fmt(ctl.Q1,2)+" cfs, "+fmt(ctl.a1,0)+"\u00b0"],
         ["Pipe 2: Q\u2082, \u03c5\u2082", fmt(ctl.Q2,2)+" cfs, "+fmt(ctl.a2,0)+"\u00b0"],
         ["V\u2081/\u2083 = Q\u2081 / A(out)", fmt(ctl.V1_3,2)+" fps"],
         ["V\u2082/\u2083 = Q\u2082 / A(out)", fmt(ctl.V2_3,2)+" fps"],
-        ["Lv\u2081 = Kb(\u03c5\u2081)\u00d7V\u2081/\u2083\u00b2/2g", fmt(ctl.Lv1,4)+" ft  (Kb="+fmt(ctl.Kb1,3)+")"],
-        ["Lv\u2082 = Kb(\u03c5\u2082)\u00d7V\u2082/\u2083\u00b2/2g", fmt(ctl.Lv2,4)+" ft  (Kb="+fmt(ctl.Kb2,3)+")"],
+        ["Lv\u2081 = "+kShort+"(\u03c5\u2081)\u00d7V\u2081/\u2083\u00b2/2g", fmt(ctl.Lv1,4)+" ft  ("+kShort+"="+fmt(ctl.Kb1,3)+")"],
+        ["Lv\u2082 = "+kShort+"(\u03c5\u2082)\u00d7V\u2082/\u2083\u00b2/2g", fmt(ctl.Lv2,4)+" ft  ("+kShort+"="+fmt(ctl.Kb2,3)+")"],
         ["Controlling angle \u03c5c", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2? "Lv\u2081 > Lv\u2082 \u2192 use \u03c5\u2082" : "Lv\u2082 \u2265 Lv\u2081 \u2192 use \u03c5\u2081")+")"],
       ]));
     } else if(calc.kb==null){
@@ -3974,10 +4293,10 @@ function buildHglRowSheet(structureId, stormOverride){
     if(calc.kb!=null){
       structLossBody.push(csTable([
         ["Vout = Total Flow / A(outgoing pipe)", fmt(calc.Vout,2)+" fps"],
-        ["Kb", fmt(calc.kb,3)],
+        [kLabel, fmt(calc.kb,3)],
       ]));
-      structLossBody.push(csFormula(["Hb = Kb \u00d7 Vout\u00b2 / 2g = "+fmt(calc.kb,3)+" \u00d7 "+fmt(calc.Vout,2)+"\u00b2 / "+ (2*G).toFixed(1)]));
-      structLossBody.push(csResult("Hb", fmt(calc.Hb,4)+" ft"));
+      structLossBody.push(csFormula([kLabel+" \xd7 Vout\xb2 / 2g = "+fmt(calc.kb,3)+" \xd7 "+fmt(calc.Vout,2)+"\xb2 / "+ (2*G).toFixed(1)]));
+      structLossBody.push(csResult("H_ah / Hb", fmt(calc.Hb,4)+" ft"));
     }
     body.push(csSection("Structure loss", el("div",{}, structLossBody)));
     body.push(csSection("Upstream HGL", el("div",{},[
@@ -4459,7 +4778,7 @@ function buildTr55Sheet(row){
     }
     const formulaLines = seg.type==="sheet" ? ["Tt = 0.007(nL)^0.8 / (P2^0.5 \u00d7 s^0.4)"]
       : seg.type==="shallow" ? ["V = Cp \u00d7 \u221as", "Tt = L / (3600 \u00d7 V)"]
-      : ["r = a / Pw", "V = (1.49/n) \u00d7 r^(2/3) \u00d7 s^0.5", "Tt = L / (3600 \u00d7 V)"];
+      : ["r = a / Pw", "V = (1.486/n) \u00d7 r^(2/3) \u00d7 s^0.5", "Tt = L / (3600 \u00d7 V)"];
     const resultsBody = [csTable(rows), csFormula(formulaLines)];
     if(r.r!=null) resultsBody.push(csResult("r", fmt(r.r,3)+" ft"));
     if(r.V!=null) resultsBody.push(csResult("V", fmt(r.V,3)+" fps"));
@@ -4490,7 +4809,6 @@ function buildInletSpacingSheet(row, comp, settings){
   // 1. Inputs
   body.push(csSection("Inputs", csTable([
     ["Inlet label", row.label || "(unlabeled)"],
-    ["Structure type", row.structureType || "\u2014"],
     ["Grate length, L", f(L,3)+" ft"],
     ["Gutter width, W", f(W,3)+" ft"],
     ["Gutter depression, a", f(a,4)+" ft"],
@@ -4805,8 +5123,8 @@ function buildStructuresDetailSheet(){
     const inflow = calc ? calc.inflow.reduce((s,p)=>s+(isFinite(p.Q)?p.Q:0),0) : 0;
     const angle = outPipe ? parseFloat(outPipe.angle)||0 : 0;
     const crown = parseFloat(row.crown), rim = parseFloat(row.rim);
-    const crownStyle = calc&&calc.crownPass===false ? "color:#e05;font-weight:700;" : "";
-    const rimStyle   = calc&&calc.rimPass===false   ? "color:#e05;font-weight:700;" : "";
+    const crownStyle = calc&&calc.crownPass===false ? "color:var(--fail);font-weight:700;" : "";
+    const rimStyle   = calc&&calc.rimPass===false   ? "color:var(--fail);font-weight:700;" : "";
     return [
       el("td",{},row.structureId||row.id), el("td",{},row.desc||""),
       el("td",{},typeLbl),
@@ -4888,7 +5206,7 @@ function buildPipesDetailSheet(stormOverride){
       tdN(Qfull,2),
       el("td",{class:"out computed-cell"}, tPipe!=null?fmt(tPipe,2):"—"),
       tdN(HfD,3),
-      el("td",{class:"out computed-cell",style:pass?"":"color:#e05;font-weight:700;"},
+      el("td",{class:"out computed-cell",style:pass?"":"color:var(--fail);font-weight:700;"},
         pass?"PASS":"FAIL"),
     ]);
   });
@@ -4919,7 +5237,7 @@ function buildInletDetailSheet(){
     const rif = resolvedInletFields(row);
     const lbl = resolvedInletLabel(row);
     const linkedSt = row.linkedStructureId ? findStructure(row.linkedStructureId) : null;
-    const warnStyle = cc.warn ? "color:#e05;font-weight:700;" : "";
+    const warnStyle = cc.warn ? "color:var(--fail);font-weight:700;" : "";
     return [
       el("td",{},lbl||"—"),
       el("td",{},linkedSt?(linkedSt.structureId||linkedSt.id):"Custom"),
@@ -4984,8 +5302,8 @@ function buildHglDetailSheet(stormOverride){
     const rim   = parseFloat(fromSt ? fromSt.rim   : "");
     const crownPass = (isFinite(usHGL)&&isFinite(crown)) ? usHGL<=crown+1.0 : null;
     const rimPass   = (isFinite(usHGL)&&isFinite(rim))   ? usHGL<=rim-1.0   : null;
-    const crownStyle = crownPass===false ? "color:#e05;font-weight:700;" : "";
-    const rimStyle   = rimPass  ===false ? "color:#e05;font-weight:700;" : "";
+    const crownStyle = crownPass===false ? "color:var(--fail);font-weight:700;" : "";
+    const rimStyle   = rimPass  ===false ? "color:var(--fail);font-weight:700;" : "";
 
     if(!geo||!isFinite(n)||!isFinite(S)||S<=0){
       return [
@@ -5262,14 +5580,19 @@ function buildWorkbook(){
   // ---- Junction Structure ----
   const stHeader = ["Structure ID","Description","Drainage Area ID","Type","Force Fixed","Fixed-Start Elev (ft)","Crown Elev (ft)","Rim-Grate Elev (ft)",
     "Captured Q (cfs)","Q from Pipes (cfs)","Total Flow (cfs)","Outgoing Pipe ID","Hf (ft)","Kb","Hb (ft)","Vout (fps)","Upstream HGL (ft)","Downstream Structure ID","Crown Check","Rim Check",
-    "Split Method","Split Capacity (cfs)","Split Ratio (0-1)"];
+    "Split Method","Split Capacity (cfs)","Split Ratio (0-1)",
+    "Structure Mode","Agency","Catalog ID","Category","Shape","Inner Dia (ft)","Inner W (ft)","Inner L (ft)"];
   const stAoa = [stHeader];
   state.structures.forEach(s=>{
     const daLabel = s.drainageAreaId ? ((findDrainage(s.drainageAreaId)||{}).structureId || s.drainageAreaId) : "";
     stAoa.push([s.structureId||s.id, s.desc||"", daLabel, s.type, s.forceElev?"TRUE":"FALSE", (s.startElev===""||s.startElev==null)?"":num(s.startElev),
       (s.crown===""||s.crown==null)?"":num(s.crown), (s.rim===""||s.rim==null)?"":num(s.rim),
       null,null,null,null,null,null,null,null,null,null,null,null,
-      s.type==="splitter"?(s.splitMethod||"capacity"):"", s.type==="splitter"?num(s.splitCapacity):"", s.type==="splitter"?num(s.splitRatio,0.5):""]);
+      s.type==="splitter"?(s.splitMethod||"capacity"):"", s.type==="splitter"?num(s.splitCapacity):"", s.type==="splitter"?num(s.splitRatio,0.5):"",
+      s.structureMode||"", s.agency||"", s.standardStructureId||"", s.structureCategory||"", s.shape||"",
+      (s.innerDiameter===""||s.innerDiameter==null)?"":num(s.innerDiameter),
+      (s.innerWidth===""||s.innerWidth==null)?"":num(s.innerWidth),
+      (s.innerLength===""||s.innerLength==null)?"":num(s.innerLength)]);
   });
   const wsSt = XLSX.utils.aoa_to_sheet(stAoa);
 
@@ -5279,6 +5602,7 @@ function buildWorkbook(){
   // Structure:     A id B desc C daId D type E force F startElev G crown H rim
   //                I capturedQ J qFromPipes K totalFlow L outPipeId M Hf N Kb O Hb P Vout Q upstreamHGL R downstreamId S crownChk T rimChk
   //                U splitMethod V splitCapacity W splitRatio
+  //                X structureMode Y agency Z catalogId AA category AB shape AC innerDia AD innerW AE innerL
 
   // Helper-key lookups (built once per pipe row, reused by both sheets):
   // P{row} = From label & "|" & role (blank role defaults to "primary" so ordinary
@@ -5335,7 +5659,7 @@ function buildWorkbook(){
     setFormula(wsSt, "S"+row, "=IF(G"+row+"=\"\",\"\",IF(Q"+row+"<=G"+row+"+1,\"OK\",\"EXCEEDS\"))", calc.crownPass===null?"":(calc.crownPass?"OK":"EXCEEDS"));
     setFormula(wsSt, "T"+row, "=IF(H"+row+"=\"\",\"\",IF(Q"+row+"<=H"+row+"-1,\"OK\",\"EXCEEDS\"))", calc.rimPass===null?"":(calc.rimPass?"OK":"EXCEEDS"));
   });
-  wsSt["!cols"] = Array(23).fill({wch:13});
+  wsSt["!cols"] = Array(31).fill({wch:13});
   XLSX.utils.book_append_sheet(wb, wsSt, "Junction Structure");
 
   // Fill Pipe Sizing live formulas now that Structure sheet exists
@@ -5501,7 +5825,7 @@ function buildWorkbook(){
     ["Street", is.street||""],
     ["Default Allowable Spread (ft)", is.allowableSpread!=null?is.allowableSpread:""],
     [],
-    ["Linked Structure","Label","Structure Type","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
+    ["Linked Structure","Label","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
      "S","Sx","W (ft)","a (ft)","n","Allowable Spread (ft)","Bypass To",
      "Q (cfs)","Spread T (ft)","Pickup (%)","Bypass CA out"],
   ];
@@ -5513,7 +5837,7 @@ function buildWorkbook(){
         const st = state.structures.find(s => s.id === r.linkedStructureId);
         return st ? (st.structureId || "") : "";
       })(),
-      r.label||"", r.structureType||"",
+      r.label||"",
       r.L!==""&&r.L!=null?num(r.L):r.L,
       r.area!==""&&r.area!=null?num(r.area):r.area,
       r.C!==""&&r.C!=null?num(r.C):r.C,
@@ -5532,7 +5856,7 @@ function buildWorkbook(){
     ]);
   });
   const wsIs = XLSX.utils.aoa_to_sheet(isAoa);
-  wsIs["!cols"] = [{wch:14},{wch:14},{wch:18},{wch:8},{wch:10},{wch:7},{wch:9},{wch:16},
+  wsIs["!cols"] = [{wch:14},{wch:14},{wch:8},{wch:10},{wch:7},{wch:9},{wch:16},
                    {wch:9},{wch:8},{wch:8},{wch:8},{wch:7},{wch:16},{wch:12},
                    {wch:10},{wch:12},{wch:11},{wch:14}];
   XLSX.utils.book_append_sheet(wb, wsIs, "Inlet Spacing");
@@ -5669,6 +5993,14 @@ function importExcel(file){
             splitMethod: r["Split Method"]||"capacity",
             splitCapacity: r["Split Capacity (cfs)"]===""?"":r["Split Capacity (cfs)"],
             splitRatio: r["Split Ratio (0-1)"]===""||r["Split Ratio (0-1)"]==null?0.5:r["Split Ratio (0-1)"],
+            structureMode: r["Structure Mode"]||"",
+            agency: r["Agency"]||"",
+            standardStructureId: r["Catalog ID"]||"",
+            structureCategory: r["Category"]||"",
+            shape: r["Shape"]||"",
+            innerDiameter: r["Inner Dia (ft)"]===""||r["Inner Dia (ft)"]==null?"":String(r["Inner Dia (ft)"]),
+            innerWidth: r["Inner W (ft)"]===""||r["Inner W (ft)"]==null?"":String(r["Inner W (ft)"]),
+            innerLength: r["Inner L (ft)"]===""||r["Inner L (ft)"]==null?"":String(r["Inner L (ft)"]),
           };
         });
       }
@@ -5777,7 +6109,6 @@ function importExcel(file){
               const g = (h)=>{ const i=hIdx(h); return i>=0?(r[i]!=null?r[i]:""):""; };
               const row = defaultInletSpacingRow();
               row.label = String(g("Label")||"");
-              row.structureType = String(g("Structure Type")||"");
               row.L   = g("L (ft)")!==""?String(g("L (ft)")):row.L;
               row.area= g("Area (ac)")!==""?String(g("Area (ac)")):row.area;
               row.C   = g("C")!==""?String(g("C")):row.C;
@@ -5882,7 +6213,8 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   resolvedInletFields, resolvedInletLabel,
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs,
-  MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET };
+  MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET,
+  kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 
 })();
 
