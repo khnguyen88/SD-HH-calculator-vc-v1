@@ -3489,8 +3489,6 @@ async function doNoaaFetch(r, statusEl) {
       if (Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new Error("Invalid coordinates.");
       displayName = lat.toFixed(4) + ", " + lon.toFixed(4);
     } else {
-      // NOTE: no custom User-Agent header in the browser fetch — it would
-      // turn the request into a CORS preflight that Nominatim rejects.
       const geoResp = await fetch("https://nominatim.openstreetmap.org/search?q=" +
         encodeURIComponent(inputStr) + "&format=json&limit=1");
       if (!geoResp.ok) throw new Error("Geocoding service unavailable.");
@@ -3499,8 +3497,9 @@ async function doNoaaFetch(r, statusEl) {
       lat = parseFloat(geoData[0].lat); lon = parseFloat(geoData[0].lon);
       displayName = geoData[0].display_name.split(",").slice(0, 3).join(",").trim();
     }
-    const url = "https://hdsc.nws.noaa.gov/cgi-bin/hdsc/new/cgi_readH5.py?type=pf&series=pds&units=us&statname=&lat=" + lat + "&lon=" + lon;
-    const text = await loadScriptText(url);
+    // Use the canonical NOAA URL (without /hdsc/ which returns a 301).
+    const noaaUrl = "https://hdsc.nws.noaa.gov/cgi-bin/new/cgi_readH5.py?type=pf&series=pds&units=us&statname=&lat=" + lat + "&lon=" + lon;
+    const text = await loadNoaaScript(noaaUrl);
     const storms = parseNoaaResponse(text);
     r.fetchedNoaa = { lat, lon, displayName, ...storms };
     r.county = "Fetched";
@@ -3515,28 +3514,32 @@ async function doNoaaFetch(r, statusEl) {
   }
 }
 
-// Load a cross-origin script resource by injecting a <script> tag, which
-// bypasses CORS — NOAA's PFDS API doesn't set Access-Control-Allow-Origin
-// but happily serves the data to <script> elements. We capture the globals
-// it sets and return them as a text blob for parseNoaaResponse.
-function loadScriptText(url) {
+// Load NOAA PFDS data by injecting a <script> tag. The NOAA endpoint returns
+// JavaScript assignments (quantiles = [...]) with Content-Type: text/html and
+// no CORS headers. fetch() is blocked by CORS, but <script> tags are not
+// subject to same-origin policy. The server does NOT set X-Content-Type-Options:
+// nosniff, so browsers execute the script despite the text/html MIME type.
+function loadNoaaScript(url) {
   return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
+    var script = document.createElement("script");
     script.src = url;
-    script.onload = () => {
+    var timeout = setTimeout(function() {
       script.remove();
-      // NOAA PFDS sets global variables: quantiles, upper, lower, result, etc.
-      // Reconstruct a text block parseNoaaResponse can consume.
-      const text = typeof quantiles !== "undefined"
+      reject(new Error("NOAA request timed out."));
+    }, 30000);
+    script.onload = function() {
+      clearTimeout(timeout);
+      script.remove();
+      var text = typeof quantiles !== "undefined"
         ? "quantiles = " + JSON.stringify(quantiles).replace(/"/g, "'") + ";"
         : "";
-      // Clean up globals
       delete window.quantiles; delete window.upper; delete window.lower;
       delete window.result; delete window.pyRunTime;
-      if (!text) { reject(new Error("NOAA response missing quantiles data.")); return; }
+      if (!text) { reject(new Error("NOAA returned no quantiles data.")); return; }
       resolve(text);
     };
-    script.onerror = () => {
+    script.onerror = function() {
+      clearTimeout(timeout);
       script.remove();
       reject(new Error("NOAA service unreachable."));
     };
