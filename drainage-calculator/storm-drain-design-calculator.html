@@ -724,8 +724,8 @@ const MOCO_INTENSITY = {
 
 // NOAA Atlas 14 PDS intensities (in/hr) for Maryland counties and DC.
 // Source: NOAA PFDS API (https://hdsc.nws.noaa.gov/hdsc/pfds/), PDS series, US customary units.
-// Pull date: 2026-09-09
-// Coordinates: county seat or centroid per jurisdiction (listed per entry).
+// Pull date: 2026-09-09; PG County and Montgomery updated 2026-09-11 (verified against PDF reports).
+// Coordinates: representative location per jurisdiction (listed per entry).
 // Note: Values represent a single representative point; actual values vary within each county.
 // Users needing project-specific intensity should use the Custom county option.
 //
@@ -841,18 +841,20 @@ const NOAA_ATLAS14 = {
     "25yr": { 5: 7.46, 10: 5.95, 15: 5.04, 30: 3.72, 60: 2.48 },
   },
   "Montgomery": {
-    lat: 39.0840, lon: -77.1528,
-    // depths: 5min=[0.413,0.550,0.624] 10min=[0.661,0.879,0.994] 15min=[0.830,1.11,1.26] 30min=[1.15,1.61,1.87] 60min=[1.44,2.10,2.48]
-    "2yr":  { 5: 4.96, 10: 3.97, 15: 3.32, 30: 2.30, 60: 1.44 },
-    "10yr": { 5: 6.60, 10: 5.27, 15: 4.44, 30: 3.22, 60: 2.10 },
-    "25yr": { 5: 7.49, 10: 5.96, 15: 5.04, 30: 3.74, 60: 2.48 },
+    lat: 39.0431, lon: -77.0532,
+    // Silver Spring/Wheaton — verified against NOAA14 PDF 2026-09-11
+    // depths: 5min=[0.416,0.553,0.626] 10min=[0.665,0.885,0.998] 15min=[0.835,1.12,1.27] 30min=[1.16,1.62,1.88] 60min=[1.45,2.11,2.50]
+    "2yr":  { 5: 4.99, 10: 3.99, 15: 3.34, 30: 2.31, 60: 1.45 },
+    "10yr": { 5: 6.64, 10: 5.31, 15: 4.48, 30: 3.24, 60: 2.11 },
+    "25yr": { 5: 7.51, 10: 5.99, 15: 5.06, 30: 3.75, 60: 2.50 },
   },
   "Prince George's": {
-    lat: 38.8179, lon: -76.7497,
-    // depths: 5min=[0.421,0.559,0.632] 10min=[0.673,0.894,1.01] 15min=[0.846,1.13,1.28] 30min=[1.17,1.64,1.89] 60min=[1.47,2.13,2.52]
-    "2yr":  { 5: 5.05, 10: 4.04, 15: 3.38, 30: 2.34, 60: 1.47 },
-    "10yr": { 5: 6.71, 10: 5.36, 15: 4.52, 30: 3.28, 60: 2.13 },
-    "25yr": { 5: 7.58, 10: 6.06, 15: 5.12, 30: 3.78, 60: 2.52 },
+    lat: 38.9428, lon: -76.9329,
+    // Bladensburg — verified against NOAA14 PDF 2026-09-11
+    // depths: 5min=[0.418,0.557,0.630] 10min=[0.668,0.890,1.00] 15min=[0.840,1.13,1.27] 30min=[1.16,1.63,1.89] 60min=[1.46,2.12,2.51]
+    "2yr":  { 5: 5.02, 10: 4.01, 15: 3.36, 30: 2.32, 60: 1.46 },
+    "10yr": { 5: 6.68, 10: 5.34, 15: 4.50, 30: 3.26, 60: 2.12 },
+    "25yr": { 5: 7.56, 10: 6.02, 15: 5.09, 30: 3.77, 60: 2.51 },
   },
   "Queen Anne's": {
     lat: 39.0390, lon: -76.0688,
@@ -3403,7 +3405,7 @@ function renderRainfall() {
     noteDiv.appendChild(el("a", {href, target:"_blank", style:"font-size:0.9em;"}, "Validate on NOAA Atlas 14 ↗"));
     noteDiv.appendChild(el("span", {style:"font-size:0.8em;opacity:0.6;"},
       "Represents lat " + entry.lat + ", lon " + entry.lon +
-      " (county centroid, pulled 2026-09-09). Values vary within the county; use Custom for project-specific accuracy."));
+      " (representative location, pulled 2026-09-09). Values vary within the county; use Custom for project-specific accuracy."));
     settingsSec.appendChild(noteDiv);
   }
 
