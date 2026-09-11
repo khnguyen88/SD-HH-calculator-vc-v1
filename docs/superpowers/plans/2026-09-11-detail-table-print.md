@@ -739,3 +739,246 @@ All 8 changes: find the array that already contains a `"🖨 Print Table"` butto
 - `makeDetailSheet(title, heads, dataRows)` — called consistently in all 5 builders (Tasks 2–5).
 - `printDetailTableSheet(viewId, title)` — called from all 8 section-head buttons with matching viewId strings.
 - `buildPipesDetailSheet(stormOverride)` and `buildHglDetailSheet(stormOverride)` — called with `undefined` (design storm) or `"25yr"` consistently in Tasks 6 and 7.
+
+---
+
+## Task 9: Create `buildHglRowSheet`, trim `buildStructureSheet`, add HGL tab detail buttons
+
+**Files:**
+- Modify: `drainage-calculator/storm-drain-design-calculator.html`
+  - `buildStructureSheet` (~line 3789): trim to flow-collection only
+  - After `buildStructureSheet` closing `}`: insert new `buildHglRowSheet`
+  - `renderHgl` (~line 3292): add detail button column
+
+**Rationale:** `buildStructureSheet` currently mixes two concerns — (1) flow collection (who flows in, how much) and (2) hydraulic computation (friction, structure loss, HGL). The Structures tab is about the collection side; the HGL tab is about the hydraulic side. After this task the sheets are separated: clicking "⇡ Detail" on a Structure tab row shows flow collection; clicking "⇡ Detail" on an HGL tab row shows the hydraulic computation.
+
+- [ ] **Step 1: Trim `buildStructureSheet` — remove hydraulic sections**
+
+  In `buildStructureSheet` (~line 3789), delete the three hydraulic sections: "Friction loss", "Structure loss", and "Upstream HGL" (the `if(calc.isBase)` block and the `else` block that contains all three). Also delete the "Clearance checks" section. Keep: "Structure" info, "Captured Q", "Inflow pipes", "Total Flow", "Flow split" (splitter only), and "Warnings".
+
+  The trimmed function body ends after the `if(calc.isSplitter && calc.splitInfo)` block plus the warnings block. The `return sheetWrapper(...)` line (~line 3915) subtitle changes to `"Flow collection and total discharge"`:
+
+  ```js
+  return sheetWrapper("structure", "Structure — "+(st.structureId||st.id), "Flow collection and total discharge", body);
+  ```
+
+- [ ] **Step 2: Insert `buildHglRowSheet` immediately after `buildStructureSheet`'s closing `}`**
+
+  ```js
+  function buildHglRowSheet(structureId, stormOverride){
+    const st = findStructure(structureId);
+    if(!st) return sheetWrapper("hgl","Structure not found","",[]);
+    const calc = computeStructureCalc(structureId, null, stormOverride||null);
+    const body = [];
+
+    // Recap total flow so the sheet is self-contained
+    body.push(csSection("Total Flow at this structure", el("div",{},[
+      csResult("Total Flow"+(stormOverride?" ("+stormOverride+")":""), fmt(calc.totalFlow,2)+" cfs"),
+    ])));
+
+    if(calc.isBase){
+      body.push(csSection("Elevation (fixed)", el("div",{},[
+        el("div",{class:"cs-note"}, st.forceElev
+          ? "“Force fixed elevation” is checked for this structure."
+          : "No outgoing pipe found — treated as the system outfall/end point."),
+        csResult("Elevation", fmt(calc.elevation,2)+" ft"),
+      ])));
+    } else {
+      const outSt = calc.outPipe ? findStructure(calc.outPipe.toStructureId) : null;
+      body.push(csSection("Friction loss (outgoing"+(calc.isSplitter?" — Primary":"")+" pipe)", el("div",{},[
+        csTable([
+          ["Outgoing pipe to", outSt?(outSt.structureId||outSt.id):"—"],
+          ["Flow carried by this pipe, Q", fmt(calc.outPipeFlow,2)+" cfs"+(calc.isSplitter?" (Primary share)":"")],
+          ["Friction slope, Sf", fmt(calc.Sf,6)+" ft/ft"],
+          ["Length, L", fmt(parseFloat(calc.outPipe.length),0)+" ft"],
+        ]),
+        csFormula(["Hf = Sf × L = "+fmt(calc.Sf,6)+" × "+fmt(parseFloat(calc.outPipe.length),0)]),
+        csResult("Hf", fmt(calc.Hf,4)+" ft"),
+      ])));
+
+      const structLossBody = [];
+      structLossBody.push(el("div",{class:"cs-note"}, "Inflow pipe count: "+calc.inflowCount+" — Kb column: "+(calc.kbColumn||"n/a")));
+      if(calc.inflowCount===0){
+        structLossBody.push(el("div",{class:"cs-note"}, "No piped inflow — nominal entrance condition, Kb evaluated at 0°."));
+      } else if(calc.inflowCount===1){
+        structLossBody.push(el("div",{class:"cs-note"}, "Single inflow pipe — Kb taken directly at that pipe’s angle."));
+      } else if(calc.controlling){
+        const ctl = calc.controlling;
+        structLossBody.push(csTable([
+          ["Pipe 1: Q₁, υ₁", fmt(ctl.Q1,2)+" cfs, "+fmt(ctl.a1,0)+"°"],
+          ["Pipe 2: Q₂, υ₂", fmt(ctl.Q2,2)+" cfs, "+fmt(ctl.a2,0)+"°"],
+          ["V₁/₃ = Q₁ / A(out)", fmt(ctl.V1_3,2)+" fps"],
+          ["V₂/₃ = Q₂ / A(out)", fmt(ctl.V2_3,2)+" fps"],
+          ["Lv₁ = Kb(υ₁)×V₁/₃²/2g", fmt(ctl.Lv1,4)+" ft  (Kb="+fmt(ctl.Kb1,3)+")"],
+          ["Lv₂ = Kb(υ₂)×V₂/₃²/2g", fmt(ctl.Lv2,4)+" ft  (Kb="+fmt(ctl.Kb2,3)+")"],
+          ["Controlling angle υc", fmt(ctl.vc,0)+"°  ("+(ctl.Lv1>ctl.Lv2? "Lv₁ > Lv₂ → use υ₂" : "Lv₂ ≥ Lv₁ → use υ₁")+")"],
+        ]));
+      } else if(calc.kb==null){
+        structLossBody.push(csWarn("More than 2 inflow pipes — controlling-angle method not applicable. Compute Hb manually."));
+      }
+      if(calc.kb!=null){
+        structLossBody.push(csTable([
+          ["Vout = Total Flow / A(outgoing pipe)", fmt(calc.Vout,2)+" fps"],
+          ["Kb", fmt(calc.kb,3)],
+        ]));
+        structLossBody.push(csFormula(["Hb = Kb × Vout² / 2g = "+fmt(calc.kb,3)+" × "+fmt(calc.Vout,2)+"² / "+(2*G).toFixed(1)]));
+        structLossBody.push(csResult("Hb", fmt(calc.Hb,4)+" ft"));
+      }
+      body.push(csSection("Structure loss", el("div",{}, structLossBody)));
+
+      body.push(csSection("Upstream HGL", el("div",{},[
+        csFormula(["Upstream HGL = Downstream Elev + Hf + Hb"]),
+        csFormula(["Upstream HGL = "+fmt(calc.downstreamElev,2)+" + "+fmt(calc.Hf,4)+" + "+fmt(calc.Hb,4)]),
+        csResult("Upstream HGL", fmt(calc.elevation,2)+" ft"),
+      ])));
+    }
+
+    const crown = (st.crown!==""&&st.crown!=null)?parseFloat(st.crown):null;
+    const rim   = (st.rim  !==""&&st.rim  !=null)?parseFloat(st.rim)  :null;
+    body.push(csSection("Clearance checks", csTable([
+      ["Crown elevation",          crown!=null?fmt(crown,2)+" ft":"— not set"],
+      ["Limit: HGL ≤ Crown + 1.0 ft", crown!=null?fmt(crown+1,2)+" ft":"—"],
+      ["Result", calc.crownPass===null?"—":(calc.crownPass?"OK":"EXCEEDS LIMIT")],
+      ["Rim / grate elevation",    rim!=null?fmt(rim,2)+" ft":"— not set"],
+      ["Limit: HGL ≤ Rim − 1.0 ft",   rim!=null?fmt(rim-1,2)+" ft":"—"],
+      ["Result", calc.rimPass===null?"—":(calc.rimPass?"OK":"EXCEEDS LIMIT")],
+    ])));
+
+    if(calc.warnings && calc.warnings.length){
+      body.push(csSection("Warnings", el("div",{}, calc.warnings.map(w=>csWarn(w)))));
+    }
+
+    return sheetWrapper("hgl",
+      "HGL — "+(st.structureId||st.id)+(stormOverride?" ("+stormOverride+")":""),
+      "Friction loss, structure loss, and upstream HGL", body);
+  }
+  ```
+
+- [ ] **Step 3: Add "Detail" column header to `renderHgl()`**
+
+  In `renderHgl()` (~line 3309), add `el("th",{}, "")` at the end of the thead array (after `"Rim\nCheck"`).
+
+- [ ] **Step 4: Add detail button cell to each `tbody` row in `renderHgl()`**
+
+  Inside the `state.structures.forEach` loop, after the last `el("td",{class:"out computed-cell", style:rimStyle}, ...)` cell, add:
+  ```js
+  el("td",{}, detailBtn(()=>openDetailModal(buildHglRowSheet(row.id)))),
+  ```
+
+- [ ] **Step 5: Verify**
+  - Junction Structures tab: "⇡ Detail" button still works — modal now shows flow collection (no Hf/Hb/HGL sections).
+  - HGL tab: each row now has "⇡ Detail" button. Modal title "HGL — [id]". Shows friction loss, structure loss, HGL, clearance checks.
+
+- [ ] **Step 6: Commit**
+  ```
+  git add drainage-calculator/storm-drain-design-calculator.html
+  git commit -m "Task 9: buildHglRowSheet, trim buildStructureSheet, HGL tab per-row detail"
+  ```
+
+- [ ] **Step 4: Commit**
+  ```
+  git add drainage-calculator/storm-drain-design-calculator.html
+  git commit -m "Task 9: add per-row detail buttons to HGL tab"
+  ```
+
+---
+
+## Task 10: Add per-row detail buttons to HGL 25-yr tab
+
+**Files:**
+- Modify: `drainage-calculator/storm-drain-design-calculator.html` (`renderHgl25` ~line 3357)
+
+`buildHglRowSheet(structureId, stormOverride)` was added in Task 9 and already supports a storm override. This task wires it into `renderHgl25`.
+
+- [ ] **Step 1: Add "Detail" column header to `renderHgl25()`**
+
+  In `renderHgl25()` (~line 3357), add `el("th",{}, "")` at the end of the thead array (after the last `el("th",{class:"computed"},"Rim\nCheck")`).
+
+- [ ] **Step 2: Add detail button cell to each `tbody` row in `renderHgl25()`**
+
+  Inside the `state.structures.forEach` loop, after the last `el("td",{class:"out computed-cell", style:rimStyle}, ...)` cell, add:
+  ```js
+  el("td",{}, detailBtn(()=>openDetailModal(buildHglRowSheet(row.id, "25yr")))),
+  ```
+
+- [ ] **Step 3: Verify**
+  HGL 25-yr tab: each structure row now has "⇡ Detail" button. Modal title shows "HGL — [id] (25yr)". Friction, structure loss, HGL, and clearance checks all reflect 25-yr flows.
+
+- [ ] **Step 4: Commit**
+  ```
+  git add drainage-calculator/storm-drain-design-calculator.html
+  git commit -m "Task 10: HGL 25-yr per-row detail buttons using buildHglRowSheet"
+  ```
+
+---
+
+## Task 11: Support storm override in `buildPipeSheet` + detail buttons on Pipe Sizing 25-yr tab
+
+**Files:**
+- Modify: `drainage-calculator/storm-drain-design-calculator.html` (`buildPipeSheet` ~line 3738; `renderPipeSizing25` ~line 3231)
+
+- [ ] **Step 1: Add `stormOverride` param to `buildPipeSheet`**
+
+  Change signature at ~line 3738:
+  ```js
+  function buildPipeSheet(row, stormOverride){
+  ```
+
+- [ ] **Step 2: Compute storm-specific design Q**
+
+  `calcPipeRow(row)` always computes `designQ = pipeDesignQ(row)` (no storm override). Add a separate override designQ immediately after `const calc = calcPipeRow(row)`:
+  ```js
+  const calc = calcPipeRow(row);
+  const designQ = stormOverride ? pipeDesignQ(row, null, stormOverride) : calc.designQ;
+  const pass = calc.Qfull != null ? (calc.Qfull >= designQ) : null;
+  ```
+
+- [ ] **Step 3: Use `designQ` and `pass` throughout the function body**
+
+  The "Design discharge" section currently uses `calc.designQ`:
+  ```js
+  csResult("Design Q", fmt(calc.designQ,2)+" cfs"),
+  ```
+  Replace with:
+  ```js
+  csResult("Design Q"+(stormOverride?" ("+stormOverride+")":""), fmt(designQ,2)+" cfs"),
+  ```
+
+  The Manning's section references `calc.pass` and `calc.designQ` in the note and result:
+  ```js
+  el("div",{class:"cs-note", ...}, "Adequate if Qfull ≥ Design Q: "+fmt(calc.Qfull,2)+" "+(calc.pass?"≥":"<")+" "+fmt(calc.designQ,2)),
+  csResult("Status", calc.pass? "PASS":"FAIL"),
+  ```
+  Replace with:
+  ```js
+  el("div",{class:"cs-note", ...}, "Adequate if Qfull ≥ Design Q: "+fmt(calc.Qfull,2)+" "+(pass?"≥":"<")+" "+fmt(designQ,2)),
+  csResult("Status", pass? "PASS":"FAIL"),
+  ```
+
+- [ ] **Step 4: Update `sheetWrapper` title to include storm label**
+
+  At the end of `buildPipeSheet` (~line 3786):
+  ```js
+  return sheetWrapper("pipe", "Pipe — "+..., "Manning's Equation", body);
+  ```
+  Change to:
+  ```js
+  return sheetWrapper("pipe", "Pipe — "+(from?(from.structureId||from.id):"?")+" → "+(to?(to.structureId||to.id):"?")+(stormOverride?" ("+stormOverride+")":""), "Manning's Equation", body);
+  ```
+
+- [ ] **Step 5: Add "Detail" column to `renderPipeSizing25()`**
+
+  In `renderPipeSizing25()` (~line 3231), add `el("th",{}, "")` at the end of the thead row. Then inside the `state.pipes.forEach`, add a detail cell at the end of the row:
+  ```js
+  el("td",{}, detailBtn(()=>openDetailModal(buildPipeSheet(row, "25yr")))),
+  ```
+
+- [ ] **Step 6: Verify**
+  - Pipe Sizing & Capacity (primary): existing "⇡ Detail" buttons still open correct modal (no storm override, same Q as before).
+  - Pipe Sizing 25-yr: each row now has "⇡ Detail" button. Modal title shows "Pipe — [From] → [To] (25yr)". Design Q shows 25-yr value; Qfull and pass/fail reflect 25-yr Q vs full capacity.
+
+- [ ] **Step 7: Commit**
+  ```
+  git add drainage-calculator/storm-drain-design-calculator.html
+  git commit -m "Task 11: buildPipeSheet storm override + Pipe Sizing 25-yr per-row detail buttons"
+  ```
