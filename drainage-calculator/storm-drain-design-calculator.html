@@ -56,6 +56,7 @@ button, input, select{ font-family:inherit; font-size:inherit; color:inherit; }
   display:flex;
   flex-direction:column;
   gap:18px;
+  overflow-y:auto;
 }
 
 .brand{
@@ -2475,7 +2476,7 @@ function renderStructures(){
     el("th",{},"Structure ID"), el("th",{},"Description"), el("th",{},"Drainage Area"), el("th",{},"Type"), el("th",{},"Split config"),
     el("th",{},"Fixed?"), el("th",{},"Fixed/Start Elev"), el("th",{},"Crown (ft)"), el("th",{},"Rim/Grate (ft)"),
     el("th",{},"Mode"), el("th",{},"Agency / Category"), el("th",{},"Structure / Shape"), el("th",{},"Inner Size"), el("th",{class:"computed",title:"K_ah used in Hb calculation (controlling angle for 2-inflow structures)"},"K_ah"),
-    el("th",{class:"computed"},"Captured Q"), el("th",{class:"computed"},"Inflow"), el("th",{class:"computed"},"Total Flow"),
+    el("th",{class:"computed"},"Captured Q"), el("th",{class:"computed"},"# In"), el("th",{class:"computed"},"Total Flow"),
     el("th",{},""), el("th",{},"")
   ])));
   const tbody = el("tbody");
@@ -2607,7 +2608,7 @@ function renderStructures(){
 
   function catalogSelect(row) {
     const entries = (STRUCTURE_CATALOG[row.agency]||[]);
-    const sel = el("select",{class:"cell-input",style:"width:160px",
+    const sel = el("select",{class:"cell-input",style:"width:190px",
       "data-focus-key":"structures:"+row.id+":standardStructureId",
       onchange:(e)=>{
         row.standardStructureId=e.target.value;
@@ -3522,7 +3523,7 @@ function renderPipeSizing25() {
       el("td",{class:"out computed-cell"}, isFinite(q25)   ? fmt(q25,2)   : "—"),
       el("td",{class:"out computed-cell"}, isFinite(qfull) ? fmt(qfull,2) : "—"),
       el("td",{class:"out computed-cell"}, isFinite(v)     ? fmt(v,2)     : "—"),
-      el("td",{class:"out computed-cell", style: pass===false?"color:#e05;font-weight:700;":""},
+      el("td",{class:"out computed-cell", style: pass===false?"color:var(--fail);font-weight:700;":""},
         pass===null ? "—" : pass ? "✓" : "✗ OVER"),
       el("td",{}, detailBtn(()=>openDetailModal(buildPipeSheet(row, "25yr")))),
     ]));
@@ -3576,8 +3577,8 @@ function renderHgl() {
     const calc = computeStructureCalc(row.id);
     const crown = parseFloat(row.crown);
     const rim   = parseFloat(row.rim);
-    const crownStyle = calc && calc.crownPass === false ? "color:#e05;font-weight:700;" : "";
-    const rimStyle   = calc && calc.rimPass   === false ? "color:#e05;font-weight:700;" : "";
+    const crownStyle = calc && calc.crownPass === false ? "color:var(--fail);font-weight:700;" : "";
+    const rimStyle   = calc && calc.rimPass   === false ? "color:var(--fail);font-weight:700;" : "";
     tbody.appendChild(el("tr", {}, [
       el("td",{}, row.structureId||row.id),
       el("td",{}, row.type||""),
@@ -3633,6 +3634,9 @@ function renderHgl25(){
   table.appendChild(el("thead", {}, el("tr", {}, [
     el("th",{},"Structure ID"), el("th",{},"Type"), el("th",{},"Crown (ft)"), el("th",{},"Rim (ft)"),
     el("th",{class:"computed"},"Total Flow Q₂₅\n(cfs)"),
+    el("th",{class:"computed"},"Hf\n(ft)"),
+    el("th",{class:"computed"},"Kb/Kₐₕ"),
+    el("th",{class:"computed"},"Hb\n(ft)"),
     el("th",{class:"computed"},"Upstream HGL\n(ft)"),
     el("th",{},"US Inv\n(ft)"),
     el("th",{},"DS Inv\n(ft)"),
@@ -3649,14 +3653,17 @@ function renderHgl25(){
     const rim   = parseFloat(row.rim);
     const crownCheck = (isFinite(hgl) && isFinite(crown)) ? hgl <= crown + 1.0 : null;
     const rimCheck   = (isFinite(hgl) && isFinite(rim))   ? hgl <= rim  - 1.0 : null;
-    const crownStyle = crownCheck === false ? "color:#e05;font-weight:700;" : "";
-    const rimStyle   = rimCheck   === false ? "color:#e05;font-weight:700;" : "";
+    const crownStyle = crownCheck === false ? "color:var(--fail);font-weight:700;" : "";
+    const rimStyle   = rimCheck   === false ? "color:var(--fail);font-weight:700;" : "";
     tbody.appendChild(el("tr", {}, [
       el("td",{}, row.structureId||row.id),
       el("td",{}, row.type||""),
       el("td",{}, isFinite(crown) ? fmt(crown,2) : "—"),
       el("td",{}, isFinite(rim)   ? fmt(rim,2)   : "—"),
       el("td",{class:"out computed-cell"}, isFinite(tf.Q) ? fmt(tf.Q,2) : "—"),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hf) ? fmt(calc.Hf,3) : "—"),
+      el("td",{class:"out computed-cell"}, calc && calc.kb != null   ? fmt(calc.kb,2) : "—"),
+      el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hb) ? fmt(calc.Hb,3) : "—"),
       el("td",{class:"out computed-cell"}, isFinite(hgl)  ? fmt(hgl,2)  : "—"),
       el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.upstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
       el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.downstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
@@ -5009,8 +5016,8 @@ function buildStructuresDetailSheet(){
     const inflow = calc ? calc.inflow.reduce((s,p)=>s+(isFinite(p.Q)?p.Q:0),0) : 0;
     const angle = outPipe ? parseFloat(outPipe.angle)||0 : 0;
     const crown = parseFloat(row.crown), rim = parseFloat(row.rim);
-    const crownStyle = calc&&calc.crownPass===false ? "color:#e05;font-weight:700;" : "";
-    const rimStyle   = calc&&calc.rimPass===false   ? "color:#e05;font-weight:700;" : "";
+    const crownStyle = calc&&calc.crownPass===false ? "color:var(--fail);font-weight:700;" : "";
+    const rimStyle   = calc&&calc.rimPass===false   ? "color:var(--fail);font-weight:700;" : "";
     return [
       el("td",{},row.structureId||row.id), el("td",{},row.desc||""),
       el("td",{},typeLbl),
@@ -5092,7 +5099,7 @@ function buildPipesDetailSheet(stormOverride){
       tdN(Qfull,2),
       el("td",{class:"out computed-cell"}, tPipe!=null?fmt(tPipe,2):"—"),
       tdN(HfD,3),
-      el("td",{class:"out computed-cell",style:pass?"":"color:#e05;font-weight:700;"},
+      el("td",{class:"out computed-cell",style:pass?"":"color:var(--fail);font-weight:700;"},
         pass?"PASS":"FAIL"),
     ]);
   });
@@ -5123,7 +5130,7 @@ function buildInletDetailSheet(){
     const rif = resolvedInletFields(row);
     const lbl = resolvedInletLabel(row);
     const linkedSt = row.linkedStructureId ? findStructure(row.linkedStructureId) : null;
-    const warnStyle = cc.warn ? "color:#e05;font-weight:700;" : "";
+    const warnStyle = cc.warn ? "color:var(--fail);font-weight:700;" : "";
     return [
       el("td",{},lbl||"—"),
       el("td",{},linkedSt?(linkedSt.structureId||linkedSt.id):"Custom"),
@@ -5188,8 +5195,8 @@ function buildHglDetailSheet(stormOverride){
     const rim   = parseFloat(fromSt ? fromSt.rim   : "");
     const crownPass = (isFinite(usHGL)&&isFinite(crown)) ? usHGL<=crown+1.0 : null;
     const rimPass   = (isFinite(usHGL)&&isFinite(rim))   ? usHGL<=rim-1.0   : null;
-    const crownStyle = crownPass===false ? "color:#e05;font-weight:700;" : "";
-    const rimStyle   = rimPass  ===false ? "color:#e05;font-weight:700;" : "";
+    const crownStyle = crownPass===false ? "color:var(--fail);font-weight:700;" : "";
+    const rimStyle   = rimPass  ===false ? "color:var(--fail);font-weight:700;" : "";
 
     if(!geo||!isFinite(n)||!isFinite(S)||S<=0){
       return [
