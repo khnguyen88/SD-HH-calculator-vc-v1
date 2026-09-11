@@ -5345,20 +5345,20 @@ function buildWorkbook(){
     const geo = pipeGeometry(p);
     const calc = calcPipeRow(p);
     const primaryExpr = "IF("+xlFromMethod("B"+row)+"=\"ratio\","+xlFromTotal("B"+row)+"*"+xlFromRatio("B"+row)+",MIN("+xlFromTotal("B"+row)+","+xlFromCap("B"+row)+"))";
-    const designQFormula = "IF(B"+row+"=\"\",0,IF("+xlFromType("B"+row)+"=\"splitter\",IF(O"+row+"=\"primary\","+primaryExpr+",IF(O"+row+"=\"secondary\","+xlFromTotal("B"+row)+"-("+primaryExpr+"),0)),"+xlFromTotal("B"+row)+"))";
-    setFormula(wsPipe, "J"+row, designQFormula, round(calc.designQ,4));
+    const designQFormula = "IF(B"+row+"=\"\",0,IF("+xlFromType("B"+row)+"=\"splitter\",IF(Q"+row+"=\"primary\","+primaryExpr+",IF(Q"+row+"=\"secondary\","+xlFromTotal("B"+row)+"-("+primaryExpr+"),0)),"+xlFromTotal("B"+row)+"))";
+    setFormula(wsPipe, "L"+row, designQFormula, round(calc.designQ,4));
     if(p.shape==="circular"){
-      setFormula(wsPipe, "K"+row, "=PI()/4*(F"+row+"/12)^2", geo?round(geo.areaSf,5):0);
-      setFormula(wsPipe, "M"+row, "=(1.486/G"+row+")*K"+row+"*((F"+row+"/12/4)^(2/3))*SQRT(H"+row+")", calc.V!=null?round(calc.V,3):0);
+      setFormula(wsPipe, "M"+row, "=PI()/4*(F"+row+"/12)^2", geo?round(geo.areaSf,5):0);
+      setFormula(wsPipe, "O"+row, "=(1.486/G"+row+")*M"+row+"*((F"+row+"/12/4)^(2/3))*SQRT(J"+row+")", calc.V!=null?round(calc.V,3):0);
     } else {
-      setCellNum(wsPipe, "K"+row, geo?round(geo.areaSf,5):0);
+      setCellNum(wsPipe, "M"+row, geo?round(geo.areaSf,5):0);
       const equivD = geo?geo.equivDiamIn:0;
-      setFormula(wsPipe, "M"+row, "=(1.486/G"+row+")*K"+row+"*((" + equivD + "/12/4)^(2/3))*SQRT(H"+row+")", calc.V!=null?round(calc.V,3):0);
+      setFormula(wsPipe, "O"+row, "=(1.486/G"+row+")*M"+row+"*((" + equivD + "/12/4)^(2/3))*SQRT(J"+row+")", calc.V!=null?round(calc.V,3):0);
     }
-    setFormula(wsPipe, "L"+row, "=M"+row+"*K"+row, calc.Qfull!=null?round(calc.Qfull,3):0);
-    setFormula(wsPipe, "N"+row, "=IF(L"+row+">=J"+row+",\"PASS\",\"FAIL\")", calc.pass?"PASS":(calc.pass===false?"FAIL":""));
+    setFormula(wsPipe, "N"+row, "=O"+row+"*M"+row, calc.Qfull!=null?round(calc.Qfull,3):0);
+    setFormula(wsPipe, "P"+row, "=IF(N"+row+">=L"+row+",\"PASS\",\"FAIL\")", calc.pass?"PASS":(calc.pass===false?"FAIL":""));
   });
-  wsPipe["!cols"] = [{wch:10},{wch:12},{wch:12},{wch:10},{wch:10},{wch:20},{wch:8},{wch:12},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10},{wch:9},{wch:10},{wch:16}];
+  wsPipe["!cols"] = [{wch:10},{wch:12},{wch:12},{wch:10},{wch:10},{wch:20},{wch:8},{wch:10},{wch:10},{wch:12},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10},{wch:9},{wch:10},{wch:16}];
   XLSX.utils.book_append_sheet(wb, wsPipe, "Pipe Sizing");
 
   // ---- Outlet Structures (facility list: id/label/desc + each one's stage range & tailwater config) ----
