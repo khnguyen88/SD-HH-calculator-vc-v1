@@ -4661,6 +4661,111 @@ function buildOutletTablePrintSheet(){
   return nodes;
 }
 
+function makeDetailSheet(title, heads, dataRows){
+  if(!dataRows.length) return null;
+  const now = new Date();
+  const pad = n=>String(n).padStart(2,"0");
+  const dateStr = now.getFullYear()+"-"+pad(now.getMonth()+1)+"-"+pad(now.getDate());
+  const table = el("table",{class:"data"});
+  table.appendChild(el("thead",{},el("tr",{},heads)));
+  const tbody = el("tbody");
+  dataRows.forEach(cells=>tbody.appendChild(el("tr",{},cells)));
+  table.appendChild(tbody);
+  const sheet = el("div",{class:"calc-sheet cs-table-sheet"});
+  sheet.appendChild(el("div",{class:"cs-header"},[
+    el("div",{class:"cs-title"}, title),
+    el("div",{class:"cs-sub"}, (state.project||"Untitled")+" — "+dateStr),
+  ]));
+  const wrap = el("div",{class:"table-wrap"});
+  wrap.appendChild(table);
+  sheet.appendChild(wrap);
+  sheet.appendChild(el("div",{class:"cs-footer"}, "Storm Drain Design Calculator — "+(state.project||"")));
+  return sheet;
+}
+
+function buildDrainageDetailSheet(){
+  const rf = state.rainfall;
+  const storms = availableStorms(rf.rainfallSource);
+  const th = (t,c)=>el("th",c?{class:c}:{},t);
+  const tdN = (v,d=2)=>el("td",{class:"out computed-cell"},fmt(v,d));
+  const heads = [
+    th("ID"), th("Description"), th("A (ac)"), th("C"), th("CA"), th("Cf"),
+    th("Tc (min)"), th("Tc Method"),
+  ];
+  storms.forEach(s=>{
+    heads.push(th("i "+s+"\n(in/hr)","computed"));
+    heads.push(th("Q "+s+"\n(cfs)","computed"));
+  });
+  heads.push(th("Structure","computed"));
+  const rows = state.drainage.map(row=>{
+    const calc = calcDrainageRow(row);
+    const tc = parseFloat(row.tc);
+    const linked = state.structures.find(s=>s.drainageAreaId===row.id);
+    const cells = [
+      el("td",{},row.structureId||row.id), el("td",{},row.desc||""),
+      tdN(calc.A,2), tdN(calc.C,3), tdN(calc.CA,3), tdN(calc.cf,2),
+      el("td",{},isFinite(tc)?fmt(tc,1):"—"),
+      el("td",{},row.tcMethod==="tr55"?"TR-55":"Direct"),
+    ];
+    storms.forEach(s=>{
+      const i = (isFinite(tc)&&tc>0)
+        ? lookupIntensity(tc, rf.rainfallSource, s, rf.county, rf.customNoaa||{})
+        : 0;
+      cells.push(tdN(i>0?i:null,2));
+      cells.push(tdN(calc.Qs[s],2));
+    });
+    cells.push(el("td",{class:"out computed-cell"}, linked?(linked.structureId||linked.id):"—"));
+    return cells;
+  });
+  return makeDetailSheet("Drainage Area — Detail", heads, rows);
+}
+
+function buildStructuresDetailSheet(){
+  const th = (t,c)=>el("th",c?{class:c}:{},t);
+  const tdN = (v,d=2)=>el("td",{class:"out computed-cell"},fmt(v,d));
+  const heads = [
+    th("Structure ID"), th("Description"), th("Type"), th("DA"),
+    th("Cap Q\n(cfs)","computed"), th("Inflow Q\n(cfs)","computed"),
+    th("Total Q\n(cfs)","computed"), th("Out Pipe To"),
+    th("Hf\n(ft)","computed"), th("Angle\n(°)"), th("Kb","computed"),
+    th("Hb\n(ft)","computed"), th("U/S HGL\n(ft)","computed"),
+    th("Crown\n(ft)"), th("Crown Chk","computed"),
+    th("Rim\n(ft)"),   th("Rim Chk","computed"),
+  ];
+  const rows = state.structures.map(row=>{
+    const calc = computeStructureCalc(row.id);
+    const typeLbl = (STRUCTURE_TYPES.find(t=>t[0]===row.type)||["",""])[1];
+    const da = row.drainageAreaId ? findDrainage(row.drainageAreaId) : null;
+    const outPipe = calc ? calc.outPipe : null;
+    const toSt = outPipe ? findStructure(outPipe.toStructureId) : null;
+    const inflow = calc ? calc.inflow.reduce((s,p)=>s+(isFinite(p.Q)?p.Q:0),0) : 0;
+    const angle = outPipe ? parseFloat(outPipe.angle)||0 : 0;
+    const crown = parseFloat(row.crown), rim = parseFloat(row.rim);
+    const crownStyle = calc&&calc.crownPass===false ? "color:#e05;font-weight:700;" : "";
+    const rimStyle   = calc&&calc.rimPass===false   ? "color:#e05;font-weight:700;" : "";
+    return [
+      el("td",{},row.structureId||row.id), el("td",{},row.desc||""),
+      el("td",{},typeLbl),
+      el("td",{},da?(da.structureId||da.id):"—"),
+      tdN(calc?calc.captured:null,2), tdN(inflow,2),
+      el("td",{class:"out computed-cell",style:"font-weight:700"},fmt(calc?calc.totalFlow:null,2)),
+      el("td",{},toSt?(toSt.structureId||toSt.id):"—"),
+      tdN(calc?calc.Hf:null,3),
+      el("td",{},outPipe?fmt(angle,0)+"°":"—"),
+      el("td",{class:"out computed-cell"},calc&&calc.kb!=null?fmt(calc.kb,2):"—"),
+      tdN(calc?calc.Hb:null,3),
+      el("td",{class:"out computed-cell",style:"font-weight:700"},fmt(calc?calc.elevation:null,2)),
+      el("td",{},isFinite(crown)?fmt(crown,2):"—"),
+      el("td",{class:"out computed-cell",style:crownStyle},
+        !calc||calc.crownPass===null?"—":calc.crownPass?"✓":"✗"),
+      el("td",{},isFinite(rim)?fmt(rim,2):"—"),
+      el("td",{class:"out computed-cell",style:rimStyle},
+        !calc||calc.rimPass===null?"—":calc.rimPass?"✓":"✗ FLOOD"),
+    ];
+  });
+  return makeDetailSheet("Junction Structures — Detail", heads, rows);
+}
+
 function printTableSheet(viewId, title){
   if(viewId==="view-outlet"){
     const nodes = buildOutletTablePrintSheet();
