@@ -4556,16 +4556,22 @@ function buildTablePrintSheet(viewId, title){
   const tbody = table.querySelector("tbody");
   if(!tbody || tbody.rows.length === 0) return null;
 
+  // Capture select texts from live DOM before cloning —
+  // cloneNode(true) copies attributes, not the programmatically-set .selected property,
+  // so sel.selectedIndex on the clone is always 0 (the first/default option).
+  const selectTexts = Array.from(table.querySelectorAll("select")).map(sel=>{
+    const idx = sel.selectedIndex;
+    return idx >= 0 && sel.options[idx] ? sel.options[idx].text : "";
+  });
+
   const clone = table.cloneNode(true);
-  // Replace inputs/selects/textareas with their current value as text
   clone.querySelectorAll("input:not([type=checkbox]), textarea").forEach(inp=>{
     inp.replaceWith(document.createTextNode(inp.value));
   });
+  let _si = 0;
   clone.querySelectorAll("select").forEach(sel=>{
-    const txt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : "";
-    sel.replaceWith(document.createTextNode(txt));
+    sel.replaceWith(document.createTextNode(selectTexts[_si++]||""));
   });
-  // Remove buttons and checkboxes entirely
   clone.querySelectorAll("button, input[type=checkbox]").forEach(b=>b.remove());
 
   const now = new Date();
