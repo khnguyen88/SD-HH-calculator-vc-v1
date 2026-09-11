@@ -4834,6 +4834,56 @@ function buildPipesDetailSheet(stormOverride){
   return makeDetailSheet(title, heads, rows);
 }
 
+function buildInletDetailSheet(){
+  if(!state.inletSpacing.length) return null;
+  const s = state.inletSpacingSettings;
+  const chain = computeInletChain(state.inletSpacing, s);
+  const comp = chain.results;
+  const th = (t,c)=>el("th",c?{class:c}:{},t);
+  const tdN = (v,d=2)=>el("td",{class:"out computed-cell"},fmt(v,d));
+  const heads = [
+    th("Label"), th("Linked Struct"), th("L\n(ft)"), th("Area\n(ac)"), th("C"),
+    th("Tc\n(min)"), th("i\n(in/hr)","computed"), th("Q\n(cfs)","computed"),
+    th("S"), th("Sx"), th("W\n(ft)"), th("a\n(ft)"), th("n"),
+    th("SxEff","computed"), th("Spread T\n(ft)","computed"), th("Allow T\n(ft)"),
+    th("Lt\n(ft)","computed"), th("Pickup %","computed"),
+    th("Bypass To"), th("Bypass CA","computed"), th("Bypass Q\n(cfs)","computed"),
+    th("Pass?","computed"),
+  ];
+  const rows = state.inletSpacing.map(row=>{
+    const cc = comp[row.id]||{};
+    const rif = resolvedInletFields(row);
+    const lbl = resolvedInletLabel(row);
+    const linkedSt = row.linkedStructureId ? findStructure(row.linkedStructureId) : null;
+    const warnStyle = cc.warn ? "color:#e05;font-weight:700;" : "";
+    return [
+      el("td",{},lbl||"—"),
+      el("td",{},linkedSt?(linkedSt.structureId||linkedSt.id):"Custom"),
+      el("td",{},row.L!=null&&row.L!==""?row.L:"—"),
+      el("td",{},rif.area!=null&&rif.area!==""?rif.area:"—"),
+      el("td",{},rif.C!=null&&rif.C!==""?rif.C:"—"),
+      el("td",{},rif.tc!=null&&rif.tc!==""?rif.tc:"—"),
+      tdN(cc.i,2), tdN(cc.Q,2),
+      el("td",{},cc.isSump?"SUMP":(row.S!=null&&row.S!==""?row.S:"—")),
+      el("td",{},row.Sx!=null&&row.Sx!==""?row.Sx:"—"),
+      el("td",{},row.W!=null&&row.W!==""?row.W:"—"),
+      el("td",{},row.a!=null&&row.a!==""?row.a:"—"),
+      el("td",{},row.n!=null&&row.n!==""?row.n:"—"),
+      el("td",{class:"out computed-cell"},cc.SxEff!=null?fmt(cc.SxEff,4):"—"),
+      el("td",{class:"out computed-cell"},cc.isSump?"SUMP":(cc.T!=null?fmt(cc.T,2):"—")),
+      el("td",{},(row.allowableSpread!=null&&row.allowableSpread!=="")?row.allowableSpread:
+        (s.allowableSpread!=null&&s.allowableSpread!==""?s.allowableSpread:"—")),
+      el("td",{class:"out computed-cell"},cc.Lt!=null?fmt(cc.Lt,1):"—"),
+      tdN(cc.pickupPct,1),
+      el("td",{},row.bypassTo||"—"),
+      tdN(cc.bypassCA,3), tdN(cc.bypassQ,2),
+      el("td",{class:"out computed-cell",style:warnStyle},
+        cc.cycle?"CYCLE":cc.isSump?"SUMP":(cc.warn?"✗ SPREAD":"✓")),
+    ];
+  });
+  return makeDetailSheet("Inlet Spacing — Detail", heads, rows);
+}
+
 function printTableSheet(viewId, title){
   if(viewId==="view-outlet"){
     const nodes = buildOutletTablePrintSheet();
