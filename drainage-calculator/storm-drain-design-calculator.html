@@ -4766,6 +4766,74 @@ function buildStructuresDetailSheet(){
   return makeDetailSheet("Junction Structures — Detail", heads, rows);
 }
 
+function buildPipesDetailSheet(stormOverride){
+  const storm = stormOverride || state.rainfall.pipeStorm;
+  const rf = state.rainfall;
+  const th = (t,c)=>el("th",c?{class:c}:{},t);
+  const tdN = (v,d=2)=>el("td",{class:"out computed-cell"},fmt(v,d));
+  const heads = [
+    th("From"), th("To"),
+    th("ΣA\n(ac)","computed"), th("ΣCA","computed"),
+    th("Tc\n(min)","computed"), th("i\n(in/hr)","computed"),
+    th("Q design\n(cfs)","computed"),
+    th("Size\n(in)"), th("Type"), th("n"), th("So\n(%)"), th("L\n(ft)"),
+    th("A\n(sf)","computed"), th("R\n(ft)","computed"),
+    th("V design\n(fps)","computed"), th("V full\n(fps)","computed"),
+    th("Q full\n(cfs)","computed"), th("t pipe\n(min)","computed"),
+    th("Hf\n(ft)","computed"), th("Status","computed"),
+  ];
+  const rows = state.pipes.map(pipe=>{
+    const fromSt = findStructure(pipe.fromStructureId);
+    const toSt   = findStructure(pipe.toStructureId);
+    const fromId = fromSt?(fromSt.structureId||fromSt.id):(pipe.fromStructureId||"—");
+    const toId   = toSt  ?(toSt.structureId  ||toSt.id)  :(pipe.toStructureId  ||"—");
+    const ca = computeContributingArea(pipe.fromStructureId);
+    const i  = ca.controlTc>0
+      ? lookupIntensity(ca.controlTc, rf.rainfallSource, storm, rf.county, rf.customNoaa||{})
+      : 0;
+    const designQ = pipeDesignQ(pipe, null, stormOverride);
+    const geo = pipeGeometry(pipe);
+    const n = parseFloat(pipe.n), S = parseFloat(pipe.slope), L = parseFloat(pipe.length);
+    const front = [
+      el("td",{},fromId), el("td",{},toId),
+      tdN(ca.sumA,2), tdN(ca.sumCA,3),
+      el("td",{class:"out computed-cell"},ca.controlTc>0?fmt(ca.controlTc,1):"—"),
+      el("td",{class:"out computed-cell"},i>0?fmt(i,2):"—"),
+      tdN(designQ,2),
+      el("td",{},pipe.size||"—"),
+      el("td",{},pipe.shape==="circular"?"Circular":"Elliptical"),
+      el("td",{},isFinite(n)?fmt(n,3):"—"),
+      el("td",{},isFinite(S)?fmt(S*100,3):"—"),
+      el("td",{},isFinite(L)?fmt(L,0):"—"),
+    ];
+    if(!geo||!isFinite(n)||!isFinite(S)||S<=0){
+      return front.concat([
+        el("td",{},"—"),el("td",{},"—"),el("td",{},"—"),el("td",{},"—"),
+        el("td",{},"—"),el("td",{},"—"),el("td",{},"—"),
+        el("td",{class:"out computed-cell"},"—"),
+      ]);
+    }
+    const {R, V:Vfull, Qfull} = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
+    const Vdesign = geo.areaSf>0 ? designQ/geo.areaSf : 0;
+    const SfD = frictionSlope(designQ, n, geo.areaSf, R);
+    const HfD = SfD*(isFinite(L)?L:0);
+    const tPipe = (isFinite(L)&&Vdesign>0) ? (L/Vdesign)/60 : null;
+    const pass = Qfull>=designQ;
+    return front.concat([
+      tdN(geo.areaSf,3), tdN(R,3), tdN(Vdesign,2), tdN(Vfull,2),
+      tdN(Qfull,2),
+      el("td",{class:"out computed-cell"}, tPipe!=null?fmt(tPipe,2):"—"),
+      tdN(HfD,3),
+      el("td",{class:"out computed-cell",style:pass?"":"color:#e05;font-weight:700;"},
+        pass?"PASS":"FAIL"),
+    ]);
+  });
+  const title = stormOverride==="25yr"
+    ? "Pipe Sizing & Capacity — 25-yr Detail"
+    : "Pipe Sizing & Capacity — Detail";
+  return makeDetailSheet(title, heads, rows);
+}
+
 function printTableSheet(viewId, title){
   if(viewId==="view-outlet"){
     const nodes = buildOutletTablePrintSheet();
