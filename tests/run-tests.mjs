@@ -523,3 +523,23 @@ test("defaultInletSpacingRow has no structureType field", () => {
   const row = sdc.defaultInletSpacingRow();
   assert.equal("structureType" in row, false, "structureType should not exist on defaultInletSpacingRow");
 });
+
+// ==================== Excel round-trip: new Structure fields ====================
+test("buildWorkbook: new structure fields present in Junction Structure sheet", () => {
+  const s0 = sdc.state;
+  const orig = s0.structures;
+  s0.structures = [{
+    id:"rt-st1", structureId:"RT-1", desc:"", drainageAreaId:"", type:"manhole",
+    forceElev:false, startElev:"", crown:"", rim:"",
+    splitMethod:"capacity", splitCapacity:"", splitRatio:0.5,
+    structureMode:"standard", agency:"pgder", standardStructureId:"pgder-mh-48",
+    structureCategory:"", shape:"round", innerDiameter:"4", innerWidth:"", innerLength:"",
+  }];
+  s0.pipes = [];
+  const wb = sdc.buildWorkbook();
+  s0.structures = orig;
+  const ws = wb.Sheets["Junction Structure"];
+  assert.ok(ws, "Junction Structure sheet missing");
+  const keys = Object.keys(ws).filter(k => k !== "!ref" && k !== "!cols" && k.match(/^[A-Z]+1$/));
+  assert.ok(keys.some(k => ws[k] && ws[k].v === "Structure Mode"), "Structure Mode header missing");
+});

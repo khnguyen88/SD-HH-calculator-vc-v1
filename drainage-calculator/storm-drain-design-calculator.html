@@ -5842,6 +5842,14 @@ function importExcel(file){
             splitMethod: r["Split Method"]||"capacity",
             splitCapacity: r["Split Capacity (cfs)"]===""?"":r["Split Capacity (cfs)"],
             splitRatio: r["Split Ratio (0-1)"]===""||r["Split Ratio (0-1)"]==null?0.5:r["Split Ratio (0-1)"],
+            structureMode: r["Structure Mode"]||"",
+            agency: r["Agency"]||"",
+            standardStructureId: r["Catalog ID"]||"",
+            structureCategory: r["Category"]||"",
+            shape: r["Shape"]||"",
+            innerDiameter: r["Inner Dia (ft)"]===""||r["Inner Dia (ft)"]==null?"":r["Inner Dia (ft)"],
+            innerWidth: r["Inner W (ft)"]===""||r["Inner W (ft)"]==null?"":r["Inner W (ft)"],
+            innerLength: r["Inner L (ft)"]===""||r["Inner L (ft)"]==null?"":r["Inner L (ft)"],
           };
         });
       }
@@ -5950,7 +5958,6 @@ function importExcel(file){
               const g = (h)=>{ const i=hIdx(h); return i>=0?(r[i]!=null?r[i]:""):""; };
               const row = defaultInletSpacingRow();
               row.label = String(g("Label")||"");
-              row.structureType = String(g("Structure Type")||"");
               row.L   = g("L (ft)")!==""?String(g("L (ft)")):row.L;
               row.area= g("Area (ac)")!==""?String(g("Area (ac)")):row.area;
               row.C   = g("C")!==""?String(g("C")):row.C;
