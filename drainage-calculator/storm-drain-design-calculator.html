@@ -3499,9 +3499,8 @@ async function doNoaaFetch(r, statusEl) {
       lat = parseFloat(geoData[0].lat); lon = parseFloat(geoData[0].lon);
       displayName = geoData[0].display_name.split(",").slice(0, 3).join(",").trim();
     }
-    const noaaResp = await fetch("https://hdsc.nws.noaa.gov/cgi-bin/hdsc/new/cgi_readH5.py?type=pf&series=pds&units=us&statname=&lat=" + lat + "&lon=" + lon);
-    if (!noaaResp.ok) throw new Error("NOAA service unavailable.");
-    const text = await noaaResp.text();
+    const url = "https://hdsc.nws.noaa.gov/cgi-bin/hdsc/new/cgi_readH5.py?type=pf&series=pds&units=us&statname=&lat=" + lat + "&lon=" + lon;
+    const text = await loadScriptText(url);
     const storms = parseNoaaResponse(text);
     r.fetchedNoaa = { lat, lon, displayName, ...storms };
     r.county = "Fetched";
@@ -3514,6 +3513,35 @@ async function doNoaaFetch(r, statusEl) {
     statusEl.style.color = "var(--fail)";
     statusEl.textContent = _noaaFetchMsg;
   }
+}
+
+// Load a cross-origin script resource by injecting a <script> tag, which
+// bypasses CORS — NOAA's PFDS API doesn't set Access-Control-Allow-Origin
+// but happily serves the data to <script> elements. We capture the globals
+// it sets and return them as a text blob for parseNoaaResponse.
+function loadScriptText(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.onload = () => {
+      script.remove();
+      // NOAA PFDS sets global variables: quantiles, upper, lower, result, etc.
+      // Reconstruct a text block parseNoaaResponse can consume.
+      const text = typeof quantiles !== "undefined"
+        ? "quantiles = " + JSON.stringify(quantiles).replace(/"/g, "'") + ";"
+        : "";
+      // Clean up globals
+      delete window.quantiles; delete window.upper; delete window.lower;
+      delete window.result; delete window.pyRunTime;
+      if (!text) { reject(new Error("NOAA response missing quantiles data.")); return; }
+      resolve(text);
+    };
+    script.onerror = () => {
+      script.remove();
+      reject(new Error("NOAA service unreachable."));
+    };
+    document.head.appendChild(script);
+  });
 }
 
 function renderRainfall() {
