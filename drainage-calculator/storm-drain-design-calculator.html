@@ -2458,11 +2458,13 @@ function renderStructures(){
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"Structure ID"), el("th",{},"Description"), el("th",{},"Drainage Area"), el("th",{},"Type"), el("th",{},"Split config"),
     el("th",{},"Fixed?"), el("th",{},"Fixed/Start Elev"), el("th",{},"Crown (ft)"), el("th",{},"Rim/Grate (ft)"),
+    el("th",{},"Mode"), el("th",{},"Agency / Category"), el("th",{},"Structure / Shape"), el("th",{},"Inner Size"), el("th",{class:"computed"},"K_ah"),
     el("th",{class:"computed"},"Captured Q"), el("th",{class:"computed"},"Inflow"), el("th",{class:"computed"},"Total Flow"),
     el("th",{},""), el("th",{},"")
   ])));
   const tbody = el("tbody");
   state.structures.forEach(row=>{
+    const isStandard = (row.structureMode || "standard") === "standard";
     const calc = computeStructureCalc(row.id);
     const inflowCount = calc ? (calc.inflow ? calc.inflow.length : 0) : 0;
     const tr = el("tr",{},[
@@ -2475,6 +2477,11 @@ function renderStructures(){
       el("td",{}, num(row,"startElev",80)),
       el("td",{}, num(row,"crown",75)),
       el("td",{}, num(row,"rim",75)),
+      el("td",{}, modeToggle(row)),
+      el("td",{}, isStandard ? agencySelect(row) : categorySelect(row)),
+      el("td",{}, isStandard ? catalogSelect(row) : shapeSelect(row)),
+      innerSizeCell(row),
+      el("td",{class:"out computed-cell"}, kAhDisplay(row, calc)),
       el("td",{class:"out computed-cell"}, fmt(calc.captured,2)),
       el("td",{class:"out computed-cell"}, inflowCount + (calc.warnings.length? " \u26a0":"")),
       el("td",{class:"out computed-cell", style:"font-weight:700"}, fmt(calc.totalFlow,2)),
@@ -2545,6 +2552,113 @@ function renderStructures(){
   function checkBadge(pass){
     if(pass===null) return el("span",{class:"badge neutral"},"\u2014");
     return el("span",{class:"badge "+(pass?"pass":"fail")}, pass?"OK":"EXCEEDS");
+  }
+
+  function modeToggle(row) {
+    const isStd = (row.structureMode || "standard") === "standard";
+    const wrap = el("div",{style:"display:flex;gap:3px;"});
+    const btnStd = el("button",{
+      class:"btn btn-sm"+(isStd?" btn-active":""),
+      onclick:()=>{
+        row.structureMode="standard";
+        row.structureCategory=""; row.shape="";
+        row.innerDiameter=""; row.innerWidth=""; row.innerLength="";
+        withFocusPreserved(renderStructures);
+      }
+    },"Std");
+    const btnCust = el("button",{
+      class:"btn btn-sm"+(!isStd?" btn-active":""),
+      onclick:()=>{
+        row.structureMode="custom";
+        row.agency=""; row.standardStructureId="";
+        withFocusPreserved(renderStructures);
+      }
+    },"Cust");
+    wrap.appendChild(btnStd); wrap.appendChild(btnCust);
+    return wrap;
+  }
+
+  function agencySelect(row) {
+    const sel = el("select",{class:"cell-input",style:"width:90px",
+      "data-focus-key":"structures:"+row.id+":agency",
+      onchange:(e)=>{ row.agency=e.target.value; row.standardStructureId=""; withFocusPreserved(renderStructures); }});
+    sel.appendChild(el("option",{value:""},"\u2014 pick \u2014"));
+    [["mcdot","MCDOT"],["mdsha","MDSHA"],["mdot","MDOT"],["pgder","PG DER"]].forEach(([v,l])=>{
+      const o=el("option",{value:v},l); if(row.agency===v) o.selected=true; sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function catalogSelect(row) {
+    const entries = (STRUCTURE_CATALOG[row.agency]||[]);
+    const sel = el("select",{class:"cell-input",style:"width:160px",
+      "data-focus-key":"structures:"+row.id+":standardStructureId",
+      onchange:(e)=>{
+        row.standardStructureId=e.target.value;
+        const entry = entries.find(x=>x.id===e.target.value);
+        if(entry){
+          row.shape = entry.shape;
+          row.innerDiameter = entry.innerDiameter != null ? String(entry.innerDiameter) : "";
+          row.innerWidth = entry.innerWidth != null ? String(entry.innerWidth) : "";
+          row.innerLength = entry.innerLength != null ? String(entry.innerLength) : "";
+        }
+        withFocusPreserved(renderStructures);
+      }});
+    sel.appendChild(el("option",{value:""},entries.length?"\u2014 select \u2014":"\u2014 none \u2014"));
+    entries.forEach(e=>{
+      const o=el("option",{value:e.id},e.label); if(row.standardStructureId===e.id) o.selected=true; sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function categorySelect(row) {
+    const sel = el("select",{class:"cell-input",style:"width:110px",
+      "data-focus-key":"structures:"+row.id+":structureCategory",
+      onchange:(e)=>{ row.structureCategory=e.target.value; withFocusPreserved(renderStructures); }});
+    [["","\u2014 category \u2014"],["access_hole","Access Hole"],["inlet","Inlet"]].forEach(([v,l])=>{
+      const o=el("option",{value:v},l); if((row.structureCategory||"")===v) o.selected=true; sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function shapeSelect(row) {
+    const sel = el("select",{class:"cell-input",style:"width:100px",
+      "data-focus-key":"structures:"+row.id+":shape",
+      onchange:(e)=>{ row.shape=e.target.value; withFocusPreserved(renderStructures); }});
+    [["","\u2014 shape \u2014"],["round","Round"],["rectangular","Rectangular"],["square","Square"]].forEach(([v,l])=>{
+      const o=el("option",{value:v},l); if((row.shape||"")===v) o.selected=true; sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function innerSizeCell(row) {
+    const isStd = (row.structureMode||"standard") === "standard";
+    if(isStd){
+      const s = row.shape||"";
+      let text = "\u2014";
+      if(s==="round" && row.innerDiameter) text = row.innerDiameter+" ft dia";
+      else if((s==="square"||s==="rectangular") && row.innerWidth) {
+        text = row.innerWidth+(row.innerLength && row.innerLength!==row.innerWidth ? "\u00d7"+row.innerLength : "")+" ft";
+      }
+      return el("td",{class:"out computed-cell"}, text);
+    }
+    const s = row.shape||"";
+    const wrap = el("div",{style:"display:flex;gap:4px;align-items:center;"});
+    if(s==="round"){
+      wrap.appendChild(num(row,"innerDiameter",55)); wrap.appendChild(el("span",{},"ft dia"));
+    } else if(s==="rectangular"){
+      wrap.appendChild(num(row,"innerWidth",40)); wrap.appendChild(el("span",{},"\u00d7")); wrap.appendChild(num(row,"innerLength",40)); wrap.appendChild(el("span",{},"ft"));
+    } else if(s==="square"){
+      wrap.appendChild(num(row,"innerWidth",55)); wrap.appendChild(el("span",{},"ft sq"));
+    }
+    return el("td",{}, wrap);
+  }
+
+  function kAhDisplay(row, calc) {
+    if(!calc || !calc.outPipe) return "\u2014";
+    const cat = resolveStructureCategory(row);
+    const angle = parseFloat(calc.outPipe.angle)||0;
+    return fmt(kAhFromAngle(cat, angle), 3);
   }
 }
 
