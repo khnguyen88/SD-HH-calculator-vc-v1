@@ -4115,30 +4115,31 @@ function buildHglRowSheet(structureId, stormOverride){
       csResult("Hf", fmt(calc.Hf,4)+" ft"),
     ])));
     const structLossBody = [];
+    const kLabel = calc.useCatalogKah ? "K\u2090\u2095 (HEC-22 Approx.)" : "Kb";
     const kSourceNote = calc.useCatalogKah
       ? "Inflow pipe count: "+calc.inflowCount+" \u2014 K\u2090\u2095 from HEC-22 Table 9.4 ("+resolveStructureCategory(st)+")"
       : "Inflow pipe count: "+calc.inflowCount+" \u2014 Kb column: "+(calc.kbColumn||"n/a")+" (legacy Kb table)";
     structLossBody.push(el("div",{class:"cs-note"}, kSourceNote));
     if(calc.inflowCount===0){
-      structLossBody.push(el("div",{class:"cs-note"}, "No piped inflow \u2014 nominal entrance condition, Kb evaluated at 0\u00b0."));
+      structLossBody.push(el("div",{class:"cs-note"}, "No piped inflow \u2014 nominal entrance condition, "+kLabel+" evaluated at 0\u00b0."));
     } else if(calc.inflowCount===1){
-      structLossBody.push(el("div",{class:"cs-note"}, "Single inflow pipe \u2014 Kb taken directly at that pipe's angle."));
+      structLossBody.push(el("div",{class:"cs-note"}, "Single inflow pipe \u2014 "+kLabel+" taken directly at that pipe's angle."));
     } else if(calc.controlling){
       const ctl = calc.controlling;
+      const kShort = calc.useCatalogKah ? "K\u2090\u2095" : "Kb";
       structLossBody.push(csTable([
         ["Pipe 1: Q\u2081, \u03c5\u2081", fmt(ctl.Q1,2)+" cfs, "+fmt(ctl.a1,0)+"\u00b0"],
         ["Pipe 2: Q\u2082, \u03c5\u2082", fmt(ctl.Q2,2)+" cfs, "+fmt(ctl.a2,0)+"\u00b0"],
         ["V\u2081/\u2083 = Q\u2081 / A(out)", fmt(ctl.V1_3,2)+" fps"],
         ["V\u2082/\u2083 = Q\u2082 / A(out)", fmt(ctl.V2_3,2)+" fps"],
-        ["Lv\u2081 = Kb(\u03c5\u2081)\u00d7V\u2081/\u2083\u00b2/2g", fmt(ctl.Lv1,4)+" ft  (Kb="+fmt(ctl.Kb1,3)+")"],
-        ["Lv\u2082 = Kb(\u03c5\u2082)\u00d7V\u2082/\u2083\u00b2/2g", fmt(ctl.Lv2,4)+" ft  (Kb="+fmt(ctl.Kb2,3)+")"],
+        ["Lv\u2081 = "+kShort+"(\u03c5\u2081)\u00d7V\u2081/\u2083\u00b2/2g", fmt(ctl.Lv1,4)+" ft  ("+kShort+"="+fmt(ctl.Kb1,3)+")"],
+        ["Lv\u2082 = "+kShort+"(\u03c5\u2082)\u00d7V\u2082/\u2083\u00b2/2g", fmt(ctl.Lv2,4)+" ft  ("+kShort+"="+fmt(ctl.Kb2,3)+")"],
         ["Controlling angle \u03c5c", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2? "Lv\u2081 > Lv\u2082 \u2192 use \u03c5\u2082" : "Lv\u2082 \u2265 Lv\u2081 \u2192 use \u03c5\u2081")+")"],
       ]));
     } else if(calc.kb==null){
       structLossBody.push(csWarn("More than 2 inflow pipes \u2014 controlling-angle method not applicable. Compute Hb manually."));
     }
     if(calc.kb!=null){
-      const kLabel = calc.useCatalogKah ? "K\u2090\u2095 (HEC-22 Approx.)" : "Kb";
       structLossBody.push(csTable([
         ["Vout = Total Flow / A(outgoing pipe)", fmt(calc.Vout,2)+" fps"],
         [kLabel, fmt(calc.kb,3)],
