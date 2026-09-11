@@ -4490,10 +4490,16 @@ function buildInletSpacingSheet(row, comp, settings){
     "HEC-22 grate inlet \u2014 "+srcLabel+", "+settings.storm+", S="+(isSump?"SUMP":f(S,4)), body);
 }
 
-function printNodes(nodes){
+function printNodes(nodes, landscape){
   const pa = document.getElementById("printArea");
   pa.innerHTML = "";
   nodes.forEach(n=>pa.appendChild(n));
+  if(landscape){
+    const s = document.createElement("style");
+    s.id = "sdcLandscape";
+    s.textContent = "@media print { @page { size: landscape; } }";
+    document.head.appendChild(s);
+  }
   document.body.classList.add("print-mode");
   window.print();
 }
@@ -4528,6 +4534,8 @@ function printAllSheets(){
 window.addEventListener("afterprint", ()=>{
   document.body.classList.remove("print-mode");
   document.getElementById("printArea").innerHTML = "";
+  const ls = document.getElementById("sdcLandscape");
+  if(ls) ls.remove();
 });
 
 /* =======================================================================
