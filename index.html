@@ -1423,6 +1423,7 @@ function defaultRainfallSettings() {
     county: "Montgomery",
     customNoaa: { 5:"", 10:"", 15:"", 30:"", 60:"" },
     noaaFetchInput: "",           // user-typed address or "lat, lon"
+    noaaProxyUrl:  "",            // Cloudflare Worker proxy URL (required for GitHub Pages)
     fetchedNoaa: null,            // { lat, lon, displayName, "1yr":{...}, ..., "500yr":{...} }
     pipeStorm:   "10yr",
     pipe25Check: false,
@@ -3497,9 +3498,17 @@ async function doNoaaFetch(r, statusEl) {
       lat = parseFloat(geoData[0].lat); lon = parseFloat(geoData[0].lon);
       displayName = geoData[0].display_name.split(",").slice(0, 3).join(",").trim();
     }
-    // Use the canonical NOAA URL (without /hdsc/ which returns a 301).
-    const noaaUrl = "https://hdsc.nws.noaa.gov/cgi-bin/new/cgi_readH5.py?type=pf&series=pds&units=us&statname=&lat=" + lat + "&lon=" + lon;
-    const text = await loadNoaaScript(noaaUrl);
+    // NOAA PFDS returns Cross-Origin-Resource-Policy: same-origin which blocks
+    // all cross-origin loads (fetch AND <script> tag). A proxy that strips
+    // that header and adds Access-Control-Allow-Origin: * is required.
+    // Deploy workers/noaa-proxy.js as a Cloudflare Worker and paste the URL below.
+    const proxyBase = (r.noaaProxyUrl || "").trim();
+    if (!proxyBase) throw new Error("A proxy URL is required — see the Proxy URL field above.");
+    const proxyUrl = proxyBase.replace(/\/$/, "") + "?lat=" + lat + "&lon=" + lon;
+    const resp = await fetch(proxyUrl);
+    if (!resp.ok) throw new Error("Proxy returned HTTP " + resp.status + ".");
+    const text = await resp.text();
+    if (!text || text.indexOf("quantiles") === -1) throw new Error("Proxy response missing NOAA data.");
     const storms = parseNoaaResponse(text);
     r.fetchedNoaa = { lat, lon, displayName, ...storms };
     r.county = "Fetched";
@@ -3512,39 +3521,6 @@ async function doNoaaFetch(r, statusEl) {
     statusEl.style.color = "var(--fail)";
     statusEl.textContent = _noaaFetchMsg;
   }
-}
-
-// Load NOAA PFDS data by injecting a <script> tag. The NOAA endpoint returns
-// JavaScript assignments (quantiles = [...]) with Content-Type: text/html and
-// no CORS headers. fetch() is blocked by CORS, but <script> tags are not
-// subject to same-origin policy. The server does NOT set X-Content-Type-Options:
-// nosniff, so browsers execute the script despite the text/html MIME type.
-function loadNoaaScript(url) {
-  return new Promise((resolve, reject) => {
-    var script = document.createElement("script");
-    script.src = url;
-    var timeout = setTimeout(function() {
-      script.remove();
-      reject(new Error("NOAA request timed out."));
-    }, 30000);
-    script.onload = function() {
-      clearTimeout(timeout);
-      script.remove();
-      var text = typeof quantiles !== "undefined"
-        ? "quantiles = " + JSON.stringify(quantiles).replace(/"/g, "'") + ";"
-        : "";
-      delete window.quantiles; delete window.upper; delete window.lower;
-      delete window.result; delete window.pyRunTime;
-      if (!text) { reject(new Error("NOAA returned no quantiles data.")); return; }
-      resolve(text);
-    };
-    script.onerror = function() {
-      clearTimeout(timeout);
-      script.remove();
-      reject(new Error("NOAA service unreachable."));
-    };
-    document.head.appendChild(script);
-  });
 }
 
 function renderRainfall() {
@@ -3611,19 +3587,33 @@ function renderRainfall() {
 
   // Site-specific NOAA fetch panel (NOAA source only)
   if (r.rainfallSource === "noaa") {
-    const fetchRow = el("div", {style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:6px 0 2px;"});
+    // Proxy URL row — required because NOAA sends Cross-Origin-Resource-Policy: same-origin
+    const proxyRow = el("div", {style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:6px 0 2px;"});
+    const proxyField = el("div", {class:"field"});
+    proxyField.appendChild(el("label", {}, "NOAA proxy URL"));
+    proxyField.appendChild(el("input", {class:"cell-input", type:"text", style:"width:340px;",
+      "data-focus-key":"rf:noaaProxyUrl",
+      placeholder:"https://your-worker.your-subdomain.workers.dev",
+      value: r.noaaProxyUrl || "",
+      oninput: (e) => { r.noaaProxyUrl = e.target.value; }}));
+    proxyRow.appendChild(proxyField);
+    proxyRow.appendChild(el("span", {style:"font-size:0.8em;opacity:0.6;align-self:center;"},
+      "Required — NOAA blocks direct browser requests. Deploy workers/noaa-proxy.js as a Cloudflare Worker (free) and paste the URL here."));
+    settingsSec.appendChild(proxyRow);
+
+    // Address + fetch button row
+    const fetchRow = el("div", {style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:2px 0 2px;"});
     const addrField = el("div", {class:"field"});
     addrField.appendChild(el("label", {}, "Site-specific NOAA lookup (optional)"));
     const addrInput = el("input", {class:"cell-input", type:"text", style:"width:300px;",
       "data-focus-key":"rf:noaaFetchInput",
       placeholder:'Address, or "lat, lon"',
       value: r.noaaFetchInput || "",
-      // NO re-render on input — keeps typing smooth; state assignment only.
       oninput: (e) => { r.noaaFetchInput = e.target.value; }});
     addrField.appendChild(addrInput);
     fetchRow.appendChild(addrField);
     const fetchBtnField = el("div", {class:"field"});
-    fetchBtnField.appendChild(el("label", {}, " "));
+    fetchBtnField.appendChild(el("label", {}, " "));
     const statusSpan = el("span", {id:"noaa-fetch-status", style:"font-size:0.85em;align-self:center;flex:1;min-width:200px;"});
     const fetchBtn = el("button", {class:"btn btn-sm", onclick: () => doNoaaFetch(r, statusSpan)}, "Fetch from NOAA");
     fetchBtnField.appendChild(fetchBtn);
