@@ -543,6 +543,7 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
       </div>
       <div class="topbar-right">
         <button class="btn btn-sm" id="saveCompBtn" title="Save current project to browser storage">&#8964; Save</button>
+        <button class="btn btn-sm" id="printAllTablesBtn" title="Print all data tables as spreadsheet">&#128438; Tables</button>
         <div class="saves-wrap">
           <button class="btn btn-sm" id="savesMenuBtn" title="View and restore browser-saved projects">Saves (<span id="savesCount">0</span>) &#9660;</button>
           <div class="saves-popover" id="savesPopover">
@@ -5367,6 +5368,8 @@ function init(){
   document.getElementById("projectName").addEventListener("input", (e)=>{ state.project = e.target.value; });
 
   updateSavesUI();
+
+  document.getElementById("printAllTablesBtn").addEventListener("click", printAllTableSheets);
 
   document.getElementById("saveCompBtn").addEventListener("click", saveComp);
 
