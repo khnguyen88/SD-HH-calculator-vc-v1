@@ -2458,7 +2458,7 @@ function renderStructures(){
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"Structure ID"), el("th",{},"Description"), el("th",{},"Drainage Area"), el("th",{},"Type"), el("th",{},"Split config"),
     el("th",{},"Fixed?"), el("th",{},"Fixed/Start Elev"), el("th",{},"Crown (ft)"), el("th",{},"Rim/Grate (ft)"),
-    el("th",{},"Mode"), el("th",{},"Agency / Category"), el("th",{},"Structure / Shape"), el("th",{},"Inner Size"), el("th",{class:"computed"},"K_ah"),
+    el("th",{},"Mode"), el("th",{},"Agency / Category"), el("th",{},"Structure / Shape"), el("th",{},"Inner Size"), el("th",{class:"computed",title:"K_ah used in Hb calculation (controlling angle for 2-inflow structures)"},"K_ah"),
     el("th",{class:"computed"},"Captured Q"), el("th",{class:"computed"},"Inflow"), el("th",{class:"computed"},"Total Flow"),
     el("th",{},""), el("th",{},"")
   ])));
@@ -5847,9 +5847,9 @@ function importExcel(file){
             standardStructureId: r["Catalog ID"]||"",
             structureCategory: r["Category"]||"",
             shape: r["Shape"]||"",
-            innerDiameter: r["Inner Dia (ft)"]===""||r["Inner Dia (ft)"]==null?"":r["Inner Dia (ft)"],
-            innerWidth: r["Inner W (ft)"]===""||r["Inner W (ft)"]==null?"":r["Inner W (ft)"],
-            innerLength: r["Inner L (ft)"]===""||r["Inner L (ft)"]==null?"":r["Inner L (ft)"],
+            innerDiameter: r["Inner Dia (ft)"]===""||r["Inner Dia (ft)"]==null?"":String(r["Inner Dia (ft)"]),
+            innerWidth: r["Inner W (ft)"]===""||r["Inner W (ft)"]==null?"":String(r["Inner W (ft)"]),
+            innerLength: r["Inner L (ft)"]===""||r["Inner L (ft)"]==null?"":String(r["Inner L (ft)"]),
           };
         });
       }
