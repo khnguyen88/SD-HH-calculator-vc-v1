@@ -3350,6 +3350,7 @@ function renderHgl() {
     el("th",{class:"computed"},"Crown\nCheck"),
     el("th",{},"Rim\n(ft)"),
     el("th",{class:"computed"},"Rim\nCheck"),
+    el("th",{}, ""),
   ])));
   const tbody = el("tbody");
   state.structures.forEach(row => {
@@ -3373,6 +3374,7 @@ function renderHgl() {
       el("td",{}, isFinite(rim) ? fmt(rim,2) : "—"),
       el("td",{class:"out computed-cell", style:rimStyle},
         !calc ? "—" : calc.rimPass === null ? "—" : calc.rimPass ? "✓" : "✗ FLOOD"),
+      el("td",{}, detailBtn(()=>openDetailModal(buildHglRowSheet(row.id)))),
     ]));
   });
   table.appendChild(tbody);
@@ -3876,9 +3878,26 @@ function buildStructureSheet(structureId){
     body.push(csSection("Flow split ("+(s.method==="ratio"?"fixed ratio":"capacity-limited primary")+")", el("div",{}, splitBody)));
   }
 
+  if(calc.warnings && calc.warnings.length){
+    body.push(csSection("Warnings", el("div",{}, calc.warnings.map(w=>csWarn(w)))));
+  }
+
+  return sheetWrapper("structure", "Structure \u2014 "+(st.structureId||st.id), "Flow collection and total discharge", body);
+}
+
+function buildHglRowSheet(structureId, stormOverride){
+  const st = findStructure(structureId);
+  if(!st) return sheetWrapper("hgl","Structure not found","",[]);
+  const calc = computeStructureCalc(structureId, null, stormOverride||null);
+  const body = [];
+  body.push(csSection("Total Flow at this structure", el("div",{},[
+    csResult("Total Flow"+(stormOverride?" ("+stormOverride+")":""), fmt(calc.totalFlow,2)+" cfs"),
+  ])));
   if(calc.isBase){
     body.push(csSection("Elevation (fixed)", el("div",{},[
-      el("div",{class:"cs-note"}, st.forceElev ? "\u201cForce fixed elevation\u201d is checked for this structure." : "No outgoing pipe found \u2014 treated as the system outfall/end point."),
+      el("div",{class:"cs-note"}, st.forceElev
+        ? "\u201cForce fixed elevation\u201d is checked for this structure."
+        : "No outgoing pipe found \u2014 treated as the system outfall/end point."),
       csResult("Elevation", fmt(calc.elevation,2)+" ft"),
     ])));
   } else {
@@ -3893,7 +3912,6 @@ function buildStructureSheet(structureId){
       csFormula(["Hf = Sf \u00d7 L = "+fmt(calc.Sf,6)+" \u00d7 "+fmt(parseFloat(calc.outPipe.length),0)]),
       csResult("Hf", fmt(calc.Hf,4)+" ft"),
     ])));
-
     const structLossBody = [];
     structLossBody.push(el("div",{class:"cs-note"}, "Inflow pipe count: "+calc.inflowCount+" \u2014 Kb column: "+(calc.kbColumn||"n/a")));
     if(calc.inflowCount===0){
@@ -3923,30 +3941,28 @@ function buildStructureSheet(structureId){
       structLossBody.push(csResult("Hb", fmt(calc.Hb,4)+" ft"));
     }
     body.push(csSection("Structure loss", el("div",{}, structLossBody)));
-
     body.push(csSection("Upstream HGL", el("div",{},[
       csFormula(["Upstream HGL = Downstream Elev + Hf + Hb"]),
       csFormula(["Upstream HGL = "+fmt(calc.downstreamElev,2)+" + "+fmt(calc.Hf,4)+" + "+fmt(calc.Hb,4)]),
       csResult("Upstream HGL", fmt(calc.elevation,2)+" ft"),
     ])));
   }
-
   const crown = (st.crown!==""&&st.crown!=null)?parseFloat(st.crown):null;
-  const rim = (st.rim!==""&&st.rim!=null)?parseFloat(st.rim):null;
+  const rim   = (st.rim  !==""&&st.rim  !=null)?parseFloat(st.rim)  :null;
   body.push(csSection("Clearance checks", csTable([
-    ["Crown elevation", crown!=null?fmt(crown,2)+" ft":"\u2014 not set"],
-    ["Limit: HGL \u2264 Crown + 1.0 ft", crown!=null? fmt(crown+1,2)+" ft":"\u2014"],
+    ["Crown elevation",              crown!=null?fmt(crown,2)+" ft":"\u2014 not set"],
+    ["Limit: HGL \u2264 Crown + 1.0 ft", crown!=null?fmt(crown+1,2)+" ft":"\u2014"],
     ["Result", calc.crownPass===null?"\u2014":(calc.crownPass?"OK":"EXCEEDS LIMIT")],
-    ["Rim / grate elevation", rim!=null?fmt(rim,2)+" ft":"\u2014 not set"],
-    ["Limit: HGL \u2264 Rim \u2212 1.0 ft", rim!=null? fmt(rim-1,2)+" ft":"\u2014"],
+    ["Rim / grate elevation",        rim!=null?fmt(rim,2)+" ft":"\u2014 not set"],
+    ["Limit: HGL \u2264 Rim \u2212 1.0 ft",   rim!=null?fmt(rim-1,2)+" ft":"\u2014"],
     ["Result", calc.rimPass===null?"\u2014":(calc.rimPass?"OK":"EXCEEDS LIMIT")],
   ])));
-
   if(calc.warnings && calc.warnings.length){
     body.push(csSection("Warnings", el("div",{}, calc.warnings.map(w=>csWarn(w)))));
   }
-
-  return sheetWrapper("structure", "Structure \u2014 "+(st.structureId||st.id), "Total Flow, structure loss (Hb), and hydraulic grade line", body);
+  return sheetWrapper("hgl",
+    "HGL \u2014 "+(st.structureId||st.id)+(stormOverride?" ("+stormOverride+")":""),
+    "Friction loss, structure loss, and upstream HGL", body);
 }
 
 function buildOutletStageSheet(stageResult, os){
