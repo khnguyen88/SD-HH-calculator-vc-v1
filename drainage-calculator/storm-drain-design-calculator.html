@@ -1795,23 +1795,29 @@ function computeStructureCalc(structureId, seen, stormOverride){
   }
 
   const kbColumn = KB_COLUMN_FOR_TYPE[st.type] || "bend";
+  const useCatalogKah = st.structureMode === "standard" || st.structureMode === "custom";
+  function kbForAngle(angleDeg) {
+    return useCatalogKah
+      ? kAhFromAngle(resolveStructureCategory(st), angleDeg)
+      : interpKb(kbColumn, angleDeg);
+  }
   const inflowPipes = getIncomingPipes(structureId);
   let kb=0, Hb=0, controlling=null;
   if(inflowPipes.length===0){
-    kb = interpKb(kbColumn, 0); // nominal entrance condition, no piped inflow to reference
+    kb = kbForAngle(0);
   } else if(inflowPipes.length===1){
     const angle = parseFloat(inflowPipes[0].angle)||0;
-    kb = interpKb(kbColumn, angle);
+    kb = kbForAngle(angle);
   } else if(inflowPipes.length===2){
     const [p1,p2] = inflowPipes;
     const a1 = parseFloat(p1.angle)||0, a2 = parseFloat(p2.angle)||0;
     const Q1 = pipeDesignQ(p1, null, stormOverride), Q2 = pipeDesignQ(p2, null, stormOverride);
     const A3 = geo ? geo.areaSf : 0;
     const V1_3 = A3>0? Q1/A3:0, V2_3 = A3>0? Q2/A3:0;
-    const Kb1 = interpKb(kbColumn, a1), Kb2 = interpKb(kbColumn, a2);
+    const Kb1 = kbForAngle(a1), Kb2 = kbForAngle(a2);
     const Lv1 = Kb1*V1_3*V1_3/(2*G), Lv2 = Kb2*V2_3*V2_3/(2*G);
     const vc = Lv1>Lv2 ? a2 : a1;
-    kb = interpKb(kbColumn, vc);
+    kb = kbForAngle(vc);
     controlling = { p1,p2,a1,a2,Q1,Q2,V1_3,V2_3,Kb1,Kb2,Lv1,Lv2,vc };
   } else {
     warnings.push(inflowPipes.length+" inflow pipes found \u2014 the controlling-angle method only supports up to 2. Hb not computed; verify manually.");
@@ -1826,7 +1832,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
   return {
     structure: st, totalFlow, captured: totalFlowInfo.captured, inflow: totalFlowInfo.inflow,
     outPipe, outPipeFlow, downstream, downstreamElev, Sf, Hf, kbColumn, kb, Hb, Vout,
-    inflowCount: inflowPipes.length, inflowPipes, controlling,
+    inflowCount: inflowPipes.length, inflowPipes, controlling, useCatalogKah,
     elevation, isBase:false, warnings, isSplitter, splitInfo,
     crownPass: crown!==null ? elevation<=crown+1.0 : null,
     rimPass: rim!==null ? elevation<=rim-1.0 : null,
@@ -2442,7 +2448,7 @@ function renderStructures(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Structures"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.structures.push({id:nextId(), structureId:"", desc:"", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", crown:"", rim:"", splitMethod:"capacity", splitCapacity:"", splitRatio:0.5}); renderAll(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.structures.push({id:nextId(), structureId:"", desc:"", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", crown:"", rim:"", splitMethod:"capacity", splitCapacity:"", splitRatio:0.5, structureMode:"standard", agency:"", standardStructureId:"", structureCategory:"", shape:"", innerDiameter:"", innerWidth:"", innerLength:""}); renderAll(); }}, "+ Add row"),
     el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-structures","Junction Structures")}, "\u{1F5A8} Print Table"),
     el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-structures","Junction Structures")}, "\u{1F4CA} Detail")
   ]));

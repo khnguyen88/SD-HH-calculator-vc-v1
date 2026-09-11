@@ -467,3 +467,53 @@ test("STRUCTURE_CATALOG has pgder entries", () => {
   assert.ok(sdc.STRUCTURE_CATALOG.pgder.length > 0, "pgder catalog empty");
   assert.ok(sdc.STRUCTURE_CATALOG.pgder.find(e=>e.id==="pgder-mh-48"), "pgder-mh-48 missing");
 });
+
+// ==================== computeStructureCalc dynamic K_ah ====================
+test("computeStructureCalc: standard structure uses kAhFromAngle, not interpKb", () => {
+  const s0 = sdc.state;
+  const origStructures = s0.structures, origPipes = s0.pipes;
+  const outfallId = "tf-out";
+  const structId  = "tf-st";
+  s0.structures = [
+    { id:outfallId, structureId:"TF-OUT", type:"outfall", forceElev:true, startElev:100,
+      drainageAreaId:"", crown:"", rim:"", structureMode:"" },
+    { id:structId, structureId:"TF-ST", type:"manhole", forceElev:false, startElev:"",
+      drainageAreaId:"", crown:"", rim:"",
+      structureMode:"standard", agency:"pgder", standardStructureId:"pgder-mh-48",
+      structureCategory:"", shape:"", innerDiameter:"", innerWidth:"", innerLength:"" },
+  ];
+  s0.pipes = [
+    { id:"tf-pipe1", fromStructureId:structId, toStructureId:outfallId,
+      angle:0, shape:"circular", size:24, n:0.013, slope:0.01, length:100,
+      upstreamInvert:"", downstreamInvert:"", splitRole:"" }
+  ];
+  const calc = sdc.computeStructureCalc(structId);
+  s0.structures = origStructures;
+  s0.pipes = origPipes;
+  assert.ok(calc != null, "calc is null");
+  isClose(calc.kb, 0.15, 0.01, "kb should be ~0.15 for access_hole straight run");
+});
+
+test("computeStructureCalc: legacy structure (no structureMode) uses interpKb", () => {
+  const s0 = sdc.state;
+  const origStructures = s0.structures, origPipes = s0.pipes, origKb = s0.kb;
+  const outfallId = "tf-out2";
+  const structId  = "tf-st2";
+  s0.structures = [
+    { id:outfallId, structureId:"TF-OUT2", type:"outfall", forceElev:true, startElev:100,
+      drainageAreaId:"", crown:"", rim:"" },
+    { id:structId, structureId:"TF-ST2", type:"manhole", forceElev:false, startElev:"",
+      drainageAreaId:"", crown:"", rim:"" },
+  ];
+  s0.pipes = [
+    { id:"tf-pipe2", fromStructureId:structId, toStructureId:outfallId,
+      angle:0, shape:"circular", size:24, n:0.013, slope:0.01, length:100,
+      upstreamInvert:"", downstreamInvert:"", splitRole:"" }
+  ];
+  s0.kb = [{ angle:0, inlet:0.99, manhole:0.99, bend:0.99 }];
+  const calc = sdc.computeStructureCalc(structId);
+  s0.structures = origStructures;
+  s0.pipes = origPipes;
+  s0.kb = origKb;
+  isClose(calc.kb, 0.99, 0.01, "kb should be 0.99 from custom Kb table");
+});
