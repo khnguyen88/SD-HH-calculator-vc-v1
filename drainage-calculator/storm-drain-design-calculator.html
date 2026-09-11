@@ -5439,9 +5439,9 @@ function buildWorkbook(){
       null,null,null,null,null,null,null,null,null,null,null,null,
       s.type==="splitter"?(s.splitMethod||"capacity"):"", s.type==="splitter"?num(s.splitCapacity):"", s.type==="splitter"?num(s.splitRatio,0.5):"",
       s.structureMode||"", s.agency||"", s.standardStructureId||"", s.structureCategory||"", s.shape||"",
-      (s.innerDiameter===""||s.innerDiameter==null)?"":s.innerDiameter,
-      (s.innerWidth===""||s.innerWidth==null)?"":s.innerWidth,
-      (s.innerLength===""||s.innerLength==null)?"":s.innerLength]);
+      (s.innerDiameter===""||s.innerDiameter==null)?"":num(s.innerDiameter),
+      (s.innerWidth===""||s.innerWidth==null)?"":num(s.innerWidth),
+      (s.innerLength===""||s.innerLength==null)?"":num(s.innerLength)]);
   });
   const wsSt = XLSX.utils.aoa_to_sheet(stAoa);
 
@@ -5451,6 +5451,7 @@ function buildWorkbook(){
   // Structure:     A id B desc C daId D type E force F startElev G crown H rim
   //                I capturedQ J qFromPipes K totalFlow L outPipeId M Hf N Kb O Hb P Vout Q upstreamHGL R downstreamId S crownChk T rimChk
   //                U splitMethod V splitCapacity W splitRatio
+  //                X structureMode Y agency Z catalogId AA category AB shape AC innerDia AD innerW AE innerL
 
   // Helper-key lookups (built once per pipe row, reused by both sheets):
   // P{row} = From label & "|" & role (blank role defaults to "primary" so ordinary
