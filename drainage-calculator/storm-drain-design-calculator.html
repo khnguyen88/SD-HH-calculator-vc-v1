@@ -3411,6 +3411,7 @@ function renderHgl25(){
     el("th",{class:"computed"},"Upstream HGL\n(ft)"),
     el("th",{class:"computed"},"Crown\nCheck"),
     el("th",{class:"computed"},"Rim\nCheck"),
+    el("th",{},""),
   ])));
   const tbody = el("tbody");
   state.structures.forEach(row => {
@@ -3434,6 +3435,7 @@ function renderHgl25(){
         crownCheck === null ? "—" : crownCheck ? "✓" : "✗ > crown+1"),
       el("td",{class:"out computed-cell", style:rimStyle},
         rimCheck === null ? "—" : rimCheck ? "✓" : "✗ FLOOD"),
+      el("td",{}, detailBtn(()=>openDetailModal(buildHglRowSheet(row.id, "25yr")))),
     ]));
   });
   table.appendChild(tbody);
