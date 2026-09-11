@@ -5429,14 +5429,19 @@ function buildWorkbook(){
   // ---- Junction Structure ----
   const stHeader = ["Structure ID","Description","Drainage Area ID","Type","Force Fixed","Fixed-Start Elev (ft)","Crown Elev (ft)","Rim-Grate Elev (ft)",
     "Captured Q (cfs)","Q from Pipes (cfs)","Total Flow (cfs)","Outgoing Pipe ID","Hf (ft)","Kb","Hb (ft)","Vout (fps)","Upstream HGL (ft)","Downstream Structure ID","Crown Check","Rim Check",
-    "Split Method","Split Capacity (cfs)","Split Ratio (0-1)"];
+    "Split Method","Split Capacity (cfs)","Split Ratio (0-1)",
+    "Structure Mode","Agency","Catalog ID","Category","Shape","Inner Dia (ft)","Inner W (ft)","Inner L (ft)"];
   const stAoa = [stHeader];
   state.structures.forEach(s=>{
     const daLabel = s.drainageAreaId ? ((findDrainage(s.drainageAreaId)||{}).structureId || s.drainageAreaId) : "";
     stAoa.push([s.structureId||s.id, s.desc||"", daLabel, s.type, s.forceElev?"TRUE":"FALSE", (s.startElev===""||s.startElev==null)?"":num(s.startElev),
       (s.crown===""||s.crown==null)?"":num(s.crown), (s.rim===""||s.rim==null)?"":num(s.rim),
       null,null,null,null,null,null,null,null,null,null,null,null,
-      s.type==="splitter"?(s.splitMethod||"capacity"):"", s.type==="splitter"?num(s.splitCapacity):"", s.type==="splitter"?num(s.splitRatio,0.5):""]);
+      s.type==="splitter"?(s.splitMethod||"capacity"):"", s.type==="splitter"?num(s.splitCapacity):"", s.type==="splitter"?num(s.splitRatio,0.5):"",
+      s.structureMode||"", s.agency||"", s.standardStructureId||"", s.structureCategory||"", s.shape||"",
+      (s.innerDiameter===""||s.innerDiameter==null)?"":s.innerDiameter,
+      (s.innerWidth===""||s.innerWidth==null)?"":s.innerWidth,
+      (s.innerLength===""||s.innerLength==null)?"":s.innerLength]);
   });
   const wsSt = XLSX.utils.aoa_to_sheet(stAoa);
 
@@ -5502,7 +5507,7 @@ function buildWorkbook(){
     setFormula(wsSt, "S"+row, "=IF(G"+row+"=\"\",\"\",IF(Q"+row+"<=G"+row+"+1,\"OK\",\"EXCEEDS\"))", calc.crownPass===null?"":(calc.crownPass?"OK":"EXCEEDS"));
     setFormula(wsSt, "T"+row, "=IF(H"+row+"=\"\",\"\",IF(Q"+row+"<=H"+row+"-1,\"OK\",\"EXCEEDS\"))", calc.rimPass===null?"":(calc.rimPass?"OK":"EXCEEDS"));
   });
-  wsSt["!cols"] = Array(23).fill({wch:13});
+  wsSt["!cols"] = Array(31).fill({wch:13});
   XLSX.utils.book_append_sheet(wb, wsSt, "Junction Structure");
 
   // Fill Pipe Sizing live formulas now that Structure sheet exists
@@ -5668,7 +5673,7 @@ function buildWorkbook(){
     ["Street", is.street||""],
     ["Default Allowable Spread (ft)", is.allowableSpread!=null?is.allowableSpread:""],
     [],
-    ["Linked Structure","Label","Structure Type","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
+    ["Linked Structure","Label","L (ft)","Area (ac)","C","Tc (min)","i Override (in/hr)",
      "S","Sx","W (ft)","a (ft)","n","Allowable Spread (ft)","Bypass To",
      "Q (cfs)","Spread T (ft)","Pickup (%)","Bypass CA out"],
   ];
@@ -5680,7 +5685,7 @@ function buildWorkbook(){
         const st = state.structures.find(s => s.id === r.linkedStructureId);
         return st ? (st.structureId || "") : "";
       })(),
-      r.label||"", r.structureType||"",
+      r.label||"",
       r.L!==""&&r.L!=null?num(r.L):r.L,
       r.area!==""&&r.area!=null?num(r.area):r.area,
       r.C!==""&&r.C!=null?num(r.C):r.C,
@@ -5699,7 +5704,7 @@ function buildWorkbook(){
     ]);
   });
   const wsIs = XLSX.utils.aoa_to_sheet(isAoa);
-  wsIs["!cols"] = [{wch:14},{wch:14},{wch:18},{wch:8},{wch:10},{wch:7},{wch:9},{wch:16},
+  wsIs["!cols"] = [{wch:14},{wch:14},{wch:8},{wch:10},{wch:7},{wch:9},{wch:16},
                    {wch:9},{wch:8},{wch:8},{wch:8},{wch:7},{wch:16},{wch:12},
                    {wch:10},{wch:12},{wch:11},{wch:14}];
   XLSX.utils.book_append_sheet(wb, wsIs, "Inlet Spacing");
