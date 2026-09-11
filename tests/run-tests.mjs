@@ -252,6 +252,50 @@ test("NOAA_ATLAS14: PG 25yr 5-min intensity matches PDF (7.56)", () => {
 test("NOAA_ATLAS14: MoCo 100yr 60-min intensity matches PDF (3.12)", () => {
   assert.equal(sdc.NOAA_ATLAS14["Montgomery"]["100yr"][60], 3.12);
 });
+test("parseNoaaResponse: parses NOAA API text into 8-storm intensities", () => {
+  // 19 durations × 10 return periods, single-quoted strings, only first 5 rows matter
+  const row = (a,b,c,d,e,f,g,h,j,k) => `'${a}', '${b}', '${c}', '${d}', '${e}', '${f}', '${g}', '${h}', '${j}', '${k}'`;
+  const quantiles = [
+    row(0.34,0.42,0.50,0.55,0.62,0.68,0.73,0.78,0.85,0.88),
+    row(0.53,0.66,0.79,0.88,0.99,1.08,1.16,1.24,1.34,1.39),
+    row(0.64,0.80,0.96,1.07,1.21,1.32,1.42,1.51,1.63,1.69),
+    row(0.89,1.11,1.33,1.48,1.67,1.82,1.96,2.09,2.25,2.33),
+    row(1.10,1.37,1.64,1.83,2.07,2.25,2.43,2.59,2.80,2.90),
+  ];
+  // pad remaining 14 rows so shape is 19×10 (values irrelevant)
+  for (let i = 0; i < 14; i++) quantiles.push(row(1,1,1,1,1,1,1,1,1,1));
+  const text = "quantiles = [[" + quantiles.join("],[") + "]]\nupper = []";
+  const res = sdc.parseNoaaResponse(text);
+  // 2yr = col 1; 5-min: 0.42 × 12 = 5.04
+  assert.equal(res["2yr"][5], 5.04);
+  // 10yr = col 3; 10-min: 0.88 × 6 = 5.28
+  assert.equal(res["10yr"][10], 5.28);
+  // 500yr = col 8; 60-min: 2.80 × 1 = 2.8
+  assert.equal(res["500yr"][60], 2.8);
+  // 8 storm keys present
+  assert.deepEqual(Object.keys(res).sort(), ["10yr","100yr","1yr","25yr","2yr","500yr","50yr","5yr"].sort());
+});
+test("parseNoaaResponse: throws on malformed text", () => {
+  assert.throws(() => sdc.parseNoaaResponse("no quantiles here"), /Unexpected NOAA response/);
+});
+test("lookupIntensity: Fetched county uses site-specific data", () => {
+  const fetched = {
+    lat: 38.9, lon: -77.1, displayName: "Test Site",
+    "1yr": {5:4,10:3,15:2,30:1,60:0.8},
+    "2yr": {5:5,10:4,15:3,30:2,60:1.5},
+    "5yr": {5:6,10:5,15:4,30:3,60:2},
+    "10yr": {5:6.65,10:5.31,15:4.48,30:3.24,60:2.11},
+    "25yr": {5:7.51,10:5.99,15:5.04,30:3.74,60:2.49},
+    "50yr": {5:8.16,10:6.48,15:5.48,30:4.12,60:2.8},
+    "100yr": {5:8.8,10:6.96,15:5.88,30:4.5,60:3.1},
+    "500yr": {5:10.14,10:8.04,15:6.72,30:5.36,60:3.84},
+  };
+  const i = sdc.lookupIntensity(10, "noaa", "10yr", "Fetched", {}, fetched);
+  assert.ok(Math.abs(i - 5.31) < 0.01);
+  // falls back to normal county path when fetchedNoaa null
+  const i2 = sdc.lookupIntensity(10, "noaa", "10yr", "Fetched", {}, null);
+  assert.equal(i2, 0);
+});
 test("availableStorms: mdsha returns 3 storms", () => {
   assert.deepEqual([...sdc.availableStorms("mdsha")], ["2yr","10yr","25yr"]);
 });
