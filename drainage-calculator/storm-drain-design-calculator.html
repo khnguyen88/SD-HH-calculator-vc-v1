@@ -5686,6 +5686,8 @@ function importExcel(file){
             shape: (r["Shape"]||"circular").toLowerCase()==="elliptical"?"elliptical":"circular",
             size: r["Size (in or SPANxRISE)"]||"",
             n: r["n"]===""||r["n"]==null?0.013:r["n"],
+            upstreamInvert: r["US Invert (ft)"]===""||r["US Invert (ft)"]==null?"":r["US Invert (ft)"],
+            downstreamInvert: r["DS Invert (ft)"]===""||r["DS Invert (ft)"]==null?"":r["DS Invert (ft)"],
             slope: r["Slope (ft-ft)"]||"",
             length: r["Length (ft)"]||"",
             splitRole: r["Split Role"]||"",
