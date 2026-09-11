@@ -3624,6 +3624,55 @@ function renderRainfall() {
     }
     fetchRow.appendChild(statusSpan);
     settingsSec.appendChild(fetchRow);
+
+    // Paste raw data row — no-proxy fallback for local/desktop use
+    const pasteRow = el("div", {style:"display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;padding:2px 0 6px;"});
+    const pasteField = el("div", {class:"field", style:"flex:1;min-width:260px;"});
+    pasteField.appendChild(el("label", {}, "— or paste raw NOAA data (no proxy needed)"));
+    const pasteArea = el("textarea", {
+      class:"cell-input", rows:"3",
+      style:"width:100%;font-size:11px;font-family:var(--font-mono);resize:vertical;",
+      "data-focus-key":"rf:noaaPaste",
+      placeholder:'Open the NOAA link for your coordinates, copy all the page text, paste here, then click Load.',
+    });
+    pasteField.appendChild(pasteArea);
+    pasteRow.appendChild(pasteField);
+    const pasteActions = el("div", {class:"field", style:"display:flex;flex-direction:column;gap:6px;justify-content:flex-end;"});
+    pasteActions.appendChild(el("label", {}, " "));
+    pasteActions.appendChild(el("button", {class:"btn btn-sm", onclick:()=>{
+      const coordText = (r.noaaFetchInput||"").trim();
+      const coordMatch = /^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$/.exec(coordText);
+      if(coordMatch){
+        const lat = coordMatch[1], lon = coordMatch[2];
+        window.open("https://hdsc.nws.noaa.gov/cgi-bin/new/cgi_readH5.py?type=pf&series=pds&units=us&statname=&lat="+lat+"&lon="+lon,"_blank");
+      } else {
+        toast("Enter lat, lon in the address field first, then open the link.",true);
+      }
+    }}, "Open NOAA URL ↗"));
+    const pasteStatus = el("span",{style:"font-size:0.82em;"});
+    pasteActions.appendChild(el("button", {class:"btn btn-sm", onclick:()=>{
+      const text = pasteArea.value.trim();
+      if(!text){pasteStatus.textContent="Paste the NOAA data first."; return;}
+      const coordText = (r.noaaFetchInput||"").trim();
+      const coordMatch = /^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$/.exec(coordText);
+      let lat=NaN, lon=NaN, displayName="pasted";
+      if(coordMatch){ lat=parseFloat(coordMatch[1]); lon=parseFloat(coordMatch[2]); displayName=lat.toFixed(4)+", "+lon.toFixed(4); }
+      try{
+        const storms = parseNoaaResponse(text);
+        r.fetchedNoaa = {lat, lon, displayName, ...storms};
+        r.county = "Fetched";
+        _noaaFetchMsg = "Loaded site data: " + displayName;
+        _noaaFetchOk = true;
+        pasteArea.value = "";
+        withFocusPreserved(renderAll);
+      }catch(e){
+        pasteStatus.textContent = "Parse failed: "+e.message;
+        pasteStatus.style.color = "var(--fail)";
+      }
+    }}, "Load pasted data"));
+    pasteActions.appendChild(pasteStatus);
+    pasteRow.appendChild(pasteActions);
+    settingsSec.appendChild(pasteRow);
   }
 
   // Custom NOAA intensity inputs
