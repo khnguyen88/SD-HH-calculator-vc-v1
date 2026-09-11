@@ -4013,10 +4013,26 @@ function buildStructureSheet(structureId){
   const calc = computeStructureCalc(structureId);
   const body = [];
 
+  const catalogEntry = (st.structureMode==="standard" && st.agency && st.standardStructureId)
+    ? (STRUCTURE_CATALOG[st.agency]||[]).find(e=>e.id===st.standardStructureId) : null;
+  const agencyLabel = {"mcdot":"MCDOT","mdsha":"MDSHA","mdot":"MDOT","pgder":"PG DER"}[st.agency]||st.agency||"";
+  const catalogLabel = catalogEntry
+    ? catalogEntry.label+" ("+agencyLabel+")"
+    : st.structureMode==="custom"
+      ? "Custom \u2014 "+(st.shape||"?")+(st.shape==="round"&&st.innerDiameter?" ("+st.innerDiameter+" ft dia)":
+          ((st.shape==="square"||st.shape==="rectangular")&&st.innerWidth?" ("+st.innerWidth+(st.innerLength&&st.innerLength!==st.innerWidth?"\xd7"+st.innerLength:"")+" ft)":""))
+      : "\u2014 (legacy / Kb table)";
+  const innerSizeRow = catalogEntry&&catalogEntry.shape==="round"&&catalogEntry.innerDiameter!=null
+    ? [["Inner diameter", catalogEntry.innerDiameter+" ft"]]
+    : catalogEntry&&catalogEntry.innerWidth!=null
+      ? [["Inner size", catalogEntry.innerWidth+(catalogEntry.innerLength!=null&&catalogEntry.innerLength!==catalogEntry.innerWidth?"\xd7"+catalogEntry.innerLength:"")+" ft"]]
+      : [];
   body.push(csSection("Structure", csTable([
     ["Type", (STRUCTURE_TYPES.find(t=>t[0]===st.type)||["","?"])[1]],
     ["Description", st.desc||"\u2014"],
     ["Linked drainage area", st.drainageAreaId? ((findDrainage(st.drainageAreaId)||{}).structureId || st.drainageAreaId) : "none"],
+    ["Catalog / mode", catalogLabel],
+    ...innerSizeRow,
   ])));
 
   // Captured Q
@@ -4099,7 +4115,10 @@ function buildHglRowSheet(structureId, stormOverride){
       csResult("Hf", fmt(calc.Hf,4)+" ft"),
     ])));
     const structLossBody = [];
-    structLossBody.push(el("div",{class:"cs-note"}, "Inflow pipe count: "+calc.inflowCount+" \u2014 Kb column: "+(calc.kbColumn||"n/a")));
+    const kSourceNote = calc.useCatalogKah
+      ? "Inflow pipe count: "+calc.inflowCount+" \u2014 K\u2090\u2095 from HEC-22 Table 9.4 ("+resolveStructureCategory(st)+")"
+      : "Inflow pipe count: "+calc.inflowCount+" \u2014 Kb column: "+(calc.kbColumn||"n/a")+" (legacy Kb table)";
+    structLossBody.push(el("div",{class:"cs-note"}, kSourceNote));
     if(calc.inflowCount===0){
       structLossBody.push(el("div",{class:"cs-note"}, "No piped inflow \u2014 nominal entrance condition, Kb evaluated at 0\u00b0."));
     } else if(calc.inflowCount===1){
@@ -4119,12 +4138,13 @@ function buildHglRowSheet(structureId, stormOverride){
       structLossBody.push(csWarn("More than 2 inflow pipes \u2014 controlling-angle method not applicable. Compute Hb manually."));
     }
     if(calc.kb!=null){
+      const kLabel = calc.useCatalogKah ? "K\u2090\u2095 (HEC-22 Approx.)" : "Kb";
       structLossBody.push(csTable([
         ["Vout = Total Flow / A(outgoing pipe)", fmt(calc.Vout,2)+" fps"],
-        ["Kb", fmt(calc.kb,3)],
+        [kLabel, fmt(calc.kb,3)],
       ]));
-      structLossBody.push(csFormula(["Hb = Kb \u00d7 Vout\u00b2 / 2g = "+fmt(calc.kb,3)+" \u00d7 "+fmt(calc.Vout,2)+"\u00b2 / "+ (2*G).toFixed(1)]));
-      structLossBody.push(csResult("Hb", fmt(calc.Hb,4)+" ft"));
+      structLossBody.push(csFormula([kLabel+" \xd7 Vout\xb2 / 2g = "+fmt(calc.kb,3)+" \xd7 "+fmt(calc.Vout,2)+"\xb2 / "+ (2*G).toFixed(1)]));
+      structLossBody.push(csResult("H_ah / Hb", fmt(calc.Hb,4)+" ft"));
     }
     body.push(csSection("Structure loss", el("div",{}, structLossBody)));
     body.push(csSection("Upstream HGL", el("div",{},[
@@ -4637,7 +4657,6 @@ function buildInletSpacingSheet(row, comp, settings){
   // 1. Inputs
   body.push(csSection("Inputs", csTable([
     ["Inlet label", row.label || "(unlabeled)"],
-    ["Structure type", row.structureType || "\u2014"],
     ["Grate length, L", f(L,3)+" ft"],
     ["Gutter width, W", f(W,3)+" ft"],
     ["Gutter depression, a", f(a,4)+" ft"],
