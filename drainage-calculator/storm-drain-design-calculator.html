@@ -1657,11 +1657,19 @@ function pipeDesignQ(pipeRow, seen, stormOverride){
   return totalFlow;
 }
 
+function pipeEffectiveSlope(pipe){
+  const US = parseFloat(pipe.upstreamInvert);
+  const DS = parseFloat(pipe.downstreamInvert);
+  const L  = parseFloat(pipe.length);
+  if(isFinite(US) && isFinite(DS) && isFinite(L) && L > 0) return (US - DS) / L;
+  return parseFloat(pipe.slope);
+}
+
 function calcPipeRow(row){
   const geo = pipeGeometry(row);
   const designQ = pipeDesignQ(row);
   if(!geo) return { areaSf:null, equivDiamIn:null, Qfull:null, V:null, pass:null, designQ };
-  const n = parseFloat(row.n), S = parseFloat(row.slope);
+  const n = parseFloat(row.n), S = pipeEffectiveSlope(row);
   const {V, Qfull} = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
   return {
     areaSf: geo.areaSf, equivDiamIn: geo.equivDiamIn,
@@ -5835,7 +5843,7 @@ function init(){
 document.addEventListener("DOMContentLoaded", init);
 
 // Exposed for debugging / automated testing only - not used by the UI.
-window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, calcDrainageRow, findStructure, findDrainage, findPipe,
+window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, pipeEffectiveSlope, calcDrainageRow, findStructure, findDrainage, findPipe,
   circularSegment, orificeOrPipeQ, weirQ, deviceQ, resolveTailwater, generateStageList, computeRatingCurve, computeSplitterSplit, pipeDesignQ,
   findOutletStructure, devicesForOutlet,
   tr55SheetFlowTt, tr55ShallowVelocity, tr55TravelTime, tr55ChannelVelocity, computeTr55, TR55_SHALLOW_CP,

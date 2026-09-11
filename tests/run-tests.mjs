@@ -392,3 +392,22 @@ test("computeInletRow uses linkedStructureId DA auto-fill for area/C/tc", () => 
     "totalCA should be ~0.9 (got " + result.totalCA + ")");
   st.drainageAreaId = origDA;
 });
+
+// ==================== pipeEffectiveSlope ====================
+test("pipeEffectiveSlope: computes (US-DS)/L when both inverts and length set", () => {
+  // US=105.0, DS=104.0, L=200 → (105-104)/200 = 0.005
+  const pipe = { upstreamInvert:"105.0", downstreamInvert:"104.0", slope:"0.001", length:"200" };
+  isClose(sdc.pipeEffectiveSlope(pipe), 0.005, 0.00001, "invert-derived slope");
+});
+test("pipeEffectiveSlope: falls back to slope field when both inverts absent", () => {
+  const pipe = { upstreamInvert:"", downstreamInvert:"", slope:"0.007", length:"200" };
+  isClose(sdc.pipeEffectiveSlope(pipe), 0.007, 0.00001, "manual slope fallback");
+});
+test("pipeEffectiveSlope: falls back to slope field when one invert absent", () => {
+  const pipe = { upstreamInvert:"105.0", downstreamInvert:"", slope:"0.007", length:"200" };
+  isClose(sdc.pipeEffectiveSlope(pipe), 0.007, 0.00001, "partial invert fallback");
+});
+test("pipeEffectiveSlope: falls back to slope field when length absent", () => {
+  const pipe = { upstreamInvert:"105.0", downstreamInvert:"104.0", slope:"0.007", length:"" };
+  isClose(sdc.pipeEffectiveSlope(pipe), 0.007, 0.00001, "no length fallback");
+});
