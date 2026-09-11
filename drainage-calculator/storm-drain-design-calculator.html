@@ -4543,7 +4543,7 @@ function buildTablePrintSheet(viewId, title){
 
   const clone = table.cloneNode(true);
   // Replace inputs/selects/textareas with their current value as text
-  clone.querySelectorAll("input, textarea").forEach(inp=>{
+  clone.querySelectorAll("input:not([type=checkbox]), textarea").forEach(inp=>{
     inp.replaceWith(document.createTextNode(inp.value));
   });
   clone.querySelectorAll("select").forEach(sel=>{
