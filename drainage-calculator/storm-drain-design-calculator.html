@@ -1570,7 +1570,7 @@ function tr55TravelTime(L, V){
 function tr55ChannelVelocity(n, area, wp, s){
   if(![n,area,wp,s].every(v=>isFinite(v) && v>0)) return 0;
   const r = area/wp;
-  return (1.49/n) * Math.pow(r, 2/3) * Math.sqrt(s);
+  return (1.486/n) * Math.pow(r, 2/3) * Math.sqrt(s);
 }
 
 function tr55DefaultSegment(type){
@@ -2383,9 +2383,25 @@ function renderDrainage(){
       el("td",{}, num(row,"area",70)),
       el("td",{}, num(row,"C",60)),
       el("td",{class:"out computed-cell"}, fmt(calc.CA, 3)),
-      el("td",{class: calc.iOverridden ? "i-override" : ""}, iOverrideCell),
+      (()=>{
+        const cell = el("td",{class: calc.iOverridden ? "i-override" : ""});
+        cell.appendChild(iOverrideCell);
+        if (row.iOverride) {
+          cell.appendChild(el("span",{title:"i override applies to ALL design storms — both 10-yr and 25-yr use this value",
+            style:"color:#f90;cursor:help;margin-left:3px;"},"⚠"));
+        }
+        return cell;
+      })(),
       el("td",{}, tcCell(row)),
-      el("td",{}, num(row,"cf",55)),
+      (()=>{
+        const cell = el("td",{});
+        cell.appendChild(num(row,"cf",55));
+        if (parseFloat(row.cf) > 1.0) {
+          cell.appendChild(el("span",{title:"Cf > 1.0 applies to ALL design storms including 10-yr",
+            style:"color:#f90;cursor:help;margin-left:3px;"},"⚠"));
+        }
+        return cell;
+      })(),
       ...calc.storms.map(s => {
         const isPipe  = s === state.rainfall.pipeStorm;
         const isInlet = s === state.rainfall.inletStorm;
@@ -2411,11 +2427,11 @@ function renderDrainage(){
 
   function txt(row,field,w){
     return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"drainage:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; patchDrainageRow(row); }});
+      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(()=>patchDrainageRow(row)); }});
   }
   function num(row,field,w){
     return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"drainage:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; patchDrainageRow(row); }});
+      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(()=>patchDrainageRow(row)); }});
   }
   function tcCell(row){
     const wrap = el("div",{style:"display:flex;gap:5px;align-items:center;flex-wrap:wrap;"});
@@ -2712,7 +2728,16 @@ function renderPipes(){
       el("td",{class:"out computed-cell"}, calc.areaSf!=null?fmt(calc.areaSf,3):"\u2014"),
       el("td",{class:"out computed-cell"}, calc.Qfull!=null?fmt(calc.Qfull,2):"\u2014"),
       el("td",{class:"out computed-cell"}, calc.V!=null?fmt(calc.V,2):"\u2014"),
-      el("td",{class:"computed-cell"}, statusBadge(calc.pass)),
+      (()=>{
+        const S = pipeEffectiveSlope(row);
+        const slopeAdverse = isFinite(S) && S < 0;
+        const cell = el("td",{class:"computed-cell"});
+        cell.appendChild(statusBadge(calc.pass));
+        if (slopeAdverse) {
+          cell.appendChild(el("span",{style:"color:#f90;font-size:10px;margin-left:4px;",title:"Upstream invert is lower than downstream invert"},"\u2191 adverse slope"));
+        }
+        return cell;
+      })(),
       el("td",{}, detailBtn(()=>openDetailModal(buildPipeSheet(row)))),
       el("td",{}, delBtn(()=>{ state.pipes=state.pipes.filter(r=>r!==row); renderAll(); }))
     ]));
@@ -3431,6 +3456,10 @@ function renderRainfall() {
     chkLabel.appendChild(chk);
     chkLabel.appendChild(document.createTextNode("Also compute 25-yr pipe & HGL check"));
     chkField.appendChild(chkLabel);
+    if (r.rainfallSource === "moco" && r.pipe25Check) {
+      chkField.appendChild(el("div",{class:"note warn",style:"margin-top:4px;color:#f90;font-size:11px;"},
+        "⚠ MoCo rainfall has no 25-yr data — 25-yr check uses 10-yr intensity as fallback."));
+    }
     stRow.appendChild(chkField);
   }
 
@@ -3588,6 +3617,10 @@ function renderHgl25(){
   c.appendChild(el("p", {class:"view-desc"},
     "25-yr check — read only. Structure geometry and elevations are unchanged from the primary " +
     "Junction Structures tab. HGL is propagated with Q₂₅ flows."));
+  if (state.rainfall.rainfallSource === "moco") {
+    c.appendChild(el("div",{class:"note",style:"color:#f90;margin-bottom:8px;"},
+      "⚠ MoCo rainfall source has no 25-yr data. These results use 10-yr intensity."));
+  }
 
   const section = el("div", {class:"section"});
   section.appendChild(el("div", {class:"section-head"}, [
@@ -4117,9 +4150,13 @@ function buildHglRowSheet(structureId, stormOverride){
     const structLossBody = [];
     const kLabel = calc.useCatalogKah ? "K\u2090\u2095 (HEC-22 Approx.)" : "Kb";
     const kSourceNote = calc.useCatalogKah
-      ? "Inflow pipe count: "+calc.inflowCount+" \u2014 K\u2090\u2095 from HEC-22 Table 9.4 ("+resolveStructureCategory(st)+")"
+      ? "Inflow pipe count: "+calc.inflowCount+" \u2014 K\u2090\u2095 from HEC-22 5th Ed. Table 8.5 Approx. Method ("+resolveStructureCategory(st)+")"
       : "Inflow pipe count: "+calc.inflowCount+" \u2014 Kb column: "+(calc.kbColumn||"n/a")+" (legacy Kb table)";
     structLossBody.push(el("div",{class:"cs-note"}, kSourceNote));
+    if (calc.useCatalogKah) {
+      structLossBody.push(el("div",{class:"cs-note"},
+        "Note: Controlling-angle convention follows HEC-22 \u00a78.5: the angle producing the smaller head loss governs (smaller-loss pipe\u2019s angle selected as controlling angle when 2 inflows present)."));
+    }
     if(calc.inflowCount===0){
       structLossBody.push(el("div",{class:"cs-note"}, "No piped inflow \u2014 nominal entrance condition, "+kLabel+" evaluated at 0\u00b0."));
     } else if(calc.inflowCount===1){
@@ -4627,7 +4664,7 @@ function buildTr55Sheet(row){
     }
     const formulaLines = seg.type==="sheet" ? ["Tt = 0.007(nL)^0.8 / (P2^0.5 \u00d7 s^0.4)"]
       : seg.type==="shallow" ? ["V = Cp \u00d7 \u221as", "Tt = L / (3600 \u00d7 V)"]
-      : ["r = a / Pw", "V = (1.49/n) \u00d7 r^(2/3) \u00d7 s^0.5", "Tt = L / (3600 \u00d7 V)"];
+      : ["r = a / Pw", "V = (1.486/n) \u00d7 r^(2/3) \u00d7 s^0.5", "Tt = L / (3600 \u00d7 V)"];
     const resultsBody = [csTable(rows), csFormula(formulaLines)];
     if(r.r!=null) resultsBody.push(csResult("r", fmt(r.r,3)+" ft"));
     if(r.V!=null) resultsBody.push(csResult("V", fmt(r.V,3)+" fps"));
