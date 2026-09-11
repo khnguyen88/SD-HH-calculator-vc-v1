@@ -411,3 +411,12 @@ test("pipeEffectiveSlope: falls back to slope field when length absent", () => {
   const pipe = { upstreamInvert:"105.0", downstreamInvert:"104.0", slope:"0.007", length:"" };
   isClose(sdc.pipeEffectiveSlope(pipe), 0.007, 0.00001, "no length fallback");
 });
+test("buildWorkbook: Pipe Sizing sheet has US Invert and DS Invert columns", () => {
+  const wb = sdc.buildWorkbook();
+  const XLSX = window.XLSX;
+  const ws = wb.Sheets["Pipe Sizing"];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+  const headers = aoa[0] || [];
+  assert.ok(headers.includes("US Invert (ft)"), "US Invert (ft) column missing from Pipe Sizing sheet");
+  assert.ok(headers.includes("DS Invert (ft)"), "DS Invert (ft) column missing from Pipe Sizing sheet");
+});

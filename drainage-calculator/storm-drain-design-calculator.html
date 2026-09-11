@@ -5248,12 +5248,15 @@ function buildWorkbook(){
   XLSX.utils.book_append_sheet(wb, wsTr55, "TR-55 Segments");
 
   // ---- Pipe Sizing (build first so Structure sheet formulas can reference it; sheet order doesn't matter for formulas though) ----
-  const pipeHeader = ["ID","From Structure","To Structure","Angle (deg)","Shape","Size (in or SPANxRISE)","n","Slope (ft-ft)","Length (ft)","Design Q (cfs)","Area (sf)","Qfull (cfs)","Velocity (fps)","Status","Split Role","From|Role Key"];
+  const pipeHeader = ["ID","From Structure","To Structure","Angle (deg)","Shape","Size (in or SPANxRISE)","n","US Invert (ft)","DS Invert (ft)","Slope (ft-ft)","Length (ft)","Design Q (cfs)","Area (sf)","Qfull (cfs)","Velocity (fps)","Status","Split Role","From|Role Key"];
   const pipeAoa = [pipeHeader];
   state.pipes.forEach(p=>{
     const fromLabel = (findStructure(p.fromStructureId)||{}).structureId || p.fromStructureId || "";
     const toLabel = (findStructure(p.toStructureId)||{}).structureId || p.toStructureId || "";
-    pipeAoa.push([p.id, fromLabel, toLabel, num(p.angle,0), p.shape, p.size||"", num(p.n,3), num(p.slope,4), num(p.length), null, null, null, null, null, p.splitRole||"", null]);
+    pipeAoa.push([p.id, fromLabel, toLabel, num(p.angle,0), p.shape, p.size||"", num(p.n,3),
+        (p.upstreamInvert===""||p.upstreamInvert==null)?"":parseFloat(p.upstreamInvert),
+        (p.downstreamInvert===""||p.downstreamInvert==null)?"":parseFloat(p.downstreamInvert),
+        num(p.slope,4), num(p.length), null, null, null, null, null, p.splitRole||"", null]);
   });
   const wsPipe = XLSX.utils.aoa_to_sheet(pipeAoa);
 
@@ -5273,7 +5276,7 @@ function buildWorkbook(){
 
   // Now fill live formulas. Column letters:
   // Drainage Area: A id B desc C area D C E CA F iOverride G tc H cf I tcMethod J+ Q per storm (static values)
-  // Pipe Sizing:   A id B from C to D angle E shape F size G n H slope I len J designQ K area L qfull M vel N status O splitRole P from|role key
+  // Pipe Sizing:   A id B from C to D angle E shape F size G n H usInv I dsInv J slope K len L designQ M area N qfull O vel P status Q splitRole R from|role key
   // Structure:     A id B desc C daId D type E force F startElev G crown H rim
   //                I capturedQ J qFromPipes K totalFlow L outPipeId M Hf N Kb O Hb P Vout Q upstreamHGL R downstreamId S crownChk T rimChk
   //                U splitMethod V splitCapacity W splitRatio
@@ -5285,7 +5288,7 @@ function buildWorkbook(){
     const row=i+2;
     const fromLabel = (findStructure(p.fromStructureId)||{}).structureId || p.fromStructureId || "";
     const roleForKey = p.splitRole || "primary";
-    setFormula(wsPipe, "P"+row, "=B"+row+"&\"|\"&IF(O"+row+"=\"\",\"primary\",O"+row+")", fromLabel+"|"+roleForKey);
+    setFormula(wsPipe, "R"+row, "=B"+row+"&\"|\"&IF(Q"+row+"=\"\",\"primary\",Q"+row+")", fromLabel+"|"+roleForKey);
   });
 
   function xlFromType(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!D:D,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),\"\")"; }
