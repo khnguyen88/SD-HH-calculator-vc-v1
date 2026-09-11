@@ -1301,7 +1301,6 @@ function defaultInletSpacingRow() {
     id: nextId(),
     linkedStructureId: "",   // internal id of a type="inlet" structure, or "" = custom
     label: "",
-    structureType: "",  // INLET_STRUCTURES id or ""
     area: "",
     C: "",
     tc: "",
@@ -3739,7 +3738,7 @@ function renderInletSpacing(){
   const tableWrap = el("div",{class:"table-wrap"});
   const table = el("table",{class:"data"});
   table.appendChild(el("thead",{},el("tr",{},[
-    el("th",{},"Structure"), el("th",{},"Label"), el("th",{},"Structure Type"), el("th",{},"L (ft)"), el("th",{},"Area (ac)"),
+    el("th",{},"Structure"), el("th",{},"Label"), el("th",{},"L (ft)"), el("th",{},"Area (ac)"),
     el("th",{},"C"), el("th",{},"Tc (min)"), el("th",{},"i (in/hr)"),
     el("th",{class:"computed"},"Q (cfs)"), el("th",{},"S"), el("th",{},"Sx"),
     el("th",{},"W (ft)"), el("th",{},"a (ft)"), el("th",{},"n"),
@@ -3802,7 +3801,6 @@ function renderInletSpacing(){
     tbody.appendChild(el("tr",trAttrs,[
       el("td",{}, structureDropdown(row)),
       el("td",{}, labelCell),
-      el("td",{}, stypeSelect(row)),
       el("td",{}, txtCell(row,"L",60)),
       el("td",{}, autoField("area", rf.areaFromDA, rf.area, 70)),
       el("td",{}, autoField("C", rf.CFromDA, rf.C, 55)),
@@ -3834,27 +3832,6 @@ function renderInletSpacing(){
       value:(row[field]===undefined||row[field]===null)?"":row[field],
       "data-focus-key":"is:"+row.id+":"+field,
       oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }});
-  }
-
-  function stypeSelect(row){
-    const sel = el("select",{class:"cell-input",style:"width:150px",
-      "data-focus-key":"is:"+row.id+":stype",
-      onchange:(e)=>{
-        row.structureType=e.target.value;
-        const preset = INLET_STRUCTURES.find(st=>st.id===e.target.value);
-        if(preset){
-          row.W = preset.W; row.a = preset.a; row.n = preset.n;
-          if(row.L==="" || row.L==null) row.L = String(preset.Ls[0]);
-        }
-        withFocusPreserved(renderAll);
-      }});
-    sel.appendChild(el("option",{value:""},"— Select —"));
-    INLET_STRUCTURES.forEach(st=>{
-      const o = el("option",{value:st.id}, st.id+" "+st.label);
-      if(row.structureType===st.id) o.selected=true;
-      sel.appendChild(o);
-    });
-    return sel;
   }
 
   function bypassSelect(row){

@@ -517,3 +517,9 @@ test("computeStructureCalc: legacy structure (no structureMode) uses interpKb", 
   s0.kb = origKb;
   isClose(calc.kb, 0.99, 0.01, "kb should be 0.99 from custom Kb table");
 });
+
+// ==================== Inlet Spacing structureType removal ====================
+test("defaultInletSpacingRow has no structureType field", () => {
+  const row = sdc.defaultInletSpacingRow();
+  assert.equal("structureType" in row, false, "structureType should not exist on defaultInletSpacingRow");
+});
