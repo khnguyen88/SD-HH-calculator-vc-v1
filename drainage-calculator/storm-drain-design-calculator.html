@@ -2277,7 +2277,8 @@ function renderDrainage(){
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Drainage areas"),
     el("button",{class:"btn btn-sm", onclick:()=>{ state.drainage.push({id:nextId(), structureId:"", desc:"", area:"", C:"", iOverride:"", tc:"", cf:1.0, tcMethod:"direct", tr55:{segments:[]}}); renderDrainage(); }}, "+ Add row"),
-    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-drainage","Drainage Area")}, "\u{1F5A8} Print Table")
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-drainage","Drainage Area")}, "\u{1F5A8} Print Table"),
+    el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-drainage","Drainage Area")}, "\u{1F4CA} Detail")
   ]));
 
   const tableWrap = el("div",{class:"table-wrap"});
@@ -2382,7 +2383,8 @@ function renderStructures(){
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Structures"),
     el("button",{class:"btn btn-sm", onclick:()=>{ state.structures.push({id:nextId(), structureId:"", desc:"", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", crown:"", rim:"", splitMethod:"capacity", splitCapacity:"", splitRatio:0.5}); renderAll(); }}, "+ Add row"),
-    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-structures","Junction Structures")}, "\u{1F5A8} Print Table")
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-structures","Junction Structures")}, "\u{1F5A8} Print Table"),
+    el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-structures","Junction Structures")}, "\u{1F4CA} Detail")
   ]));
 
   const tableWrap = el("div",{class:"table-wrap"});
@@ -2493,7 +2495,8 @@ function renderPipes(){
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Pipe runs"),
     el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
-    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F5A8} Print Table")
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F5A8} Print Table"),
+    el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F4CA} Detail")
   ]));
 
   const tableWrap = el("div",{class:"table-wrap"});
@@ -2646,7 +2649,8 @@ function renderOutlet(){
   devSection.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Devices"),
     el("button",{class:"btn btn-sm", onclick:()=>{ state.outletDevices.push(Object.assign({id:nextId(), outletStructureId:os.id, label:"", type:"orifice", invert:"", crest:"", diameter:"", length:"", weirShape:"rect", notchAngle:90, cd:0.6, coef:3.1, notes:""}, defaultDeviceFields())); renderOutlet(); }}, "+ Add device"),
-    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-outlet","Outlet")}, "\u{1F5A8} Print Table")
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-outlet","Outlet")}, "\u{1F5A8} Print Table"),
+    el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-outlet","Outlet")}, "\u{1F4CA} Detail")
   ]));
   const devWrap = el("div",{class:"table-wrap"});
   const devTable = el("table",{class:"data"});
@@ -3265,7 +3269,8 @@ function renderPipeSizing25() {
   const section = el("div", {class:"section"});
   section.appendChild(el("div", {class:"section-head"}, [
     el("h2", {}, "Pipe capacity check — 25-yr storm"),
-    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipe-sizing-25","Pipe Sizing & Capacity — 25-yr")}, "\u{1F5A8} Print Table")
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipe-sizing-25","Pipe Sizing & Capacity — 25-yr")}, "\u{1F5A8} Print Table"),
+    el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-pipe-sizing-25","Pipe Sizing & Capacity — 25-yr")}, "\u{1F4CA} Detail")
   ]));
   const tableWrap = el("div", {class:"table-wrap"});
   const table = el("table", {class:"data"});
@@ -3327,7 +3332,8 @@ function renderHgl() {
   const section = el("div", {class:"section"});
   section.appendChild(el("div", {class:"section-head"}, [
     el("h2", {}, "Upstream HGL — Primary Design Storm"),
-    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-hgl","HGL — Primary Design Storm")}, "\u{1F5A8} Print Table")
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-hgl","HGL — Primary Design Storm")}, "\u{1F5A8} Print Table"),
+    el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-hgl","HGL — Primary Design Storm")}, "\u{1F4CA} Detail")
   ]));
   const tableWrap = el("div", {class:"table-wrap"});
   const table = el("table", {class:"data"});
@@ -3391,7 +3397,8 @@ function renderHgl25(){
   const section = el("div", {class:"section"});
   section.appendChild(el("div", {class:"section-head"}, [
     el("h2", {}, "HGL check — 25-yr storm"),
-    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-hgl-25","HGL — 25-yr")}, "\u{1F5A8} Print Table")
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-hgl-25","HGL — 25-yr")}, "\u{1F5A8} Print Table"),
+    el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-hgl-25","HGL — 25-yr")}, "\u{1F4CA} Detail")
   ]));
   const tableWrap = el("div", {class:"table-wrap"});
   const table = el("table", {class:"data"});
@@ -3486,7 +3493,8 @@ function renderInletSpacing(){
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Inlets"),
     el("button",{class:"btn btn-sm", onclick:()=>{ state.inletSpacing.push(defaultInletSpacingRow()); withFocusPreserved(renderAll); }}, "+ Add Inlet"),
-    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-inlet-spacing","Inlet Spacing")}, "\u{1F5A8} Print Table")
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-inlet-spacing","Inlet Spacing")}, "\u{1F5A8} Print Table"),
+    el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-inlet-spacing","Inlet Spacing")}, "\u{1F4CA} Detail")
   ]));
 
   // Build inletCtx for detail sheets (has all rainfall fields for display)
