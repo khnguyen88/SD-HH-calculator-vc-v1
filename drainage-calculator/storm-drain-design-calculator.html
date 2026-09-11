@@ -3834,12 +3834,13 @@ function buildPipeSheet(row, stormOverride){
   geoRows.push(["Cross-sectional area, A", geo?fmt(geo.areaSf,3)+" sf":"\u2014"]);
   geoRows.push(["Manning's n", fmt(parseFloat(row.n),3)]);
   const So = pipeEffectiveSlope(row);
-  const hasInverts = row.upstreamInvert!==""&&row.upstreamInvert!=null&&
-                     row.downstreamInvert!==""&&row.downstreamInvert!=null&&
-                     row.length!==""&&row.length!=null;
+  const _usInv = parseFloat(row.upstreamInvert);
+  const _dsInv = parseFloat(row.downstreamInvert);
+  const _L     = parseFloat(row.length);
+  const hasInverts = isFinite(_usInv) && isFinite(_dsInv) && isFinite(_L) && _L > 0;
   geoRows.push(["Slope, So"+(hasInverts?" (from inverts)":""), fmt(So,4)+" ft/ft"]);
-  if(hasInverts) geoRows.push(["  US invert", fmt(parseFloat(row.upstreamInvert),2)+" ft"]);
-  if(hasInverts) geoRows.push(["  DS invert", fmt(parseFloat(row.downstreamInvert),2)+" ft"]);
+  if(hasInverts) geoRows.push(["  US invert", fmt(_usInv,2)+" ft"]);
+  if(hasInverts) geoRows.push(["  DS invert", fmt(_dsInv,2)+" ft"]);
   geoRows.push(["Length, L", fmt(parseFloat(row.length),0)+" ft"]);
   body.push(csSection("Geometry", csTable(geoRows)));
 
