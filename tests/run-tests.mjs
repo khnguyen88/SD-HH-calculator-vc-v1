@@ -528,6 +528,7 @@ test("defaultInletSpacingRow has no structureType field", () => {
 test("buildWorkbook: new structure fields present in Junction Structure sheet", () => {
   const s0 = sdc.state;
   const orig = s0.structures;
+  const origPipes = s0.pipes;
   s0.structures = [{
     id:"rt-st1", structureId:"RT-1", desc:"", drainageAreaId:"", type:"manhole",
     forceElev:false, startElev:"", crown:"", rim:"",
@@ -538,6 +539,7 @@ test("buildWorkbook: new structure fields present in Junction Structure sheet", 
   s0.pipes = [];
   const wb = sdc.buildWorkbook();
   s0.structures = orig;
+  s0.pipes = origPipes;
   const ws = wb.Sheets["Junction Structure"];
   assert.ok(ws, "Junction Structure sheet missing");
   const keys = Object.keys(ws).filter(k => k !== "!ref" && k !== "!cols" && k.match(/^[A-Z]+1$/));
