@@ -420,3 +420,50 @@ test("buildWorkbook: Pipe Sizing sheet has US Invert and DS Invert columns", () 
   assert.ok(headers.includes("US Invert (ft)"), "US Invert (ft) column missing from Pipe Sizing sheet");
   assert.ok(headers.includes("DS Invert (ft)"), "DS Invert (ft) column missing from Pipe Sizing sheet");
 });
+
+// ==================== kAhFromAngle ====================
+test("kAhFromAngle: access_hole straight (0°) = 0.15", () => {
+  isClose(sdc.kAhFromAngle("access_hole", 0), 0.15, 0.001);
+});
+test("kAhFromAngle: access_hole 90° = 1.00", () => {
+  isClose(sdc.kAhFromAngle("access_hole", 90), 1.00, 0.01);
+});
+test("kAhFromAngle: access_hole 45° interpolated between 90°(1.00) and 135°(0.75)", () => {
+  // 45° deflection → theta = 135°; between pts [135,0.75] and [90,1.00]
+  // t = (135-135)/(135-90) = 0 → 0.75
+  isClose(sdc.kAhFromAngle("access_hole", 45), 0.75, 0.001);
+});
+test("kAhFromAngle: inlet straight (0°) = 0.50", () => {
+  isClose(sdc.kAhFromAngle("inlet", 0), 0.50, 0.001);
+});
+test("kAhFromAngle: inlet 90° = 1.50", () => {
+  isClose(sdc.kAhFromAngle("inlet", 90), 1.50, 0.001);
+});
+test("kAhFromAngle: inlet 45° interpolated", () => {
+  // theta = 135 → 0.50 + 1.00 * ((180-135)/90) = 0.50 + 0.50 = 1.00
+  isClose(sdc.kAhFromAngle("inlet", 45), 1.00, 0.01);
+});
+
+// ==================== resolveStructureCategory ====================
+test("resolveStructureCategory: standard pgder MH = access_hole", () => {
+  assert.equal(sdc.resolveStructureCategory({
+    structureMode:"standard", agency:"pgder", standardStructureId:"pgder-mh-48"
+  }), "access_hole");
+});
+test("resolveStructureCategory: standard pgder inlet = inlet", () => {
+  assert.equal(sdc.resolveStructureCategory({
+    structureMode:"standard", agency:"pgder", standardStructureId:"pgder-inlet-typeE"
+  }), "inlet");
+});
+test("resolveStructureCategory: custom inlet category", () => {
+  assert.equal(sdc.resolveStructureCategory({
+    structureMode:"custom", structureCategory:"inlet"
+  }), "inlet");
+});
+test("resolveStructureCategory: legacy (no structureMode) → access_hole", () => {
+  assert.equal(sdc.resolveStructureCategory({}), "access_hole");
+});
+test("STRUCTURE_CATALOG has pgder entries", () => {
+  assert.ok(sdc.STRUCTURE_CATALOG.pgder.length > 0, "pgder catalog empty");
+  assert.ok(sdc.STRUCTURE_CATALOG.pgder.find(e=>e.id==="pgder-mh-48"), "pgder-mh-48 missing");
+});

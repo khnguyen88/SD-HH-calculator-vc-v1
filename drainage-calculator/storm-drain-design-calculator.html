@@ -680,6 +680,31 @@ const STRUCTURE_TYPES = [
   ["inlet","Inlet"], ["manhole","Manhole"], ["bend","Bend"],
   ["junction","Junction"], ["splitter","Flow Splitter"], ["outfall","Outfall"]
 ];
+
+const STRUCTURE_CATALOG = {
+  mcdot: [],
+  mdsha: [],
+  mdot:  [],
+  pgder: [
+    { id:"pgder-mh-48",        label:"48-in MH (SD 21.1)",        category:"access_hole", shape:"round",       innerDiameter:4.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mh-60",        label:"60-in MH (SD 21.2)",        category:"access_hole", shape:"round",       innerDiameter:5.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mh-72",        label:"72-in MH (SD 21.3)",        category:"access_hole", shape:"round",       innerDiameter:6.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mh-84",        label:"84-in MH (SD 21.4)",        category:"access_hole", shape:"round",       innerDiameter:7.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mh-96",        label:"96-in MH (SD 21.5)",        category:"access_hole", shape:"round",       innerDiameter:8.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mhA-48",       label:"Type A MH, 4 ft (SD 20.0)", category:"access_hole", shape:"round",       innerDiameter:4.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mhA-60",       label:"Type A MH, 5 ft (SD 20.0)", category:"access_hole", shape:"round",       innerDiameter:5.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mhA-72",       label:"Type A MH, 6 ft (SD 20.0)", category:"access_hole", shape:"round",       innerDiameter:6.0, innerWidth:null, innerLength:null },
+    { id:"pgder-mhA-84",       label:"Type A MH, 7 ft (SD 20.0)", category:"access_hole", shape:"round",       innerDiameter:7.0, innerWidth:null, innerLength:null },
+    { id:"pgder-inlet-yardSD15", label:"Precast Yard Inlet (SD 15.0)", category:"inlet", shape:"square",       innerDiameter:null, innerWidth:4.0, innerLength:4.0 },
+    { id:"pgder-inlet-typeE",    label:"Type E Inlet (SD 16.0)",       category:"inlet", shape:"square",       innerDiameter:null, innerWidth:5.0, innerLength:5.0 },
+    { id:"pgder-inlet-typeK",    label:"Type K Inlet (SD 17.0)",       category:"inlet", shape:"square",       innerDiameter:null, innerWidth:3.0, innerLength:3.0 },
+    { id:"pgder-inlet-typeA",    label:"Type A Drop Inlet (SD 10.0)",  category:"inlet", shape:"rectangular",  innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"pgder-inlet-typeB",    label:"Type B Drop Inlet (SD 11.0)",  category:"inlet", shape:"rectangular",  innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"pgder-inlet-typeCI",   label:"Type CI Inlet (SD 13.0)",      category:"inlet", shape:"rectangular",  innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"pgder-inlet-typeD",    label:"Type D Inlet (SD 14.0)",       category:"inlet", shape:"rectangular",  innerDiameter:null, innerWidth:null, innerLength:null },
+  ],
+};
+
 // MDSHA (SHA Intensity sheet, bburg-p-c.xlsx). Intensities in/hr.
 // Clamp below Tc=5 → use 5-min value; clamp above last breakpoint → use last value.
 const MDSHA_INTENSITY = {
@@ -1430,6 +1455,32 @@ function interpKb(columnKey, angleDeg){
     }
   }
   return rows[rows.length-1][columnKey];
+}
+
+function kAhFromAngle(structureCategory, deflectionDeg) {
+  const d = isFinite(parseFloat(deflectionDeg)) ? parseFloat(deflectionDeg) : 0;
+  const theta = 180 - d;  // interior angle; 180 = straight through
+  if (structureCategory === "inlet") {
+    // HEC-22 Table 9.4: straight→0.50, 90°→1.50; linear between
+    return 0.50 + (1.50 - 0.50) * ((180 - theta) / 90);
+  }
+  // access_hole (manhole / junction box): piecewise linear, HEC-22 Table 9.4
+  const pts = [[180, 0.15], [157.5, 0.45], [135, 0.75], [120, 0.85], [90, 1.00]];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [t1, k1] = pts[i], [t2, k2] = pts[i + 1];
+    if (theta >= t2) {
+      return k1 + (k2 - k1) * ((t1 - theta) / (t1 - t2));
+    }
+  }
+  return 1.00;  // clamp for deflection > 90°
+}
+
+function resolveStructureCategory(s) {
+  if (s.structureMode === "standard" && s.agency && s.standardStructureId) {
+    const entry = (STRUCTURE_CATALOG[s.agency] || []).find(e => e.id === s.standardStructureId);
+    return entry ? entry.category : "access_hole";
+  }
+  return s.structureCategory || "access_hole";
 }
 
 function calcDrainageRow(row) {
@@ -5882,7 +5933,8 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   resolvedInletFields, resolvedInletLabel,
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs,
-  MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET };
+  MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET,
+  kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 
 })();
 
