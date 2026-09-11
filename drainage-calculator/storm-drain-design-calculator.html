@@ -544,6 +544,7 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
       <div class="topbar-right">
         <button class="btn btn-sm" id="saveCompBtn" title="Save current project to browser storage">&#8964; Save</button>
         <button class="btn btn-sm" id="printAllTablesBtn" title="Print all data tables as spreadsheet">&#128438; Tables</button>
+        <button class="btn btn-sm" id="printAllDetailBtn" title="Print all detail tables">&#128202; Detail</button>
         <div class="saves-wrap">
           <button class="btn btn-sm" id="savesMenuBtn" title="View and restore browser-saved projects">Saves (<span id="savesCount">0</span>) &#9660;</button>
           <div class="saves-popover" id="savesPopover">
@@ -5766,6 +5767,7 @@ function init(){
   updateSavesUI();
 
   document.getElementById("printAllTablesBtn").addEventListener("click", printAllTableSheets);
+  document.getElementById("printAllDetailBtn").addEventListener("click", printAllDetailSheets);
 
   document.getElementById("saveCompBtn").addEventListener("click", saveComp);
 
