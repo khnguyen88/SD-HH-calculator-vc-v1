@@ -2503,7 +2503,7 @@ function renderPipes(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Pipe runs"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, upstreamInvert:"", downstreamInvert:"", slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
     el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F5A8} Print Table"),
     el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F4CA} Detail")
   ]));
@@ -2512,7 +2512,7 @@ function renderPipes(){
   const table = el("table",{class:"data"});
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"ID"), el("th",{},"From"), el("th",{},"To"), el("th",{},"Role"), el("th",{},"Angle (\u00b0)"),
-    el("th",{},"Shape"), el("th",{},"Size (in)"), el("th",{},"n"), el("th",{},"Slope (ft/ft)"), el("th",{},"Length (ft)"),
+    el("th",{},"Shape"), el("th",{},"Size (in)"), el("th",{},"n"), el("th",{},"US Inv\n(ft)"), el("th",{},"DS Inv\n(ft)"), el("th",{},"Slope (ft/ft)"), el("th",{},"Length (ft)"),
     el("th",{class:"computed"},"Design Q"), el("th",{class:"computed"},"Area (sf)"), el("th",{class:"computed"},"Qfull (cfs)"),
     el("th",{class:"computed"},"V (fps)"), el("th",{class:"computed"},"Status"), el("th",{},""), el("th",{},"")
   ])));
@@ -2528,7 +2528,17 @@ function renderPipes(){
       el("td",{}, shapeSelect(row)),
       el("td",{}, txtInput(row,"size",80)),
       el("td",{}, numInput(row,"n",60)),
-      el("td",{}, numInput(row,"slope",75)),
+      el("td",{}, numInput(row,"upstreamInvert",70)),
+      el("td",{}, numInput(row,"downstreamInvert",70)),
+      (()=>{
+        const S = pipeEffectiveSlope(row);
+        const hasInverts = row.upstreamInvert!==""&&row.upstreamInvert!=null&&
+                           row.downstreamInvert!==""&&row.downstreamInvert!=null&&
+                           row.length!==""&&row.length!=null;
+        return hasInverts
+          ? el("td",{class:"out computed-cell"}, isFinite(S)?fmt(S,4):"—")
+          : el("td",{}, numInput(row,"slope",75));
+      })(),
       el("td",{}, numInput(row,"length",70)),
       el("td",{class:"out computed-cell"}, fmt(calc.designQ,2)),
       el("td",{class:"out computed-cell"}, calc.areaSf!=null?fmt(calc.areaSf,3):"\u2014"),
@@ -3296,7 +3306,7 @@ function renderPipeSizing25() {
     const geo   = pipeGeometry(row);
     const q25   = pipeDesignQ(row, null, "25yr");
     const n     = parseFloat(row.n);
-    const S     = parseFloat(row.slope);
+    const S     = pipeEffectiveSlope(row);
     let qfull = null, v = null, pass = null;
     if (geo && isFinite(n) && isFinite(S) && S > 0) {
       const mf = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
