@@ -472,6 +472,30 @@ body.print-mode #printArea .calc-sheet:last-child{ page-break-after:auto; }
   @page{ margin:0.5in; }
 }
 
+/* Table printout sheets */
+body.print-mode #printArea .cs-table-sheet{
+  min-height:auto;
+  padding:0.3in;
+}
+.cs-table-sheet table.data{
+  font-size:9.5px;
+  width:100%;
+  table-layout:auto;
+}
+.cs-table-sheet table.data th,
+.cs-table-sheet table.data td{
+  padding:2px 5px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:120px;
+}
+@media print{
+  .cs-table-sheet table.data{ font-size:8.5px; }
+  .cs-table-sheet table.data th,
+  .cs-table-sheet table.data td{ max-width:90px; }
+}
+
 @media (max-width:760px){
   .app{ grid-template-columns:1fr; }
   .sidebar{ flex-direction:row; overflow-x:auto; }
