@@ -2532,9 +2532,8 @@ function renderPipes(){
       el("td",{}, numInput(row,"downstreamInvert",70)),
       (()=>{
         const S = pipeEffectiveSlope(row);
-        const hasInverts = row.upstreamInvert!==""&&row.upstreamInvert!=null&&
-                           row.downstreamInvert!==""&&row.downstreamInvert!=null&&
-                           row.length!==""&&row.length!=null;
+        const _us=parseFloat(row.upstreamInvert),_ds=parseFloat(row.downstreamInvert),_len=parseFloat(row.length);
+        const hasInverts = isFinite(_us)&&isFinite(_ds)&&isFinite(_len)&&_len>0;
         return hasInverts
           ? el("td",{class:"out computed-cell"}, isFinite(S)?fmt(S,4):"—")
           : el("td",{}, numInput(row,"slope",75));
@@ -5303,12 +5302,12 @@ function buildWorkbook(){
     // Captured Q
     setFormula(wsSt, "I"+row, "=IF(C"+row+"=\"\",0,IFERROR(INDEX('Drainage Area'!H:H,MATCH(C"+row+",'Drainage Area'!A:A,0)),0))", round(calc.captured,4));
     // Q from pipes
-    setFormula(wsSt, "J"+row, "=SUMIF('Pipe Sizing'!C:C,A"+row+",'Pipe Sizing'!J:J)", round(calc.totalFlow-calc.captured,4));
+    setFormula(wsSt, "J"+row, "=SUMIF('Pipe Sizing'!C:C,A"+row+",'Pipe Sizing'!L:L)", round(calc.totalFlow-calc.captured,4));
     // Total flow
     setFormula(wsSt, "K"+row, "=I"+row+"+J"+row, round(calc.totalFlow,4));
     // Outgoing (Primary, or sole) pipe id -- via the From|Role helper key so a
     // splitter's Primary pipe is found reliably regardless of row order.
-    setFormula(wsSt, "L"+row, "=IFERROR(INDEX('Pipe Sizing'!A:A,MATCH(A"+row+"&\"|primary\",'Pipe Sizing'!P:P,0)),\"\")", calc.outPipe? calc.outPipe.id : "");
+    setFormula(wsSt, "L"+row, "=IFERROR(INDEX('Pipe Sizing'!A:A,MATCH(A"+row+"&\"|primary\",'Pipe Sizing'!R:R,0)),\"\")", calc.outPipe? calc.outPipe.id : "");
     if(calc.isBase){
       setFormula(wsSt, "M"+row, "=0", 0);
       setFormula(wsSt, "O"+row, "=0", 0);
@@ -5318,10 +5317,10 @@ function buildWorkbook(){
       setFormula(wsSt, "R"+row, "=\"\"", "");
     } else {
       // Area & equivalent diameter of the outgoing (Primary) pipe, via INDEX/MATCH
-      const areaLookup = "IFERROR(INDEX('Pipe Sizing'!K:K,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)";
+      const areaLookup = "IFERROR(INDEX('Pipe Sizing'!M:M,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)";
       const nLookup = "IFERROR(INDEX('Pipe Sizing'!G:G,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0.013)";
-      const lenLookup = "IFERROR(INDEX('Pipe Sizing'!I:I,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)";
-      const outFlowLookup = "IFERROR(INDEX('Pipe Sizing'!J:J,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)"; // this pipe's own carried Q (handles splitter Primary share)
+      const lenLookup = "IFERROR(INDEX('Pipe Sizing'!K:K,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)";
+      const outFlowLookup = "IFERROR(INDEX('Pipe Sizing'!L:L,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)"; // this pipe's own carried Q (handles splitter Primary share)
       // R (ft) for a circle of the same area = sqrt(area/pi)/2 (equals D/4 for a true circular
       // pipe, and matches our elliptical-pipe approximation since its "area" column already
       // holds the Table 4-6 circular-equivalent area).
