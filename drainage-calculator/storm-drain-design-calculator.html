@@ -3281,6 +3281,7 @@ function renderPipeSizing25() {
     el("th",{class:"computed"},"Q_full (cfs)"),
     el("th",{class:"computed"},"V (fps)"),
     el("th",{class:"computed"},"Pass?"),
+    el("th",{}, ""),
   ])));
   const tbody = el("tbody");
   state.pipes.forEach(row => {
@@ -3308,6 +3309,7 @@ function renderPipeSizing25() {
       el("td",{class:"out computed-cell"}, isFinite(v)     ? fmt(v,2)     : "—"),
       el("td",{class:"out computed-cell", style: pass===false?"color:#e05;font-weight:700;":""},
         pass===null ? "—" : pass ? "✓" : "✗ OVER"),
+      el("td",{}, detailBtn(()=>openDetailModal(buildPipeSheet(row, "25yr")))),
     ]));
   });
   table.appendChild(tbody);
@@ -3773,8 +3775,10 @@ function buildDrainageSheet(row){
     row.desc || "Rational Method (Q = Cf\u00b7C\u00b7i\u00b7A)", body);
 }
 
-function buildPipeSheet(row){
+function buildPipeSheet(row, stormOverride){
   const calc = calcPipeRow(row);
+  const designQ = stormOverride ? pipeDesignQ(row, null, stormOverride) : calc.designQ;
+  const pass = calc.Qfull != null ? (calc.Qfull >= designQ) : null;
   const from = findStructure(row.fromStructureId), to = findStructure(row.toStructureId);
   const geo = pipeGeometry(row);
   const body = [];
@@ -3792,7 +3796,7 @@ function buildPipeSheet(row){
     : "Design Q is the From structure's Total Flow (see that structure's detail sheet for how it is built up).";
   body.push(csSection("Design discharge", el("div",{},[
     el("div",{class:"cs-note"}, designNote),
-    csResult("Design Q", fmt(calc.designQ,2)+" cfs"),
+    csResult("Design Q"+(stormOverride?" ("+stormOverride+")":""), fmt(designQ,2)+" cfs"),
   ])));
   const geoRows = [
     ["Shape", row.shape==="circular"?"Circular":"Elliptical"],
@@ -3815,13 +3819,13 @@ function buildPipeSheet(row){
       csResult("V (full flow)", fmt(calc.V,2)+" fps"),
       csFormula(["Qfull = V \u00d7 A = "+fmt(calc.V,2)+" \u00d7 "+fmt(geo.areaSf,3)]),
       csResult("Qfull", fmt(calc.Qfull,2)+" cfs"),
-      el("div",{class:"cs-note", style:"margin-top:8px;"}, "Adequate if Qfull \u2265 Design Q: "+fmt(calc.Qfull,2)+" "+(calc.pass?"\u2265":"<")+" "+fmt(calc.designQ,2)),
-      csResult("Status", calc.pass? "PASS":"FAIL"),
+      el("div",{class:"cs-note", style:"margin-top:8px;"}, "Adequate if Qfull \u2265 Design Q: "+fmt(calc.Qfull,2)+" "+(pass?"\u2265":"<")+" "+fmt(designQ,2)),
+      csResult("Status", pass? "PASS":"FAIL"),
     ])));
   } else {
     body.push(csWarn("Pipe size/shape is incomplete \u2014 capacity not computed."));
   }
-  return sheetWrapper("pipe", "Pipe \u2014 "+(from?(from.structureId||from.id):"?")+" \u2192 "+(to?(to.structureId||to.id):"?"), "Manning's Equation", body);
+  return sheetWrapper("pipe", "Pipe \u2014 "+(from?(from.structureId||from.id):"?")+" \u2192 "+(to?(to.structureId||to.id):"?")+(stormOverride?" ("+stormOverride+")":""), "Manning's Equation", body);
 }
 
 function buildStructureSheet(structureId){
