@@ -230,8 +230,27 @@ test("chain: orphan bypassTo flagged", () => {
 test("availableStorms: moco returns 3 storms", () => {
   assert.deepEqual([...sdc.availableStorms("moco")], ["2yr","5yr","10yr"]);
 });
-test("availableStorms: noaa returns 3 storms", () => {
-  assert.deepEqual([...sdc.availableStorms("noaa")], ["2yr","10yr","25yr"]);
+test("availableStorms: noaa returns 8 storms", () => {
+  assert.deepEqual([...sdc.availableStorms("noaa")], ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"]);
+});
+test("NOAA_ATLAS14: every county has 8 storms with 5 durations", () => {
+  const storms = ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"];
+  for (const cty of sdc.NOAA_COUNTY_LIST) {
+    const entry = sdc.NOAA_ATLAS14[cty];
+    assert.ok(entry, "missing county: " + cty);
+    for (const s of storms) {
+      assert.ok(entry[s], cty + " missing " + s);
+      for (const d of [5,10,15,30,60]) {
+        assert.ok(isFinite(entry[s][d]) && entry[s][d] > 0, cty + " " + s + " " + d + "min invalid");
+      }
+    }
+  }
+});
+test("NOAA_ATLAS14: PG 25yr 5-min intensity matches PDF (7.56)", () => {
+  assert.equal(sdc.NOAA_ATLAS14["Prince George's"]["25yr"][5], 7.56);
+});
+test("NOAA_ATLAS14: MoCo 100yr 60-min intensity matches PDF (3.12)", () => {
+  assert.equal(sdc.NOAA_ATLAS14["Montgomery"]["100yr"][60], 3.12);
 });
 test("availableStorms: mdsha returns 3 storms", () => {
   assert.deepEqual([...sdc.availableStorms("mdsha")], ["2yr","10yr","25yr"]);
