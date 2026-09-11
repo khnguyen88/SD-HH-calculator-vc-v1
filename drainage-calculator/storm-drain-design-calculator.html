@@ -3889,6 +3889,7 @@ function buildHglRowSheet(structureId, stormOverride){
   const st = findStructure(structureId);
   if(!st) return sheetWrapper("hgl","Structure not found","",[]);
   const calc = computeStructureCalc(structureId, null, stormOverride||null);
+  if(!calc) return sheetWrapper("hgl","Calculation error","",[]);
   const body = [];
   body.push(csSection("Total Flow at this structure", el("div",{},[
     csResult("Total Flow"+(stormOverride?" ("+stormOverride+")":""), fmt(calc.totalFlow,2)+" cfs"),
