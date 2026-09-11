@@ -5058,16 +5058,18 @@ function buildInletSpacingSheet(row, comp, settings){
     "HEC-22 grate inlet \u2014 "+srcLabel+", "+settings.storm+", S="+(isSump?"SUMP":f(S,4)), body);
 }
 
-function printNodes(nodes, landscape){
+// printSize: falsy = letter portrait, "letter" = letter landscape, "tabloid" = 11×17 landscape
+function printNodes(nodes, printSize){
   const pa = document.getElementById("printArea");
   pa.innerHTML = "";
   nodes.forEach(n=>pa.appendChild(n));
-  if(landscape){
+  if(printSize){
     const existing = document.getElementById("sdcLandscape");
     if(existing) existing.remove();
     const s = document.createElement("style");
     s.id = "sdcLandscape";
-    s.textContent = "@media print { @page { size: 11in 17in landscape; } }";
+    if(printSize==="tabloid") s.textContent = "@media print { @page { size: 11in 17in landscape; } }";
+    else s.textContent = "@media print { @page { size: letter landscape; } }";
     document.head.appendChild(s);
   }
   document.body.classList.add("print-mode");
@@ -5515,12 +5517,12 @@ function printTableSheet(viewId, title){
   if(viewId==="view-outlet"){
     const nodes = buildOutletTablePrintSheet();
     if(nodes.length===0){ toast("No outlet data to print yet.", true); return; }
-    printNodes(nodes, true);
+    printNodes(nodes, "letter");
     return;
   }
   const sheet = buildTablePrintSheet(viewId, title);
   if(!sheet){ toast("No rows to print yet.", true); return; }
-  printNodes([sheet], true);
+  printNodes([sheet], "letter");
 }
 
 function printAllTableSheets(){
@@ -5544,14 +5546,14 @@ function printAllTableSheets(){
     if(sheet) nodes.push(sheet);
   });
   if(nodes.length===0){ toast("Nothing to print yet — add some rows first.", true); return; }
-  printNodes(nodes, true);
+  printNodes(nodes, "letter");
 }
 
 function printDetailTableSheet(viewId, title){
   if(viewId==="view-outlet"){
     const nodes = buildOutletTablePrintSheet();
     if(!nodes.length){ toast("No outlet data to print yet.", true); return; }
-    printNodes(nodes, true); return;
+    printNodes(nodes, "tabloid"); return;
   }
   let sheet = null;
   if     (viewId==="view-drainage")       sheet = buildDrainageDetailSheet();
@@ -5562,7 +5564,7 @@ function printDetailTableSheet(viewId, title){
   else if(viewId==="view-pipe-sizing-25") sheet = buildPipesDetailSheet("25yr");
   else if(viewId==="view-hgl-25")         sheet = buildHglDetailSheet("25yr");
   if(!sheet){ toast("No rows to print yet.", true); return; }
-  printNodes([sheet], true);
+  printNodes([sheet], "tabloid");
 }
 
 function printAllDetailSheets(){
@@ -5576,7 +5578,7 @@ function printAllDetailSheets(){
   const pipes25 = buildPipesDetailSheet("25yr"); if(pipes25) nodes.push(pipes25);
   const hgl25   = buildHglDetailSheet("25yr");   if(hgl25)   nodes.push(hgl25);
   if(!nodes.length){ toast("Nothing to print yet — add some rows first.", true); return; }
-  printNodes(nodes, true);
+  printNodes(nodes, "tabloid");
 }
 
 window.addEventListener("afterprint", ()=>{
