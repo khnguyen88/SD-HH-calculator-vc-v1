@@ -4644,21 +4644,24 @@ function printTableSheet(viewId, title){
 
 function printAllTableSheets(){
   const nodes = [];
-  const tabs = [
-    ["view-drainage",        "Drainage Area"],
-    ["view-structures",      "Junction Structures"],
-    ["view-pipes",           "Pipe Sizing & Capacity"],
-    ["view-inlet-spacing",   "Inlet Spacing"],
-    ["view-hgl",             "HGL — Primary Design Storm"],
-    ["view-pipe-sizing-25",  "Pipe Sizing & Capacity — 25-yr"],
-    ["view-hgl-25",          "HGL — 25-yr"],
-  ];
-  tabs.forEach(([vid, title])=>{
+  [
+    ["view-drainage",       "Drainage Area"],
+    ["view-structures",     "Junction Structures"],
+    ["view-pipes",          "Pipe Sizing & Capacity"],
+  ].forEach(([vid, title])=>{
     const sheet = buildTablePrintSheet(vid, title);
     if(sheet) nodes.push(sheet);
   });
-  // Outlet: one sheet per outlet structure
   buildOutletTablePrintSheet().forEach(n=>nodes.push(n));
+  [
+    ["view-inlet-spacing",  "Inlet Spacing"],
+    ["view-hgl",            "HGL — Primary Design Storm"],
+    ["view-pipe-sizing-25", "Pipe Sizing & Capacity — 25-yr"],
+    ["view-hgl-25",         "HGL — 25-yr"],
+  ].forEach(([vid, title])=>{
+    const sheet = buildTablePrintSheet(vid, title);
+    if(sheet) nodes.push(sheet);
+  });
   if(nodes.length===0){ toast("Nothing to print yet — add some rows first.", true); return; }
   printNodes(nodes, true);
 }
