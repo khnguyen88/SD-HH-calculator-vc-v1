@@ -472,6 +472,30 @@ body.print-mode #printArea .calc-sheet:last-child{ page-break-after:auto; }
   @page{ margin:0.5in; }
 }
 
+/* Table printout sheets */
+body.print-mode #printArea .cs-table-sheet{
+  min-height:auto;
+  padding:0.3in;
+}
+.cs-table-sheet table.data{
+  font-size:9.5px;
+  width:100%;
+  table-layout:auto;
+}
+.cs-table-sheet table.data th,
+.cs-table-sheet table.data td{
+  padding:2px 5px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:120px;
+}
+@media print{
+  .cs-table-sheet table.data{ font-size:8.5px; }
+  .cs-table-sheet table.data th,
+  .cs-table-sheet table.data td{ max-width:90px; }
+}
+
 @media (max-width:760px){
   .app{ grid-template-columns:1fr; }
   .sidebar{ flex-direction:row; overflow-x:auto; }
@@ -519,6 +543,7 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
       </div>
       <div class="topbar-right">
         <button class="btn btn-sm" id="saveCompBtn" title="Save current project to browser storage">&#8964; Save</button>
+        <button class="btn btn-sm" id="printAllTablesBtn" title="Print all data tables as spreadsheet">&#128438; Tables</button>
         <div class="saves-wrap">
           <button class="btn btn-sm" id="savesMenuBtn" title="View and restore browser-saved projects">Saves (<span id="savesCount">0</span>) &#9660;</button>
           <div class="saves-popover" id="savesPopover">
@@ -2226,7 +2251,8 @@ function renderDrainage(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Drainage areas"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.drainage.push({id:nextId(), structureId:"", desc:"", area:"", C:"", iOverride:"", tc:"", cf:1.0, tcMethod:"direct", tr55:{segments:[]}}); renderDrainage(); }}, "+ Add row")
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.drainage.push({id:nextId(), structureId:"", desc:"", area:"", C:"", iOverride:"", tc:"", cf:1.0, tcMethod:"direct", tr55:{segments:[]}}); renderDrainage(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-drainage","Drainage Area")}, "\u{1F5A8} Print Table")
   ]));
 
   const tableWrap = el("div",{class:"table-wrap"});
@@ -2330,7 +2356,8 @@ function renderStructures(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Structures"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.structures.push({id:nextId(), structureId:"", desc:"", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", crown:"", rim:"", splitMethod:"capacity", splitCapacity:"", splitRatio:0.5}); renderAll(); }}, "+ Add row")
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.structures.push({id:nextId(), structureId:"", desc:"", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", crown:"", rim:"", splitMethod:"capacity", splitCapacity:"", splitRatio:0.5}); renderAll(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-structures","Junction Structures")}, "\u{1F5A8} Print Table")
   ]));
 
   const tableWrap = el("div",{class:"table-wrap"});
@@ -2440,7 +2467,8 @@ function renderPipes(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Pipe runs"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row")
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F5A8} Print Table")
   ]));
 
   const tableWrap = el("div",{class:"table-wrap"});
@@ -2592,7 +2620,8 @@ function renderOutlet(){
   const devSection = el("div",{class:"section"});
   devSection.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Devices"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.outletDevices.push(Object.assign({id:nextId(), outletStructureId:os.id, label:"", type:"orifice", invert:"", crest:"", diameter:"", length:"", weirShape:"rect", notchAngle:90, cd:0.6, coef:3.1, notes:""}, defaultDeviceFields())); renderOutlet(); }}, "+ Add device")
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.outletDevices.push(Object.assign({id:nextId(), outletStructureId:os.id, label:"", type:"orifice", invert:"", crest:"", diameter:"", length:"", weirShape:"rect", notchAngle:90, cd:0.6, coef:3.1, notes:""}, defaultDeviceFields())); renderOutlet(); }}, "+ Add device"),
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-outlet","Outlet")}, "\u{1F5A8} Print Table")
   ]));
   const devWrap = el("div",{class:"table-wrap"});
   const devTable = el("table",{class:"data"});
@@ -3209,7 +3238,10 @@ function renderPipeSizing25() {
     "Design Q uses Q₂₅ from each linked drainage area."));
 
   const section = el("div", {class:"section"});
-  section.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Pipe capacity check — 25-yr storm")]));
+  section.appendChild(el("div", {class:"section-head"}, [
+    el("h2", {}, "Pipe capacity check — 25-yr storm"),
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipe-sizing-25","Pipe Sizing & Capacity — 25-yr")}, "\u{1F5A8} Print Table")
+  ]));
   const tableWrap = el("div", {class:"table-wrap"});
   const table = el("table", {class:"data"});
   table.appendChild(el("thead", {}, el("tr", {}, [
@@ -3268,7 +3300,10 @@ function renderHgl() {
     "This tab is read-only — all values are computed."));
 
   const section = el("div", {class:"section"});
-  section.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Upstream HGL — Primary Design Storm")]));
+  section.appendChild(el("div", {class:"section-head"}, [
+    el("h2", {}, "Upstream HGL — Primary Design Storm"),
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-hgl","HGL — Primary Design Storm")}, "\u{1F5A8} Print Table")
+  ]));
   const tableWrap = el("div", {class:"table-wrap"});
   const table = el("table", {class:"data"});
   table.appendChild(el("thead", {}, el("tr", {}, [
@@ -3329,7 +3364,10 @@ function renderHgl25(){
     "Junction Structures tab. HGL is propagated with Q₂₅ flows."));
 
   const section = el("div", {class:"section"});
-  section.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "HGL check — 25-yr storm")]));
+  section.appendChild(el("div", {class:"section-head"}, [
+    el("h2", {}, "HGL check — 25-yr storm"),
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-hgl-25","HGL — 25-yr")}, "\u{1F5A8} Print Table")
+  ]));
   const tableWrap = el("div", {class:"table-wrap"});
   const table = el("table", {class:"data"});
   table.appendChild(el("thead", {}, el("tr", {}, [
@@ -3422,7 +3460,8 @@ function renderInletSpacing(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Inlets"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.inletSpacing.push(defaultInletSpacingRow()); withFocusPreserved(renderAll); }}, "+ Add Inlet")
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.inletSpacing.push(defaultInletSpacingRow()); withFocusPreserved(renderAll); }}, "+ Add Inlet"),
+    el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-inlet-spacing","Inlet Spacing")}, "\u{1F5A8} Print Table")
   ]));
 
   // Build inletCtx for detail sheets (has all rainfall fields for display)
@@ -4466,10 +4505,18 @@ function buildInletSpacingSheet(row, comp, settings){
     "HEC-22 grate inlet \u2014 "+srcLabel+", "+settings.storm+", S="+(isSump?"SUMP":f(S,4)), body);
 }
 
-function printNodes(nodes){
+function printNodes(nodes, landscape){
   const pa = document.getElementById("printArea");
   pa.innerHTML = "";
   nodes.forEach(n=>pa.appendChild(n));
+  if(landscape){
+    const existing = document.getElementById("sdcLandscape");
+    if(existing) existing.remove();
+    const s = document.createElement("style");
+    s.id = "sdcLandscape";
+    s.textContent = "@media print { @page { size: landscape; } }";
+    document.head.appendChild(s);
+  }
   document.body.classList.add("print-mode");
   window.print();
 }
@@ -4501,9 +4548,129 @@ function printAllSheets(){
   printNodes(nodes);
 }
 
+function buildTablePrintSheet(viewId, title){
+  const view = document.getElementById(viewId);
+  if(!view) return null;
+  const table = view.querySelector("table.data");
+  if(!table) return null;
+  const tbody = table.querySelector("tbody");
+  if(!tbody || tbody.rows.length === 0) return null;
+
+  const clone = table.cloneNode(true);
+  // Replace inputs/selects/textareas with their current value as text
+  clone.querySelectorAll("input:not([type=checkbox]), textarea").forEach(inp=>{
+    inp.replaceWith(document.createTextNode(inp.value));
+  });
+  clone.querySelectorAll("select").forEach(sel=>{
+    const txt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : "";
+    sel.replaceWith(document.createTextNode(txt));
+  });
+  // Remove buttons and checkboxes entirely
+  clone.querySelectorAll("button, input[type=checkbox]").forEach(b=>b.remove());
+
+  const now = new Date();
+  const pad = n=>String(n).padStart(2,"0");
+  const dateStr = now.getFullYear()+"-"+pad(now.getMonth()+1)+"-"+pad(now.getDate());
+
+  const sheet = el("div",{class:"calc-sheet cs-table-sheet"});
+  sheet.appendChild(el("div",{class:"cs-header"},[
+    el("div",{class:"cs-title"}, title),
+    el("div",{class:"cs-sub"}, (state.project||"Untitled")+" — "+dateStr),
+  ]));
+  const wrap = el("div",{class:"table-wrap"});
+  wrap.appendChild(clone);
+  sheet.appendChild(wrap);
+  sheet.appendChild(el("div",{class:"cs-footer"}, "Storm Drain Design Calculator — "+(state.project||"")));
+  return sheet;
+}
+
+function buildOutletTablePrintSheet(){
+  if(state.outletStructures.length===0) return [];
+  const nodes = [];
+  const now = new Date();
+  const pad = n=>String(n).padStart(2,"0");
+  const dateStr = now.getFullYear()+"-"+pad(now.getMonth()+1)+"-"+pad(now.getDate());
+
+  state.outletStructures.forEach(os=>{
+    const devices = devicesForOutlet(os.id);
+    const { rows } = computeRatingCurve(os.id);
+    if(!rows || rows.length===0) return;
+
+    const table = el("table",{class:"data"});
+    // Build header
+    const headCells = [el("th",{},"Stage (ft)"), el("th",{},"TW (ft)")];
+    devices.forEach(d=>headCells.push(el("th",{class:"computed"}, (d.label||d.id)+" Q (cfs)")));
+    headCells.push(el("th",{class:"computed"},"Total Q (cfs)"));
+    table.appendChild(el("thead",{},el("tr",{},headCells)));
+
+    // Build body
+    const tbody = el("tbody");
+    rows.forEach(r=>{
+      const cells = [
+        el("td",{class:"out",style:"font-weight:700"}, fmt(r.stage,2)),
+        el("td",{class:"out"}, r.tw!=null? fmt(r.tw,2) : "—"),
+      ];
+      r.devices.forEach(dr=>cells.push(el("td",{class:"out computed-cell"}, fmt(dr.Q,2))));
+      cells.push(el("td",{class:"out computed-cell",style:"font-weight:700"}, fmt(r.total,2)));
+      tbody.appendChild(el("tr",{},cells));
+    });
+    table.appendChild(tbody);
+
+    const sheet = el("div",{class:"calc-sheet cs-table-sheet"});
+    sheet.appendChild(el("div",{class:"cs-header"},[
+      el("div",{class:"cs-title"}, "Outlet — "+(os.label||os.id)),
+      el("div",{class:"cs-sub"}, (state.project||"Untitled")+" — "+dateStr),
+    ]));
+    const wrap = el("div",{class:"table-wrap"});
+    wrap.appendChild(table);
+    sheet.appendChild(wrap);
+    sheet.appendChild(el("div",{class:"cs-footer"}, "Storm Drain Design Calculator — "+(state.project||"")));
+    nodes.push(sheet);
+  });
+  return nodes;
+}
+
+function printTableSheet(viewId, title){
+  if(viewId==="view-outlet"){
+    const nodes = buildOutletTablePrintSheet();
+    if(nodes.length===0){ toast("No outlet data to print yet.", true); return; }
+    printNodes(nodes, true);
+    return;
+  }
+  const sheet = buildTablePrintSheet(viewId, title);
+  if(!sheet){ toast("No rows to print yet.", true); return; }
+  printNodes([sheet], true);
+}
+
+function printAllTableSheets(){
+  const nodes = [];
+  [
+    ["view-drainage",       "Drainage Area"],
+    ["view-structures",     "Junction Structures"],
+    ["view-pipes",          "Pipe Sizing & Capacity"],
+  ].forEach(([vid, title])=>{
+    const sheet = buildTablePrintSheet(vid, title);
+    if(sheet) nodes.push(sheet);
+  });
+  buildOutletTablePrintSheet().forEach(n=>nodes.push(n));
+  [
+    ["view-inlet-spacing",  "Inlet Spacing"],
+    ["view-hgl",            "HGL — Primary Design Storm"],
+    ["view-pipe-sizing-25", "Pipe Sizing & Capacity — 25-yr"],
+    ["view-hgl-25",         "HGL — 25-yr"],
+  ].forEach(([vid, title])=>{
+    const sheet = buildTablePrintSheet(vid, title);
+    if(sheet) nodes.push(sheet);
+  });
+  if(nodes.length===0){ toast("Nothing to print yet — add some rows first.", true); return; }
+  printNodes(nodes, true);
+}
+
 window.addEventListener("afterprint", ()=>{
   document.body.classList.remove("print-mode");
   document.getElementById("printArea").innerHTML = "";
+  const ls = document.getElementById("sdcLandscape");
+  if(ls) ls.remove();
 });
 
 /* =======================================================================
@@ -5204,6 +5371,8 @@ function init(){
   document.getElementById("projectName").addEventListener("input", (e)=>{ state.project = e.target.value; });
 
   updateSavesUI();
+
+  document.getElementById("printAllTablesBtn").addEventListener("click", printAllTableSheets);
 
   document.getElementById("saveCompBtn").addEventListener("click", saveComp);
 
