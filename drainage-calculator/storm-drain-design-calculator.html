@@ -4884,6 +4884,105 @@ function buildInletDetailSheet(){
   return makeDetailSheet("Inlet Spacing — Detail", heads, rows);
 }
 
+function buildHglDetailSheet(stormOverride){
+  if(!state.pipes.length) return null;
+  const th = (t,c)=>el("th",c?{class:c}:{},t);
+  const tdN = (v,d=2)=>el("td",{class:"out computed-cell"},fmt(v,d));
+  const heads = [
+    th("From"), th("To"),
+    th("Q design\n(cfs)","computed"), th("Q full\n(cfs)","computed"),
+    th("Size\n(in)"), th("Type"), th("n"),
+    th("A\n(sf)","computed"), th("R\n(ft)","computed"),
+    th("So\n(ft/ft)"),
+    th("Sf design\n(ft/ft)","computed"), th("Sf full\n(ft/ft)","computed"),
+    th("V design\n(fps)","computed"), th("V full\n(fps)","computed"),
+    th("L\n(ft)"),
+    th("Hf design\n(ft)","computed"), th("Hf full\n(ft)","computed"),
+    th("Angle\n(°)"), th("Kb","computed"), th("Hb\n(ft)","computed"),
+    th("D/S HGL\n(ft)","computed"), th("U/S HGL\n(ft)","computed"),
+    th("Crown\n(ft)"), th("Crown Chk","computed"),
+    th("Rim\n(ft)"),   th("Rim Chk","computed"),
+  ];
+  const rows = state.pipes.map(pipe=>{
+    const fromSt = findStructure(pipe.fromStructureId);
+    const toSt   = findStructure(pipe.toStructureId);
+    const calcFrom = computeStructureCalc(pipe.fromStructureId, null, stormOverride);
+    const calcTo   = computeStructureCalc(pipe.toStructureId,   null, stormOverride);
+    const geo = pipeGeometry(pipe);
+    const designQ = pipeDesignQ(pipe, null, stormOverride);
+    const fromId = fromSt?(fromSt.structureId||fromSt.id):(pipe.fromStructureId||"—");
+    const toId   = toSt  ?(toSt.structureId  ||toSt.id)  :(pipe.toStructureId  ||"—");
+    const S = parseFloat(pipe.slope), n = parseFloat(pipe.n), L = parseFloat(pipe.length);
+    const angle = parseFloat(pipe.angle)||0;
+    const dsHGL = calcTo   ? calcTo.elevation   : null;
+    const usHGL = calcFrom ? calcFrom.elevation  : null;
+    const crown = parseFloat(fromSt ? fromSt.crown : "");
+    const rim   = parseFloat(fromSt ? fromSt.rim   : "");
+    const crownPass = (isFinite(usHGL)&&isFinite(crown)) ? usHGL<=crown+1.0 : null;
+    const rimPass   = (isFinite(usHGL)&&isFinite(rim))   ? usHGL<=rim-1.0   : null;
+    const crownStyle = crownPass===false ? "color:#e05;font-weight:700;" : "";
+    const rimStyle   = rimPass  ===false ? "color:#e05;font-weight:700;" : "";
+
+    if(!geo||!isFinite(n)||!isFinite(S)||S<=0){
+      return [
+        el("td",{},fromId), el("td",{},toId),
+        tdN(designQ,2), el("td",{},"—"),
+        el("td",{},pipe.size||"—"),
+        el("td",{},pipe.shape==="circular"?"Circular":"Elliptical"),
+        el("td",{},isFinite(n)?fmt(n,3):"—"),
+        el("td",{},"—"), el("td",{},"—"),
+        el("td",{},isFinite(S)?fmt(S,4):"—"),
+        el("td",{},"—"), el("td",{},"—"), el("td",{},"—"), el("td",{},"—"),
+        el("td",{},isFinite(L)?fmt(L,0):"—"),
+        el("td",{},"—"), el("td",{},"—"),
+        el("td",{},fmt(angle,0)),
+        el("td",{},"—"), el("td",{},"—"),
+        tdN(dsHGL,2), tdN(usHGL,2),
+        el("td",{},isFinite(crown)?fmt(crown,2):"—"),
+        el("td",{class:"out computed-cell",style:crownStyle},crownPass===null?"—":crownPass?"✓":"✗"),
+        el("td",{},isFinite(rim)?fmt(rim,2):"—"),
+        el("td",{class:"out computed-cell",style:rimStyle},rimPass===null?"—":rimPass?"✓":"✗ FLOOD"),
+      ];
+    }
+
+    const {R, V:Vfull, Qfull} = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
+    const Vdesign = geo.areaSf>0 ? designQ/geo.areaSf : 0;
+    const SfD = frictionSlope(designQ, n, geo.areaSf, R);
+    const SfF = frictionSlope(Qfull,   n, geo.areaSf, R);
+    const HfD = SfD*(isFinite(L)?L:0), HfF = SfF*(isFinite(L)?L:0);
+    const kb = calcFrom ? calcFrom.kb  : null;
+    const Hb = calcFrom ? calcFrom.Hb  : 0;
+
+    return [
+      el("td",{},fromId), el("td",{},toId),
+      tdN(designQ,2), tdN(Qfull,2),
+      el("td",{},pipe.size||"—"),
+      el("td",{},pipe.shape==="circular"?"Circular":"Elliptical"),
+      el("td",{},fmt(n,3)),
+      tdN(geo.areaSf,3), tdN(R,3),
+      el("td",{},isFinite(S)?fmt(S,4):"—"),
+      el("td",{class:"out computed-cell"},fmt(SfD,5)),
+      el("td",{class:"out computed-cell"},fmt(SfF,5)),
+      tdN(Vdesign,2), tdN(Vfull,2),
+      el("td",{},isFinite(L)?fmt(L,0):"—"),
+      el("td",{class:"out computed-cell"},fmt(HfD,3)),
+      el("td",{class:"out computed-cell"},fmt(HfF,3)),
+      el("td",{},fmt(angle,0)),
+      el("td",{class:"out computed-cell"},kb!=null?fmt(kb,2):"—"),
+      tdN(Hb,3),
+      tdN(dsHGL,2), tdN(usHGL,2),
+      el("td",{},isFinite(crown)?fmt(crown,2):"—"),
+      el("td",{class:"out computed-cell",style:crownStyle},crownPass===null?"—":crownPass?"✓":"✗"),
+      el("td",{},isFinite(rim)?fmt(rim,2):"—"),
+      el("td",{class:"out computed-cell",style:rimStyle},rimPass===null?"—":rimPass?"✓":"✗ FLOOD"),
+    ];
+  });
+  const title = stormOverride==="25yr"
+    ? "HGL — 25-yr Detail"
+    : "HGL — Primary Design Storm Detail";
+  return makeDetailSheet(title, heads, rows);
+}
+
 function printTableSheet(viewId, title){
   if(viewId==="view-outlet"){
     const nodes = buildOutletTablePrintSheet();
