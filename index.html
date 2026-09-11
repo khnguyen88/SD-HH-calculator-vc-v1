@@ -1657,11 +1657,19 @@ function pipeDesignQ(pipeRow, seen, stormOverride){
   return totalFlow;
 }
 
+function pipeEffectiveSlope(pipe){
+  const US = parseFloat(pipe.upstreamInvert);
+  const DS = parseFloat(pipe.downstreamInvert);
+  const L  = parseFloat(pipe.length);
+  if(isFinite(US) && isFinite(DS) && isFinite(L) && L > 0) return (US - DS) / L;
+  return parseFloat(pipe.slope);
+}
+
 function calcPipeRow(row){
   const geo = pipeGeometry(row);
   const designQ = pipeDesignQ(row);
   if(!geo) return { areaSf:null, equivDiamIn:null, Qfull:null, V:null, pass:null, designQ };
-  const n = parseFloat(row.n), S = parseFloat(row.slope);
+  const n = parseFloat(row.n), S = pipeEffectiveSlope(row);
   const {V, Qfull} = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
   return {
     areaSf: geo.areaSf, equivDiamIn: geo.equivDiamIn,
@@ -2495,7 +2503,7 @@ function renderPipes(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Pipe runs"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, upstreamInvert:"", downstreamInvert:"", slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
     el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F5A8} Print Table"),
     el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F4CA} Detail")
   ]));
@@ -2504,7 +2512,7 @@ function renderPipes(){
   const table = el("table",{class:"data"});
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"ID"), el("th",{},"From"), el("th",{},"To"), el("th",{},"Role"), el("th",{},"Angle (\u00b0)"),
-    el("th",{},"Shape"), el("th",{},"Size (in)"), el("th",{},"n"), el("th",{},"Slope (ft/ft)"), el("th",{},"Length (ft)"),
+    el("th",{},"Shape"), el("th",{},"Size (in)"), el("th",{},"n"), el("th",{},"US Inv\n(ft)"), el("th",{},"DS Inv\n(ft)"), el("th",{},"Slope (ft/ft)"), el("th",{},"Length (ft)"),
     el("th",{class:"computed"},"Design Q"), el("th",{class:"computed"},"Area (sf)"), el("th",{class:"computed"},"Qfull (cfs)"),
     el("th",{class:"computed"},"V (fps)"), el("th",{class:"computed"},"Status"), el("th",{},""), el("th",{},"")
   ])));
@@ -2520,7 +2528,16 @@ function renderPipes(){
       el("td",{}, shapeSelect(row)),
       el("td",{}, txtInput(row,"size",80)),
       el("td",{}, numInput(row,"n",60)),
-      el("td",{}, numInput(row,"slope",75)),
+      el("td",{}, numInput(row,"upstreamInvert",70)),
+      el("td",{}, numInput(row,"downstreamInvert",70)),
+      (()=>{
+        const S = pipeEffectiveSlope(row);
+        const _us=parseFloat(row.upstreamInvert),_ds=parseFloat(row.downstreamInvert),_len=parseFloat(row.length);
+        const hasInverts = isFinite(_us)&&isFinite(_ds)&&isFinite(_len)&&_len>0;
+        return hasInverts
+          ? el("td",{class:"out computed-cell"}, isFinite(S)?fmt(S,4):"—")
+          : el("td",{}, numInput(row,"slope",75));
+      })(),
       el("td",{}, numInput(row,"length",70)),
       el("td",{class:"out computed-cell"}, fmt(calc.designQ,2)),
       el("td",{class:"out computed-cell"}, calc.areaSf!=null?fmt(calc.areaSf,3):"\u2014"),
@@ -3288,7 +3305,7 @@ function renderPipeSizing25() {
     const geo   = pipeGeometry(row);
     const q25   = pipeDesignQ(row, null, "25yr");
     const n     = parseFloat(row.n);
-    const S     = parseFloat(row.slope);
+    const S     = pipeEffectiveSlope(row);
     let qfull = null, v = null, pass = null;
     if (geo && isFinite(n) && isFinite(S) && S > 0) {
       const mf = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
@@ -3348,6 +3365,8 @@ function renderHgl() {
     el("th",{class:"computed"},"Kb"),
     el("th",{class:"computed"},"Hb\n(ft)"),
     el("th",{class:"computed"},"Upstream HGL\n(ft)"),
+    el("th",{},"US Inv\n(ft)"),
+    el("th",{},"DS Inv\n(ft)"),
     el("th",{},"Crown\n(ft)"),
     el("th",{class:"computed"},"Crown\nCheck"),
     el("th",{},"Rim\n(ft)"),
@@ -3370,6 +3389,8 @@ function renderHgl() {
       el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hb)        ? fmt(calc.Hb,3)        : "—"),
       el("td",{class:"out computed-cell", style:"font-weight:700"},
         calc && isFinite(calc.elevation) ? fmt(calc.elevation,2) : "—"),
+      el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.upstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
+      el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.downstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
       el("td",{}, isFinite(crown) ? fmt(crown,2) : "—"),
       el("td",{class:"out computed-cell", style:crownStyle},
         !calc ? "—" : calc.crownPass === null ? "—" : calc.crownPass ? "✓" : "✗ > crown+1"),
@@ -3411,6 +3432,8 @@ function renderHgl25(){
     el("th",{},"Structure ID"), el("th",{},"Type"), el("th",{},"Crown (ft)"), el("th",{},"Rim (ft)"),
     el("th",{class:"computed"},"Total Flow Q₂₅\n(cfs)"),
     el("th",{class:"computed"},"Upstream HGL\n(ft)"),
+    el("th",{},"US Inv\n(ft)"),
+    el("th",{},"DS Inv\n(ft)"),
     el("th",{class:"computed"},"Crown\nCheck"),
     el("th",{class:"computed"},"Rim\nCheck"),
     el("th",{},""),
@@ -3433,6 +3456,8 @@ function renderHgl25(){
       el("td",{}, isFinite(rim)   ? fmt(rim,2)   : "—"),
       el("td",{class:"out computed-cell"}, isFinite(tf.Q) ? fmt(tf.Q,2) : "—"),
       el("td",{class:"out computed-cell"}, isFinite(hgl)  ? fmt(hgl,2)  : "—"),
+      el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.upstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
+      el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.downstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
       el("td",{class:"out computed-cell", style:crownStyle},
         crownCheck === null ? "—" : crownCheck ? "✓" : "✗ > crown+1"),
       el("td",{class:"out computed-cell", style:rimStyle},
@@ -3807,7 +3832,14 @@ function buildPipeSheet(row, stormOverride){
   }
   geoRows.push(["Cross-sectional area, A", geo?fmt(geo.areaSf,3)+" sf":"\u2014"]);
   geoRows.push(["Manning's n", fmt(parseFloat(row.n),3)]);
-  geoRows.push(["Slope, S", fmt(parseFloat(row.slope),4)+" ft/ft"]);
+  const So = pipeEffectiveSlope(row);
+  const _usInv = parseFloat(row.upstreamInvert);
+  const _dsInv = parseFloat(row.downstreamInvert);
+  const _L     = parseFloat(row.length);
+  const hasInverts = isFinite(_usInv) && isFinite(_dsInv) && isFinite(_L) && _L > 0;
+  geoRows.push(["Slope, So"+(hasInverts?" (from inverts)":""), fmt(So,4)+" ft/ft"]);
+  if(hasInverts) geoRows.push(["  US invert", fmt(_usInv,2)+" ft"]);
+  if(hasInverts) geoRows.push(["  DS invert", fmt(_dsInv,2)+" ft"]);
   geoRows.push(["Length, L", fmt(parseFloat(row.length),0)+" ft"]);
   body.push(csSection("Geometry", csTable(geoRows)));
 
@@ -3815,7 +3847,7 @@ function buildPipeSheet(row, stormOverride){
     const R = (geo.equivDiamIn/12)/4;
     body.push(csSection("Manning's Equation \u2014 full-flow capacity", el("div",{},[
       csFormula(["V = (1.486/n) \u00d7 R^(2/3) \u00d7 S^(1/2)", "R = D/4 = "+fmt(R,3)+" ft"]),
-      csFormula(["V = (1.486/"+fmt(parseFloat(row.n),3)+") \u00d7 "+fmt(R,3)+"^(2/3) \u00d7 "+fmt(parseFloat(row.slope),4)+"^(1/2)"]),
+      csFormula(["V = (1.486/"+fmt(parseFloat(row.n),3)+") \u00d7 "+fmt(R,3)+"^(2/3) \u00d7 "+fmt(So,4)+"^(1/2)"]),
       csResult("V (full flow)", fmt(calc.V,2)+" fps"),
       csFormula(["Qfull = V \u00d7 A = "+fmt(calc.V,2)+" \u00d7 "+fmt(geo.areaSf,3)]),
       csResult("Qfull", fmt(calc.Qfull,2)+" cfs"),
@@ -4085,8 +4117,8 @@ function buildFormulasReferenceSheet(){
   if(pipeEx && pipeCalc){
     const R = (pipeCalc.equivDiamIn/12)/4;
     b2.push(el("div",{class:"cs-block-title", style:"margin-top:10px;"}, "Worked example \u2014 "+(fromSt?fromSt.structureId:"?")+" \u2192 "+(toSt?toSt.structureId:"?")));
-    b2.push(csTable([["Size",pipeEx.size+" in circular"],["n",fmt(parseFloat(pipeEx.n),3)],["S",fmt(parseFloat(pipeEx.slope),4)+" ft/ft"],["A = \u03c0/4\u00d7D\u00b2",fmt(pipeCalc.areaSf,4)+" sf"],["R = D/4",fmt(R,3)+" ft"]]));
-    b2.push(csFormula(["V = (1.486/"+fmt(parseFloat(pipeEx.n),3)+") \u00d7 "+fmt(R,3)+"^(2/3) \u00d7 "+fmt(parseFloat(pipeEx.slope),4)+"^(1/2)"]));
+    b2.push(csTable([["Size",pipeEx.size+" in circular"],["n",fmt(parseFloat(pipeEx.n),3)],["S",fmt(pipeEffectiveSlope(pipeEx),4)+" ft/ft"],["A = \u03c0/4\u00d7D\u00b2",fmt(pipeCalc.areaSf,4)+" sf"],["R = D/4",fmt(R,3)+" ft"]]));
+    b2.push(csFormula(["V = (1.486/"+fmt(parseFloat(pipeEx.n),3)+") \u00d7 "+fmt(R,3)+"^(2/3) \u00d7 "+fmt(pipeEffectiveSlope(pipeEx),4)+"^(1/2)"]));
     b2.push(csResult("V", fmt(pipeCalc.V,3)+" fps"));
     b2.push(csFormula(["Qfull = "+fmt(pipeCalc.V,3)+" \u00d7 "+fmt(pipeCalc.areaSf,4)]));
     b2.push(csResult("Qfull", fmt(pipeCalc.Qfull,3)+" cfs \u2014 Design Q = "+fmt(pipeCalc.designQ,3)+" cfs \u2192 "+(pipeCalc.pass?"PASS":"FAIL")));
@@ -4825,7 +4857,7 @@ function buildPipesDetailSheet(stormOverride){
       : 0;
     const designQ = pipeDesignQ(pipe, null, stormOverride);
     const geo = pipeGeometry(pipe);
-    const n = parseFloat(pipe.n), S = parseFloat(pipe.slope), L = parseFloat(pipe.length);
+    const n = parseFloat(pipe.n), S = pipeEffectiveSlope(pipe), L = parseFloat(pipe.length);
     const front = [
       el("td",{},fromId), el("td",{},toId),
       tdN(ca.sumA,2), tdN(ca.sumCA,3),
@@ -4944,7 +4976,7 @@ function buildHglDetailSheet(stormOverride){
     const designQ = pipeDesignQ(pipe, null, stormOverride);
     const fromId = fromSt?(fromSt.structureId||fromSt.id):(pipe.fromStructureId||"—");
     const toId   = toSt  ?(toSt.structureId  ||toSt.id)  :(pipe.toStructureId  ||"—");
-    const S = parseFloat(pipe.slope), n = parseFloat(pipe.n), L = parseFloat(pipe.length);
+    const S = pipeEffectiveSlope(pipe), n = parseFloat(pipe.n), L = parseFloat(pipe.length);
     const angle = parseFloat(pipe.angle)||0;
     const dsHGL = calcTo   ? calcTo.elevation   : null;
     const usHGL = calcFrom ? calcFrom.elevation  : null;
@@ -5215,12 +5247,15 @@ function buildWorkbook(){
   XLSX.utils.book_append_sheet(wb, wsTr55, "TR-55 Segments");
 
   // ---- Pipe Sizing (build first so Structure sheet formulas can reference it; sheet order doesn't matter for formulas though) ----
-  const pipeHeader = ["ID","From Structure","To Structure","Angle (deg)","Shape","Size (in or SPANxRISE)","n","Slope (ft-ft)","Length (ft)","Design Q (cfs)","Area (sf)","Qfull (cfs)","Velocity (fps)","Status","Split Role","From|Role Key"];
+  const pipeHeader = ["ID","From Structure","To Structure","Angle (deg)","Shape","Size (in or SPANxRISE)","n","US Invert (ft)","DS Invert (ft)","Slope (ft-ft)","Length (ft)","Design Q (cfs)","Area (sf)","Qfull (cfs)","Velocity (fps)","Status","Split Role","From|Role Key"];
   const pipeAoa = [pipeHeader];
   state.pipes.forEach(p=>{
     const fromLabel = (findStructure(p.fromStructureId)||{}).structureId || p.fromStructureId || "";
     const toLabel = (findStructure(p.toStructureId)||{}).structureId || p.toStructureId || "";
-    pipeAoa.push([p.id, fromLabel, toLabel, num(p.angle,0), p.shape, p.size||"", num(p.n,3), num(p.slope,4), num(p.length), null, null, null, null, null, p.splitRole||"", null]);
+    pipeAoa.push([p.id, fromLabel, toLabel, num(p.angle,0), p.shape, p.size||"", num(p.n,3),
+        (p.upstreamInvert===""||p.upstreamInvert==null)?"":parseFloat(p.upstreamInvert),
+        (p.downstreamInvert===""||p.downstreamInvert==null)?"":parseFloat(p.downstreamInvert),
+        num(p.slope,4), num(p.length), null, null, null, null, null, p.splitRole||"", null]);
   });
   const wsPipe = XLSX.utils.aoa_to_sheet(pipeAoa);
 
@@ -5240,7 +5275,7 @@ function buildWorkbook(){
 
   // Now fill live formulas. Column letters:
   // Drainage Area: A id B desc C area D C E CA F iOverride G tc H cf I tcMethod J+ Q per storm (static values)
-  // Pipe Sizing:   A id B from C to D angle E shape F size G n H slope I len J designQ K area L qfull M vel N status O splitRole P from|role key
+  // Pipe Sizing:   A id B from C to D angle E shape F size G n H usInv I dsInv J slope K len L designQ M area N qfull O vel P status Q splitRole R from|role key
   // Structure:     A id B desc C daId D type E force F startElev G crown H rim
   //                I capturedQ J qFromPipes K totalFlow L outPipeId M Hf N Kb O Hb P Vout Q upstreamHGL R downstreamId S crownChk T rimChk
   //                U splitMethod V splitCapacity W splitRatio
@@ -5252,7 +5287,7 @@ function buildWorkbook(){
     const row=i+2;
     const fromLabel = (findStructure(p.fromStructureId)||{}).structureId || p.fromStructureId || "";
     const roleForKey = p.splitRole || "primary";
-    setFormula(wsPipe, "P"+row, "=B"+row+"&\"|\"&IF(O"+row+"=\"\",\"primary\",O"+row+")", fromLabel+"|"+roleForKey);
+    setFormula(wsPipe, "R"+row, "=B"+row+"&\"|\"&IF(Q"+row+"=\"\",\"primary\",Q"+row+")", fromLabel+"|"+roleForKey);
   });
 
   function xlFromType(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!D:D,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),\"\")"; }
@@ -5267,12 +5302,12 @@ function buildWorkbook(){
     // Captured Q
     setFormula(wsSt, "I"+row, "=IF(C"+row+"=\"\",0,IFERROR(INDEX('Drainage Area'!H:H,MATCH(C"+row+",'Drainage Area'!A:A,0)),0))", round(calc.captured,4));
     // Q from pipes
-    setFormula(wsSt, "J"+row, "=SUMIF('Pipe Sizing'!C:C,A"+row+",'Pipe Sizing'!J:J)", round(calc.totalFlow-calc.captured,4));
+    setFormula(wsSt, "J"+row, "=SUMIF('Pipe Sizing'!C:C,A"+row+",'Pipe Sizing'!L:L)", round(calc.totalFlow-calc.captured,4));
     // Total flow
     setFormula(wsSt, "K"+row, "=I"+row+"+J"+row, round(calc.totalFlow,4));
     // Outgoing (Primary, or sole) pipe id -- via the From|Role helper key so a
     // splitter's Primary pipe is found reliably regardless of row order.
-    setFormula(wsSt, "L"+row, "=IFERROR(INDEX('Pipe Sizing'!A:A,MATCH(A"+row+"&\"|primary\",'Pipe Sizing'!P:P,0)),\"\")", calc.outPipe? calc.outPipe.id : "");
+    setFormula(wsSt, "L"+row, "=IFERROR(INDEX('Pipe Sizing'!A:A,MATCH(A"+row+"&\"|primary\",'Pipe Sizing'!R:R,0)),\"\")", calc.outPipe? calc.outPipe.id : "");
     if(calc.isBase){
       setFormula(wsSt, "M"+row, "=0", 0);
       setFormula(wsSt, "O"+row, "=0", 0);
@@ -5282,10 +5317,10 @@ function buildWorkbook(){
       setFormula(wsSt, "R"+row, "=\"\"", "");
     } else {
       // Area & equivalent diameter of the outgoing (Primary) pipe, via INDEX/MATCH
-      const areaLookup = "IFERROR(INDEX('Pipe Sizing'!K:K,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)";
+      const areaLookup = "IFERROR(INDEX('Pipe Sizing'!M:M,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)";
       const nLookup = "IFERROR(INDEX('Pipe Sizing'!G:G,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0.013)";
-      const lenLookup = "IFERROR(INDEX('Pipe Sizing'!I:I,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)";
-      const outFlowLookup = "IFERROR(INDEX('Pipe Sizing'!J:J,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)"; // this pipe's own carried Q (handles splitter Primary share)
+      const lenLookup = "IFERROR(INDEX('Pipe Sizing'!K:K,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)";
+      const outFlowLookup = "IFERROR(INDEX('Pipe Sizing'!L:L,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)"; // this pipe's own carried Q (handles splitter Primary share)
       // R (ft) for a circle of the same area = sqrt(area/pi)/2 (equals D/4 for a true circular
       // pipe, and matches our elliptical-pipe approximation since its "area" column already
       // holds the Table 4-6 circular-equivalent area).
@@ -5309,20 +5344,20 @@ function buildWorkbook(){
     const geo = pipeGeometry(p);
     const calc = calcPipeRow(p);
     const primaryExpr = "IF("+xlFromMethod("B"+row)+"=\"ratio\","+xlFromTotal("B"+row)+"*"+xlFromRatio("B"+row)+",MIN("+xlFromTotal("B"+row)+","+xlFromCap("B"+row)+"))";
-    const designQFormula = "IF(B"+row+"=\"\",0,IF("+xlFromType("B"+row)+"=\"splitter\",IF(O"+row+"=\"primary\","+primaryExpr+",IF(O"+row+"=\"secondary\","+xlFromTotal("B"+row)+"-("+primaryExpr+"),0)),"+xlFromTotal("B"+row)+"))";
-    setFormula(wsPipe, "J"+row, designQFormula, round(calc.designQ,4));
+    const designQFormula = "IF(B"+row+"=\"\",0,IF("+xlFromType("B"+row)+"=\"splitter\",IF(Q"+row+"=\"primary\","+primaryExpr+",IF(Q"+row+"=\"secondary\","+xlFromTotal("B"+row)+"-("+primaryExpr+"),0)),"+xlFromTotal("B"+row)+"))";
+    setFormula(wsPipe, "L"+row, designQFormula, round(calc.designQ,4));
     if(p.shape==="circular"){
-      setFormula(wsPipe, "K"+row, "=PI()/4*(F"+row+"/12)^2", geo?round(geo.areaSf,5):0);
-      setFormula(wsPipe, "M"+row, "=(1.486/G"+row+")*K"+row+"*((F"+row+"/12/4)^(2/3))*SQRT(H"+row+")", calc.V!=null?round(calc.V,3):0);
+      setFormula(wsPipe, "M"+row, "=PI()/4*(F"+row+"/12)^2", geo?round(geo.areaSf,5):0);
+      setFormula(wsPipe, "O"+row, "=(1.486/G"+row+")*M"+row+"*((F"+row+"/12/4)^(2/3))*SQRT(J"+row+")", calc.V!=null?round(calc.V,3):0);
     } else {
-      setCellNum(wsPipe, "K"+row, geo?round(geo.areaSf,5):0);
+      setCellNum(wsPipe, "M"+row, geo?round(geo.areaSf,5):0);
       const equivD = geo?geo.equivDiamIn:0;
-      setFormula(wsPipe, "M"+row, "=(1.486/G"+row+")*K"+row+"*((" + equivD + "/12/4)^(2/3))*SQRT(H"+row+")", calc.V!=null?round(calc.V,3):0);
+      setFormula(wsPipe, "O"+row, "=(1.486/G"+row+")*M"+row+"*((" + equivD + "/12/4)^(2/3))*SQRT(J"+row+")", calc.V!=null?round(calc.V,3):0);
     }
-    setFormula(wsPipe, "L"+row, "=M"+row+"*K"+row, calc.Qfull!=null?round(calc.Qfull,3):0);
-    setFormula(wsPipe, "N"+row, "=IF(L"+row+">=J"+row+",\"PASS\",\"FAIL\")", calc.pass?"PASS":(calc.pass===false?"FAIL":""));
+    setFormula(wsPipe, "N"+row, "=O"+row+"*M"+row, calc.Qfull!=null?round(calc.Qfull,3):0);
+    setFormula(wsPipe, "P"+row, "=IF(N"+row+">=L"+row+",\"PASS\",\"FAIL\")", calc.pass?"PASS":(calc.pass===false?"FAIL":""));
   });
-  wsPipe["!cols"] = [{wch:10},{wch:12},{wch:12},{wch:10},{wch:10},{wch:20},{wch:8},{wch:12},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10},{wch:9},{wch:10},{wch:16}];
+  wsPipe["!cols"] = [{wch:10},{wch:12},{wch:12},{wch:10},{wch:10},{wch:20},{wch:8},{wch:10},{wch:10},{wch:12},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10},{wch:9},{wch:10},{wch:16}];
   XLSX.utils.book_append_sheet(wb, wsPipe, "Pipe Sizing");
 
   // ---- Outlet Structures (facility list: id/label/desc + each one's stage range & tailwater config) ----
@@ -5650,6 +5685,8 @@ function importExcel(file){
             shape: (r["Shape"]||"circular").toLowerCase()==="elliptical"?"elliptical":"circular",
             size: r["Size (in or SPANxRISE)"]||"",
             n: r["n"]===""||r["n"]==null?0.013:r["n"],
+            upstreamInvert: r["US Invert (ft)"]===""||r["US Invert (ft)"]==null?"":r["US Invert (ft)"],
+            downstreamInvert: r["DS Invert (ft)"]===""||r["DS Invert (ft)"]==null?"":r["DS Invert (ft)"],
             slope: r["Slope (ft-ft)"]||"",
             length: r["Length (ft)"]||"",
             splitRole: r["Split Role"]||"",
@@ -5835,7 +5872,7 @@ function init(){
 document.addEventListener("DOMContentLoaded", init);
 
 // Exposed for debugging / automated testing only - not used by the UI.
-window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, calcDrainageRow, findStructure, findDrainage, findPipe,
+window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, pipeEffectiveSlope, calcDrainageRow, findStructure, findDrainage, findPipe,
   circularSegment, orificeOrPipeQ, weirQ, deviceQ, resolveTailwater, generateStageList, computeRatingCurve, computeSplitterSplit, pipeDesignQ,
   findOutletStructure, devicesForOutlet,
   tr55SheetFlowTt, tr55ShallowVelocity, tr55TravelTime, tr55ChannelVelocity, computeTr55, TR55_SHALLOW_CP,
