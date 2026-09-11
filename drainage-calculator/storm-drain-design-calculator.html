@@ -4495,6 +4495,8 @@ function printNodes(nodes, landscape){
   pa.innerHTML = "";
   nodes.forEach(n=>pa.appendChild(n));
   if(landscape){
+    const existing = document.getElementById("sdcLandscape");
+    if(existing) existing.remove();
     const s = document.createElement("style");
     s.id = "sdcLandscape";
     s.textContent = "@media print { @page { size: landscape; } }";
@@ -4529,6 +4531,121 @@ function printAllSheets(){
   }
   if(nodes.length===0){ toast("Nothing to print yet \u2014 add some rows first.", true); return; }
   printNodes(nodes);
+}
+
+function buildTablePrintSheet(viewId, title){
+  const view = document.getElementById(viewId);
+  if(!view) return null;
+  const table = view.querySelector("table.data");
+  if(!table) return null;
+  const tbody = table.querySelector("tbody");
+  if(!tbody || tbody.rows.length === 0) return null;
+
+  const clone = table.cloneNode(true);
+  // Replace inputs/selects/textareas with their current value as text
+  clone.querySelectorAll("input, textarea").forEach(inp=>{
+    inp.replaceWith(document.createTextNode(inp.value));
+  });
+  clone.querySelectorAll("select").forEach(sel=>{
+    const txt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : "";
+    sel.replaceWith(document.createTextNode(txt));
+  });
+  // Remove buttons and checkboxes entirely
+  clone.querySelectorAll("button, input[type=checkbox]").forEach(b=>b.remove());
+
+  const now = new Date();
+  const pad = n=>String(n).padStart(2,"0");
+  const dateStr = now.getFullYear()+"-"+pad(now.getMonth()+1)+"-"+pad(now.getDate());
+
+  const sheet = el("div",{class:"calc-sheet cs-table-sheet"});
+  sheet.appendChild(el("div",{class:"cs-header"},[
+    el("div",{class:"cs-title"}, title),
+    el("div",{class:"cs-sub"}, (state.project||"Untitled")+" — "+dateStr),
+  ]));
+  const wrap = el("div",{class:"table-wrap"});
+  wrap.appendChild(clone);
+  sheet.appendChild(wrap);
+  sheet.appendChild(el("div",{class:"cs-footer"}, "Storm Drain Design Calculator — "+(state.project||"")));
+  return sheet;
+}
+
+function buildOutletTablePrintSheet(){
+  if(state.outletStructures.length===0) return [];
+  const nodes = [];
+  const now = new Date();
+  const pad = n=>String(n).padStart(2,"0");
+  const dateStr = now.getFullYear()+"-"+pad(now.getMonth()+1)+"-"+pad(now.getDate());
+
+  state.outletStructures.forEach(os=>{
+    const devices = devicesForOutlet(os.id);
+    const { rows } = computeRatingCurve(os.id);
+    if(!rows || rows.length===0) return;
+
+    const table = el("table",{class:"data"});
+    // Build header
+    const headCells = [el("th",{},"Stage (ft)"), el("th",{},"TW (ft)")];
+    devices.forEach(d=>headCells.push(el("th",{class:"computed"}, (d.label||d.id)+" Q (cfs)")));
+    headCells.push(el("th",{class:"computed"},"Total Q (cfs)"));
+    table.appendChild(el("thead",{},el("tr",{},headCells)));
+
+    // Build body
+    const tbody = el("tbody");
+    rows.forEach(r=>{
+      const cells = [
+        el("td",{class:"out",style:"font-weight:700"}, fmt(r.stage,2)),
+        el("td",{class:"out"}, r.tw!=null? fmt(r.tw,2) : "—"),
+      ];
+      r.devices.forEach(dr=>cells.push(el("td",{class:"out computed-cell"}, fmt(dr.Q,2))));
+      cells.push(el("td",{class:"out computed-cell",style:"font-weight:700"}, fmt(r.total,2)));
+      tbody.appendChild(el("tr",{},cells));
+    });
+    table.appendChild(tbody);
+
+    const sheet = el("div",{class:"calc-sheet cs-table-sheet"});
+    sheet.appendChild(el("div",{class:"cs-header"},[
+      el("div",{class:"cs-title"}, "Outlet — "+(os.label||os.id)),
+      el("div",{class:"cs-sub"}, (state.project||"Untitled")+" — "+dateStr),
+    ]));
+    const wrap = el("div",{class:"table-wrap"});
+    wrap.appendChild(table);
+    sheet.appendChild(wrap);
+    sheet.appendChild(el("div",{class:"cs-footer"}, "Storm Drain Design Calculator — "+(state.project||"")));
+    nodes.push(sheet);
+  });
+  return nodes;
+}
+
+function printTableSheet(viewId, title){
+  if(viewId==="view-outlet"){
+    const nodes = buildOutletTablePrintSheet();
+    if(nodes.length===0){ toast("No outlet data to print yet.", true); return; }
+    printNodes(nodes, true);
+    return;
+  }
+  const sheet = buildTablePrintSheet(viewId, title);
+  if(!sheet){ toast("No rows to print yet.", true); return; }
+  printNodes([sheet], true);
+}
+
+function printAllTableSheets(){
+  const nodes = [];
+  const tabs = [
+    ["view-drainage",        "Drainage Area"],
+    ["view-structures",      "Junction Structures"],
+    ["view-pipes",           "Pipe Sizing & Capacity"],
+    ["view-inlet-spacing",   "Inlet Spacing"],
+    ["view-hgl",             "HGL — Primary Design Storm"],
+    ["view-pipe-sizing-25",  "Pipe Sizing & Capacity — 25-yr"],
+    ["view-hgl-25",          "HGL — 25-yr"],
+  ];
+  tabs.forEach(([vid, title])=>{
+    const sheet = buildTablePrintSheet(vid, title);
+    if(sheet) nodes.push(sheet);
+  });
+  // Outlet: one sheet per outlet structure
+  buildOutletTablePrintSheet().forEach(n=>nodes.push(n));
+  if(nodes.length===0){ toast("Nothing to print yet — add some rows first.", true); return; }
+  printNodes(nodes, true);
 }
 
 window.addEventListener("afterprint", ()=>{
