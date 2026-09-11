@@ -1619,6 +1619,7 @@ function computeTotalFlow(structureId, seen, stormOverride){
 }
 
 function computeContributingArea(structureId, seen){
+  if(!structureId) return {sumA:0, sumCA:0, controlTc:0};
   seen = seen || new Set();
   if(seen.has(structureId)) return {sumA:0, sumCA:0, controlTc:0};
   const newSeen = new Set(seen);
