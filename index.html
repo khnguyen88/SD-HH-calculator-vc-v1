@@ -1166,10 +1166,10 @@ function interpolatePL(tc, breakpoints) {
 
 // Parse the NOAA Atlas 14 PFDS point API response (a JS/Python-ish text blob,
 // not JSON — the quantiles array uses single-quoted strings) into the same
-// { "1yr":{5,10,15,30,60}, ..., "500yr":{...} } shape as NOAA_ATLAS14.
-// 19 durations x 10 return periods; depths are inches. Rows 0-4 are the
-// 5,10,15,30,60-min durations we use; columns: 1yr=0, 2yr=1, 5yr=2, 10yr=3,
-// 25yr=4, 50yr=5, 100yr=6, 200yr=7, 500yr=8.
+// { "1yr":{5,10,15,...,1440}, ..., "500yr":{...} } shape as NOAA_ATLAS14.
+// 19 durations x 10 return periods; depths are inches. Rows 0-9 are:
+//   5,10,15,30,60,120,180,360,720,1440 min (5-min through 24-hr).
+// Columns: 1yr=0, 2yr=1, 5yr=2, 10yr=3, 25yr=4, 50yr=5, 100yr=6, 200yr=7, 500yr=8.
 function parseNoaaResponse(text) {
   const m = text.match(/quantiles\s*=\s*(\[)/);
   if (!m) throw new Error("Unexpected NOAA response format.");
@@ -1184,8 +1184,8 @@ function parseNoaaResponse(text) {
   try {
     quantiles = JSON.parse(text.slice(start, i + 1).replace(/'/g, '"')).map(r => r.map(parseFloat));
   } catch (_) { throw new Error("Failed to parse NOAA data."); }
-  if (!quantiles || quantiles.length < 5) throw new Error("Failed to parse NOAA data.");
-  const durations = [5, 10, 15, 30, 60];
+  if (!quantiles || quantiles.length < 10) throw new Error("Failed to parse NOAA data.");
+  const durations = [5, 10, 15, 30, 60, 120, 180, 360, 720, 1440];
   const stormCols = { "1yr":0, "2yr":1, "5yr":2, "10yr":3, "25yr":4, "50yr":5, "100yr":6, "500yr":8 };
   const result = {};
   for (const [storm, col] of Object.entries(stormCols)) {
@@ -1200,7 +1200,7 @@ function parseNoaaResponse(text) {
 function lookupIntensity(tc, source, storm, county, customNoaa, fetchedNoaa) {
   if (source === "noaa") {
     if (county === "Fetched" && fetchedNoaa && fetchedNoaa[storm]) {
-      const pts = [5,10,15,30,60].map(d => [d, fetchedNoaa[storm][d]]).filter(([,v]) => isFinite(v));
+      const pts = [5,10,15,30,60,120,180,360,720,1440].map(d => [d, fetchedNoaa[storm][d]]).filter(([,v]) => isFinite(v));
       return interpolatePL(tc, pts);
     }
     if (county === "Custom") {
@@ -3417,7 +3417,7 @@ function renderRainfallIdfTable(c) {
   tbl.appendChild(el("thead", {}, headRow));
 
   const tbody = el("tbody", {});
-  const stdTcs = [5, 7, 10, 15, 20, 30, 60];
+  const stdTcs = [5, 7, 10, 15, 20, 30, 60, 120, 180, 360, 720, 1440];
   stdTcs.forEach(tc => {
     const tr = el("tr", {});
     tr.appendChild(el("td", {}, String(tc)));
