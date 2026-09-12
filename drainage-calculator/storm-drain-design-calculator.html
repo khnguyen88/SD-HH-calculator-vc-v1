@@ -3590,25 +3590,44 @@ function renderRainfall() {
     // Coord + open-URL row
     const coordRow = el("div", {style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:6px 0 2px;"});
     const coordField = el("div", {class:"field"});
-    coordField.appendChild(el("label", {}, "Site coordinates (lat, lon) — for site-specific Atlas 14"));
-    coordField.appendChild(el("input", {class:"cell-input", type:"text", style:"width:220px;",
+    coordField.appendChild(el("label", {}, "Site address or coordinates — for site-specific Atlas 14"));
+    const coordInput = el("input", {class:"cell-input", type:"text", style:"width:300px;",
       "data-focus-key":"rf:noaaFetchInput",
-      placeholder:'"lat, lon"  e.g. 39.2, -76.6',
+      placeholder:"Address or lat, lon  e.g. 39.2, -76.6",
       value: r.noaaFetchInput || "",
-      oninput: (e) => { r.noaaFetchInput = e.target.value; }}));
+      oninput: (e) => { r.noaaFetchInput = e.target.value; }});
+    coordField.appendChild(coordInput);
     coordRow.appendChild(coordField);
     const openBtnField = el("div", {class:"field"});
     openBtnField.appendChild(el("label", {}, " "));
-    openBtnField.appendChild(el("button", {class:"btn btn-sm", onclick:()=>{
-      const coordText = (r.noaaFetchInput||"").trim();
-      const coordMatch = /^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$/.exec(coordText);
+    const geoStatus = el("span", {style:"font-size:0.82em;margin-left:6px;"});
+    openBtnField.appendChild(el("button", {class:"btn btn-sm", onclick: async ()=>{
+      const inputStr = (r.noaaFetchInput||"").trim();
+      if(!inputStr){ toast("Enter an address or lat, lon first.",true); return; }
+      let lat, lon;
+      const coordMatch = /^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$/.exec(inputStr);
       if(coordMatch){
-        const lat = coordMatch[1], lon = coordMatch[2];
-        window.open("https://hdsc.nws.noaa.gov/cgi-bin/new/cgi_readH5.py?type=pf&series=pds&units=us&statname=&lat="+lat+"&lon="+lon,"_blank");
+        lat = coordMatch[1]; lon = coordMatch[2];
       } else {
-        toast('Enter "lat, lon" coordinates in the field above first, then open the link.',true);
+        geoStatus.textContent = "Geocoding…"; geoStatus.style.color = "inherit";
+        try {
+          const geoResp = await fetch("https://nominatim.openstreetmap.org/search?q="+encodeURIComponent(inputStr)+"&format=json&limit=1");
+          if(!geoResp.ok) throw new Error("Geocoding unavailable.");
+          const geoData = await geoResp.json();
+          if(!geoData.length) throw new Error("Address not found — try more detail or use lat, lon.");
+          lat = parseFloat(geoData[0].lat).toFixed(6);
+          lon = parseFloat(geoData[0].lon).toFixed(6);
+          r.noaaFetchInput = lat + ", " + lon;
+          coordInput.value = r.noaaFetchInput;
+          geoStatus.textContent = "Found: " + lat + ", " + lon;
+          geoStatus.style.color = "var(--accent)";
+        } catch(e) {
+          geoStatus.textContent = e.message; geoStatus.style.color = "var(--fail)"; return;
+        }
       }
+      window.open("https://hdsc.nws.noaa.gov/cgi-bin/new/cgi_readH5.py?type=pf&series=pds&units=us&statname=&lat="+lat+"&lon="+lon,"_blank");
     }}, "Open NOAA URL ↗"));
+    openBtnField.appendChild(geoStatus);
     coordRow.appendChild(openBtnField);
     coordRow.appendChild(el("span", {style:"font-size:0.8em;opacity:0.6;align-self:center;"},
       "Opens the NOAA Atlas 14 data page for your site. Select all text (Ctrl+A), copy, paste below, then click Load."));
