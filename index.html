@@ -3585,70 +3585,49 @@ function renderRainfall() {
 
   settingsSec.appendChild(sRow);
 
-  // Site-specific NOAA fetch panel (NOAA source only)
+  // Site-specific NOAA data — paste method (NOAA source only)
   if (r.rainfallSource === "noaa") {
-    // Proxy URL row — required because NOAA sends Cross-Origin-Resource-Policy: same-origin
-    const proxyRow = el("div", {style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:6px 0 2px;"});
-    const proxyField = el("div", {class:"field"});
-    proxyField.appendChild(el("label", {}, "NOAA proxy URL"));
-    proxyField.appendChild(el("input", {class:"cell-input", type:"text", style:"width:340px;",
-      "data-focus-key":"rf:noaaProxyUrl",
-      placeholder:"https://your-worker.your-subdomain.workers.dev",
-      value: r.noaaProxyUrl || "",
-      oninput: (e) => { r.noaaProxyUrl = e.target.value; }}));
-    proxyRow.appendChild(proxyField);
-    proxyRow.appendChild(el("span", {style:"font-size:0.8em;opacity:0.6;align-self:center;"},
-      "Required — NOAA blocks direct browser requests. Deploy workers/noaa-proxy.js as a Cloudflare Worker (free) and paste the URL here."));
-    settingsSec.appendChild(proxyRow);
-
-    // Address + fetch button row
-    const fetchRow = el("div", {style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:2px 0 2px;"});
-    const addrField = el("div", {class:"field"});
-    addrField.appendChild(el("label", {}, "Site-specific NOAA lookup (optional)"));
-    const addrInput = el("input", {class:"cell-input", type:"text", style:"width:300px;",
+    // Coord + open-URL row
+    const coordRow = el("div", {style:"display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:6px 0 2px;"});
+    const coordField = el("div", {class:"field"});
+    coordField.appendChild(el("label", {}, "Site coordinates (lat, lon) — for site-specific Atlas 14"));
+    coordField.appendChild(el("input", {class:"cell-input", type:"text", style:"width:220px;",
       "data-focus-key":"rf:noaaFetchInput",
-      placeholder:'Address, or "lat, lon"',
+      placeholder:'"lat, lon"  e.g. 39.2, -76.6',
       value: r.noaaFetchInput || "",
-      oninput: (e) => { r.noaaFetchInput = e.target.value; }});
-    addrField.appendChild(addrInput);
-    fetchRow.appendChild(addrField);
-    const fetchBtnField = el("div", {class:"field"});
-    fetchBtnField.appendChild(el("label", {}, " "));
-    const statusSpan = el("span", {id:"noaa-fetch-status", style:"font-size:0.85em;align-self:center;flex:1;min-width:200px;"});
-    const fetchBtn = el("button", {class:"btn btn-sm", onclick: () => doNoaaFetch(r, statusSpan)}, "Fetch from NOAA");
-    fetchBtnField.appendChild(fetchBtn);
-    fetchRow.appendChild(fetchBtnField);
-    if (_noaaFetchMsg) {
-      statusSpan.textContent = _noaaFetchMsg;
-      statusSpan.style.color = _noaaFetchOk ? "var(--accent)" : "var(--fail)";
-    }
-    fetchRow.appendChild(statusSpan);
-    settingsSec.appendChild(fetchRow);
-
-    // Paste raw data row — no-proxy fallback for local/desktop use
-    const pasteRow = el("div", {style:"display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;padding:2px 0 6px;"});
-    const pasteField = el("div", {class:"field", style:"flex:1;min-width:260px;"});
-    pasteField.appendChild(el("label", {}, "— or paste raw NOAA data (no proxy needed)"));
-    const pasteArea = el("textarea", {
-      class:"cell-input", rows:"3",
-      style:"width:100%;font-size:11px;font-family:var(--font-mono);resize:vertical;",
-      "data-focus-key":"rf:noaaPaste",
-      placeholder:'Open the NOAA link for your coordinates, copy all the page text, paste here, then click Load.',
-    });
-    pasteField.appendChild(pasteArea);
-    pasteRow.appendChild(pasteField);
-    const pasteActions = el("div", {class:"field", style:"display:flex;flex-direction:column;gap:6px;justify-content:flex-end;"});
-    pasteActions.appendChild(el("label", {}, " "));
-    pasteActions.appendChild(el("button", {class:"btn btn-sm", onclick:()=>{
+      oninput: (e) => { r.noaaFetchInput = e.target.value; }}));
+    coordRow.appendChild(coordField);
+    const openBtnField = el("div", {class:"field"});
+    openBtnField.appendChild(el("label", {}, " "));
+    openBtnField.appendChild(el("button", {class:"btn btn-sm", onclick:()=>{
       const coordText = (r.noaaFetchInput||"").trim();
       const coordMatch = /^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$/.exec(coordText);
       if(coordMatch){
         const lat = coordMatch[1], lon = coordMatch[2];
         window.open("https://hdsc.nws.noaa.gov/cgi-bin/new/cgi_readH5.py?type=pf&series=pds&units=us&statname=&lat="+lat+"&lon="+lon,"_blank");
       } else {
-        toast("Enter lat, lon in the address field first, then open the link.",true);
+        toast('Enter "lat, lon" coordinates in the field above first, then open the link.',true);
       }
     }}, "Open NOAA URL ↗"));
+    coordRow.appendChild(openBtnField);
+    coordRow.appendChild(el("span", {style:"font-size:0.8em;opacity:0.6;align-self:center;"},
+      "Opens the NOAA Atlas 14 data page for your site. Select all text (Ctrl+A), copy, paste below, then click Load."));
+    settingsSec.appendChild(coordRow);
+
+    // Paste + load row
+    const pasteRow = el("div", {style:"display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;padding:2px 0 6px;"});
+    const pasteField = el("div", {class:"field", style:"flex:1;min-width:260px;"});
+    pasteField.appendChild(el("label", {}, "Paste raw NOAA page text here"));
+    const pasteArea = el("textarea", {
+      class:"cell-input", rows:"3",
+      style:"width:100%;font-size:11px;font-family:var(--font-mono);resize:vertical;",
+      "data-focus-key":"rf:noaaPaste",
+      placeholder:'Click "Open NOAA URL ↗", select all text on that page (Ctrl+A), copy, paste here, then click Load.',
+    });
+    pasteField.appendChild(pasteArea);
+    pasteRow.appendChild(pasteField);
+    const pasteActions = el("div", {class:"field", style:"display:flex;flex-direction:column;gap:6px;justify-content:flex-end;"});
+    pasteActions.appendChild(el("label", {}, " "));
     const pasteStatus = el("span",{style:"font-size:0.82em;"});
     pasteActions.appendChild(el("button", {class:"btn btn-sm", onclick:()=>{
       const text = pasteArea.value.trim();
