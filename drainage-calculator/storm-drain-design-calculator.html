@@ -115,7 +115,7 @@ button, input, select{ font-family:inherit; font-size:inherit; color:inherit; }
   border-bottom:1px solid var(--border);
   background:linear-gradient(180deg, rgba(56,198,180,0.04), transparent);
 }
-.topbar-left{ display:flex; align-items:center; gap:12px; min-width:0;}
+.topbar-left{ display:flex; align-items:center; gap:12px; min-width:0; flex:1 1 auto; overflow:hidden; }
 .project-name{
   background:transparent;
   border:1px solid transparent;
@@ -124,12 +124,14 @@ button, input, select{ font-family:inherit; font-size:inherit; color:inherit; }
   font-size:15px;
   padding:5px 8px;
   border-radius:var(--radius);
-  min-width:180px;
+  min-width:0;
+  flex:1 1 auto;
+  max-width:360px;
 }
 .project-name:hover, .project-name:focus{ border-color:var(--border); background:var(--panel-alt); outline:none;}
-.tab-label{ color:var(--muted); font-size:12.5px; }
+.tab-label{ color:var(--muted); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-.topbar-right{ display:flex; align-items:center; gap:8px; }
+.topbar-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; flex-wrap:wrap; }
 
 .btn{
   all:unset;
