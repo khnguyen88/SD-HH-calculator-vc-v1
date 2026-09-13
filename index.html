@@ -667,6 +667,7 @@ const TABLE46 = [
   {cdia:144, carea:113.10,espan:180,erise:116,earea:118.6},
 ];
 
+// ====== SECTION: Data Tables ======
 function defaultPipeMaterials() {
   return [
     { id: 1, label: "RCP",              description: "Reinforced Concrete Pipe",                    n: 0.013 },
@@ -1074,6 +1075,7 @@ const INLET_STRUCTURES = [
    Inlet Spacing — Core Computation Functions
 --------------------------------------------------------------------- */
 
+// ====== SECTION: Hydrology / Rational Method ======
 function interpolatePL(tc, breakpoints) {
   if (!breakpoints || breakpoints.length === 0) return 0;
   if (tc <= breakpoints[0][0]) return breakpoints[0][1];
@@ -1644,6 +1646,7 @@ const TR55_CHANNEL_N = {
 };
 const TR55_SEGMENT_TYPES = [["sheet","Sheet flow"],["shallow","Shallow concentrated flow"],["channel","Channel / pipe flow"]];
 
+// ====== SECTION: TR-55 Travel Time ======
 function tr55SheetFlowTt(n, L, s, P2){
   if(![n,L,s,P2].every(v=>isFinite(v) && v>0)) return 0;
   return (0.007*Math.pow(n*L, 0.8)) / (Math.pow(P2,0.5) * Math.pow(s,0.4));
@@ -1707,6 +1710,7 @@ function computeTr55(row){
 /* ---------------------------------------------------------------------
    Network graph helpers
 --------------------------------------------------------------------- */
+// ====== SECTION: Network Graph / Flow ======
 function findStructure(id){ return state.structures.find(s=>s.id===id) || null; }
 function findDrainage(id){ return state.drainage.find(d=>d.id===id) || null; }
 function findPipe(id){ return state.pipes.find(p=>p.id===id) || null; }
@@ -1798,6 +1802,7 @@ function pipeDesignQ(pipeRow, seen, stormOverride){
   return totalFlow;
 }
 
+// ====== SECTION: Pipe Hydraulics ======
 function pipeInvertState(pipe) {
   const US = parseFloat(pipe.upstreamInvert);
   const DS = parseFloat(pipe.downstreamInvert);
@@ -1954,6 +1959,7 @@ const fmt = (v,d=2)=> (v===null||v===undefined||!isFinite(v)) ? "\u2014" : Numbe
    Weir: two regimes - free (unsubmerged) and submerged (Villemonte
    correction), for rectangular or V-notch weirs.
 ======================================================================= */
+// ====== SECTION: Outlet Rating Curves ======
 function circularSegment(h, r){
   // h = water depth above invert (0..2r), r = radius (ft). Returns wetted
   // area (sf) and the head from the water surface down to that area's
@@ -2130,6 +2136,7 @@ function computeRatingCurve(osId){
 /* ---------------------------------------------------------------------
    DOM helpers
 --------------------------------------------------------------------- */
+// ====== SECTION: DOM Utilities ======
 function el(tag, attrs, children){
   const e = document.createElement(tag);
   if(attrs) for(const k in attrs){
@@ -2151,6 +2158,23 @@ function el(tag, attrs, children){
     e.appendChild((c instanceof Node) ? c : document.createTextNode(String(c)));
   });
   return e;
+}
+function mkTxtInput(focusNs, getRenderFn) {
+  return function(row, field, w) {
+    return el("input", {class:"cell-input txt", type:"text", style:"width:"+w+"px",
+      value: row[field]||"",
+      "data-focus-key": focusNs+":"+row.id+":"+field,
+      oninput: (e) => { row[field]=e.target.value; withFocusPreserved(getRenderFn(row)); }});
+  };
+}
+function mkNumInput(focusNs, getRenderFn) {
+  return function(row, field, w) {
+    return el("input", {class:"cell-input", type:"text", inputmode:"decimal", step:"any",
+      style:"width:"+w+"px",
+      value: row[field]===undefined||row[field]===null?"":row[field],
+      "data-focus-key": focusNs+":"+row.id+":"+field,
+      oninput: (e) => { row[field]=e.target.value; withFocusPreserved(getRenderFn(row)); }});
+  };
 }
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2191,6 +2215,7 @@ function toast(msg, isErr){
 const SAVES_KEY = "sdCalc_saves";
 const SAVES_MAX = 5;
 
+// ====== SECTION: State / Persistence ======
 function getSaves(){
   try {
     const raw = localStorage.getItem(SAVES_KEY);
@@ -2384,6 +2409,7 @@ function showActiveView(){
 /* ---------------------------------------------------------------------
    Overview tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Overview ======
 function renderOverview(){
   const c = document.getElementById("view-overview");
   c.innerHTML = "";
@@ -2436,8 +2462,11 @@ function renderOverview(){
 /* ---------------------------------------------------------------------
    Drainage Area tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Drainage ======
 function renderDrainage(){
   const c = document.getElementById("view-drainage");
+  const txt = mkTxtInput("drainage", row=>()=>patchDrainageRow(row));
+  const num = mkNumInput("drainage", row=>()=>patchDrainageRow(row));
   c.innerHTML = "";
   c.appendChild(el("h1",{},"Drainage Area \u2014 Q = C \u00b7 i \u00b7 A"));
   c.appendChild(el("p",{class:"view-desc"},"One row per catchment. Link these to a Junction Structure on the next tab to feed captured runoff into the network."));
@@ -2534,14 +2563,6 @@ function renderDrainage(){
   if(state.drainage.length===0) section.appendChild(el("p",{class:"hint"},"No rows yet \u2014 click \u201c+ Add row\u201d to start."));
   c.appendChild(section);
 
-  function txt(row,field,w){
-    return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"drainage:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(()=>patchDrainageRow(row)); }});
-  }
-  function num(row,field,w){
-    return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"drainage:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(()=>patchDrainageRow(row)); }});
-  }
   function tcCell(row){
     const wrap = el("div",{style:"display:flex;gap:5px;align-items:center;flex-wrap:wrap;"});
     if(row.tcMethod==="tr55"){
@@ -2564,8 +2585,11 @@ function patchDrainageRow(row){
 /* ---------------------------------------------------------------------
    Junction Structures tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Structures ======
 function renderStructures(){
   const c = document.getElementById("view-structures");
+  const txt = mkTxtInput("structures", ()=>renderStructures);
+  const num = mkNumInput("structures", ()=>renderStructures);
   c.innerHTML = "";
   c.appendChild(el("h1",{},"Junction Structures"));
   c.appendChild(el("p",{class:"view-desc"},"One row per structure. Total Flow, Hf, Hb and Upstream HGL are computed automatically from linked drainage areas and connected pipes (set up on the Pipe Sizing & Capacity tab). A Flow Splitter needs a Primary and a Secondary outgoing pipe \u2014 set each pipe's Role on the Pipe Sizing & Capacity tab."));
@@ -2620,14 +2644,6 @@ function renderStructures(){
   if(state.structures.length===0) section.appendChild(el("p",{class:"hint"},"No rows yet \u2014 click \u201c+ Add row\u201d to start."));
   c.appendChild(section);
 
-  function txt(row,field,w){
-    return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"structures:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderStructures); }});
-  }
-  function num(row,field,w){
-    return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"structures:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderStructures); }});
-  }
   function forceChk(row){
     return el("input",{type:"checkbox", style:"width:16px;height:16px;", checked: row.forceElev?"checked":null,"data-focus-key":"structures:"+row.id+":forceElev",
       onchange:(e)=>{ row.forceElev = e.target.checked; withFocusPreserved(renderStructures); }});
@@ -2787,8 +2803,11 @@ function renderStructures(){
 /* ---------------------------------------------------------------------
    Pipe Sizing & Capacity tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Pipes ======
 function renderPipes(){
   const c = document.getElementById("view-pipes");
+  const txtInput = mkTxtInput("pipes", ()=>renderAll);
+  const numInput = mkNumInput("pipes", ()=>renderAll);
   c.innerHTML = "";
   c.appendChild(el("h1",{},"Pipe Sizing & Capacity \u2014 Manning's Equation"));
   c.appendChild(el("p",{class:"view-desc"},"Every pipe connects a From structure to a To structure. Design Q is pulled automatically from the From structure's Total Flow. Angle is this pipe's deflection entering the To structure (used for structure-loss calculations there). For elliptical pipes, enter Size as SPAN x RISE in inches (e.g. 38x24)."));
@@ -2880,14 +2899,6 @@ function renderPipes(){
     }
     return el("td", {}, numInput(row, "n", 60));
   }
-  function txtInput(row,field,w){
-    return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"pipes:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }});
-  }
-  function numInput(row,field,w){
-    return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"pipes:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }});
-  }
   function shapeSelect(row){
     const sel = el("select",{class:"cell-input",style:"width:96px","data-focus-key":"pipes:"+row.id+":shape", onchange:(e)=>{ row.shape=e.target.value; withFocusPreserved(renderAll); }});
     ["circular","elliptical"].forEach(v=>{
@@ -2928,6 +2939,7 @@ function renderPipes(){
 /* ---------------------------------------------------------------------
    Outlet Structure tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Outlet ======
 function renderOutlet(){
   const c = document.getElementById("view-outlet");
   c.innerHTML = "";
@@ -3006,6 +3018,8 @@ function renderOutlet(){
   headCells.push(el("th",{},"Notes"), el("th",{},""));
   devTable.appendChild(el("thead",{},el("tr",{},headCells)));
   const devBody = el("tbody");
+  const txt = mkTxtInput("outlet-dev", ()=>renderOutlet);
+  const num = mkNumInput("outlet-dev", ()=>renderOutlet);
   devices.forEach(row=>{
     const cells = [
       el("td",{}, txt(row,"label",110)),
@@ -3160,14 +3174,6 @@ function renderOutlet(){
   }
   c.appendChild(curveSection);
 
-  function txt(row,field,w){
-    return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"outlet-dev:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderOutlet); }});
-  }
-  function num(row,field,w){
-    return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"outlet-dev:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderOutlet); }});
-  }
   function typeSel(row){
     const sel = el("select",{class:"cell-input",style:"width:90px","data-focus-key":"outlet-dev:"+row.id+":type", onchange:(e)=>{ row.type=e.target.value; withFocusPreserved(renderOutlet); }});
     [["orifice","Orifice"],["weir","Weir"],["pipe","Pipe"]].forEach(([v,l])=>{
@@ -3317,6 +3323,8 @@ function renderTable46(){
    Manning's n (Pipe Materials) tab
 --------------------------------------------------------------------- */
 function renderPipeN() {
+  const txtInput = mkTxtInput("pipe-n", ()=>renderAll);
+  const numInput = mkNumInput("pipe-n", ()=>renderAll);
   const c = document.getElementById("view-pipe-n");
   c.innerHTML = "";
   c.appendChild(el("h1", {}, "Manning's n — Pipe Materials"));
@@ -3353,19 +3361,6 @@ function renderPipeN() {
   section.appendChild(tableWrap);
   c.appendChild(section);
 
-  function txtInput(row, field, w) {
-    return el("input", {class:"cell-input txt", type:"text", style:"width:"+w+"px",
-      value: row[field] || "",
-      "data-focus-key": "pipe-n:" + row.id + ":" + field,
-      oninput: (e) => { row[field] = e.target.value; withFocusPreserved(renderAll); }});
-  }
-  function numInput(row, field, w) {
-    return el("input", {class:"cell-input", type:"text", inputmode:"decimal", step:"any",
-      style:"width:"+w+"px",
-      value: row[field] === undefined || row[field] === null ? "" : row[field],
-      "data-focus-key": "pipe-n:" + row.id + ":" + field,
-      oninput: (e) => { row[field] = e.target.value; withFocusPreserved(renderAll); }});
-  }
 }
 
 /* ---------------------------------------------------------------------
@@ -3406,6 +3401,7 @@ function renderKb(){
   section.appendChild(tableWrap);
   c.appendChild(section);
 
+  // Uses indexOf key (kb rows have no id field) — not compatible with mkNumInput factory.
   function numInput(row,field,w){
     return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],
       "data-focus-key":"kb:"+state.kb.indexOf(row)+":"+field,
@@ -3592,6 +3588,7 @@ function renderDaStormColCheckboxes(r) {
   return wrap;
 }
 
+// ====== SECTION: Render — Rainfall ======
 function renderRainfall() {
   const c = document.getElementById("view-rainfall");
   if (!c) return;
@@ -3863,6 +3860,7 @@ function renderRainfall() {
 /* ---------------------------------------------------------------------
    Pipe Sizing & Capacity — 25-yr tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Pipe Sizing ======
 function renderPipeSizing25() {
   const c = document.getElementById("view-pipe-sizing-25");
   if (!c) return;
@@ -3927,6 +3925,7 @@ function renderPipeSizing25() {
 /* ---------------------------------------------------------------------
    HGL tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — HGL ======
 function renderHgl() {
   const c = document.getElementById("view-hgl");
   if (!c) return;
@@ -4010,6 +4009,7 @@ function renderHgl() {
 /* ---------------------------------------------------------------------
    HGL — 25-yr Check tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — HGL 25 ======
 function renderHgl25(){
   const c = document.getElementById("view-hgl-25");
   if (!c) return;
@@ -4097,6 +4097,7 @@ function renderHgl25(){
 /* ---------------------------------------------------------------------
    Inlet Spacing tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Inlet Spacing ======
 function renderInletSpacing(){
   const c = document.getElementById("view-inlet-spacing");
   if(!c) return;
@@ -4337,6 +4338,7 @@ function renderAll(){
 /* =======================================================================
    Detail calculation sheets (preview + print)
 ======================================================================= */
+// ====== SECTION: Calc Sheets ======
 function csSection(title, node){
   return el("div",{class:"cs-block"},[ el("div",{class:"cs-block-title"}, title), node ]);
 }
@@ -5235,6 +5237,7 @@ function buildInletSpacingSheet(row, comp, settings){
 }
 
 // printSize: falsy = letter portrait, "letter" = letter landscape, "tabloid" = 11×17 landscape
+// ====== SECTION: Print ======
 function printNodes(nodes, printSize){
   const pa = document.getElementById("printArea");
   pa.innerHTML = "";
@@ -5773,6 +5776,7 @@ window.addEventListener("afterprint", ()=>{
 /* =======================================================================
    Excel Export
 ======================================================================= */
+// ====== SECTION: Excel Export ======
 function num(v,def){ const n=parseFloat(v); return isFinite(n)?n:(def!==undefined?def:0); }
 function colLetter(n){ let s=""; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
 function round(v,d){ if(!isFinite(v)) return 0; const p=Math.pow(10,d); return Math.round(v*p)/p; }
@@ -6226,6 +6230,7 @@ function exportExcel(){
 /* =======================================================================
    Excel Import
 ======================================================================= */
+// ====== SECTION: Excel Import ======
 function sheetToRows(wb, name){
   const ws = wb.Sheets[name];
   if(!ws) return null;
@@ -6513,6 +6518,7 @@ function importExcel(file){
 /* ---------------------------------------------------------------------
    Init
 --------------------------------------------------------------------- */
+// ====== SECTION: Init ======
 function init(){
   seedExample();
   renderAll();
