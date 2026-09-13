@@ -1332,6 +1332,7 @@ function defaultRainfallSettings() {
     pipeStorm:   "10yr",
     pipe25Check: false,
     inletStorm:  "2yr",
+    daStormCols: ["2yr", "10yr"],
   };
 }
 
@@ -1340,6 +1341,16 @@ function availableStorms(src) {
   if (src === "mdsha") return ["2yr","10yr","25yr"];
   // noaa — full Atlas 14 return periods
   return ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"];
+}
+
+function visibleDaStorms(r) {
+  const available = availableStorms(r.rainfallSource);
+  const cols = new Set(r.daStormCols || ["2yr", "10yr"]);
+  cols.add(r.pipeStorm);
+  cols.add(r.inletStorm);
+  if (r.pipe25Check && available.includes("25yr")) cols.add("25yr");
+  const order = ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"];
+  return order.filter(s => available.includes(s) && cols.has(s));
 }
 
 function defaultInletSpacingSettings() {
