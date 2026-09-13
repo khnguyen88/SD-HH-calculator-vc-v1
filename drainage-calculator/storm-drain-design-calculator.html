@@ -2413,7 +2413,7 @@ function renderDrainage(){
 
   const tableWrap = el("div",{class:"table-wrap"});
   const table = el("table",{class:"data"});
-  const storms = availableStorms(state.rainfall.rainfallSource);
+  const storms = visibleDaStorms(state.rainfall);
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"ID"), el("th",{},"Description"), el("th",{},"Area A (ac)"),
     el("th",{},"C"),
