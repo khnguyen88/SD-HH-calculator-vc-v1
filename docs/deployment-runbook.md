@@ -1,6 +1,6 @@
 # Deployment Runbook
 
-Operational runbook for the storm drain design calculator deployed to GitHub Pages. Covers how Pages is wired, the redeploy procedure, verification, and rollback. The `gh-pages` branch is a build artifact: its `index.html` is a byte-identical copy of `drainage-calculator/storm-drain-design-calculator.html` from `main`. Never hand-edit `gh-pages` content — always re-copy from `main`.
+Operational runbook for the storm drain design calculator deployed to GitHub Pages. Covers how Pages is wired, the redeploy procedure, verification, and rollback. The `gh-pages` branch is a build artifact: its `index.html` is a byte-identical copy of `drainage-calculator/storm-drain-design-calculator.html` from `main` (built from `storm-drain-design-calculator-dev.html` via `build.js` — never hand-edited). Never hand-edit `gh-pages` content — always re-copy from `main`.
 
 ## Live URL
 
@@ -21,10 +21,15 @@ No build step, no Actions workflow, no Jekyll. Pages serves the raw `index.html`
 
 ## Redeploy Procedure
 
-Run from the repo root on `main`. This copies the current calculator from `main` onto `gh-pages` as `index.html`, removes the stale `drainage-calculator/` directory from the `gh-pages` tree (if present), commits, and pushes.
+Run from the repo root on `main`. Always run the build first — `storm-drain-design-calculator.html` is generated from `storm-drain-design-calculator-dev.html` and must not be hand-edited.
 
 ```bash
 git checkout main && git pull
+# Build the dist file from the dev file
+node drainage-calculator/build.js
+git add drainage-calculator/storm-drain-design-calculator.html
+git diff --cached --quiet || git commit -m "build: rebuild dist from dev file"
+# Deploy to gh-pages
 git checkout gh-pages
 git checkout main -- drainage-calculator/storm-drain-design-calculator.html
 cp drainage-calculator/storm-drain-design-calculator.html index.html
@@ -35,7 +40,8 @@ git checkout main
 ```
 
 Notes:
-- `git checkout main -- drainage-calculator/storm-drain-design-calculator.html` stages main's version into `gh-pages`'s index/worktree without switching branches' file state beyond that path.
+- Always run `node drainage-calculator/build.js` before deploying. The built file must be committed to `main` before being copied to `gh-pages`.
+- `git checkout main -- drainage-calculator/storm-drain-design-calculator.html` stages main's built version into `gh-pages`'s index/worktree without switching branches' file state beyond that path.
 - `rm -rf drainage-calculator` removes the directory if a prior redeploy left it behind; harmless if absent.
 - The commit on `gh-pages` should be the only change; do not mix unrelated edits.
 
