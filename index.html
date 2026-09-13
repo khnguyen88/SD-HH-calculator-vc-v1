@@ -1052,102 +1052,6 @@ const INLET_STRUCTURES = [
   { id:"MD 378.01", label:"Precast Concrete Junction Box",     Ls:[5,10,15,20], W:1.33, a:0.0833, n:0.013, seedOnly:true },
 ];
 
-// MoCo Kb preset — from "Kb Values MoCo" sheet of bburg-p-c.xlsx.
-// Inlet: 0.50 at 0° → 0.98 at 38°; Manhole: 0.15→0.66; Bend: 0.01→0.16.
-// Full table covers 0°–90°.
-const MOCO_KB_PRESET = [
-  { angle:  0, inlet: 0.50, manhole: 0.15, bend: 0.01 },
-  { angle:  1, inlet: 0.51, manhole: 0.16, bend: 0.01 },
-  { angle:  2, inlet: 0.52, manhole: 0.18, bend: 0.02 },
-  { angle:  3, inlet: 0.53, manhole: 0.19, bend: 0.02 },
-  { angle:  4, inlet: 0.54, manhole: 0.20, bend: 0.03 },
-  { angle:  5, inlet: 0.54, manhole: 0.22, bend: 0.03 },
-  { angle:  6, inlet: 0.55, manhole: 0.22, bend: 0.03 },
-  { angle:  7, inlet: 0.56, manhole: 0.24, bend: 0.04 },
-  { angle:  8, inlet: 0.57, manhole: 0.26, bend: 0.05 },
-  { angle:  9, inlet: 0.58, manhole: 0.27, bend: 0.05 },
-  { angle: 10, inlet: 0.59, manhole: 0.28, bend: 0.06 },
-  { angle: 11, inlet: 0.60, manhole: 0.30, bend: 0.06 },
-  { angle: 12, inlet: 0.61, manhole: 0.31, bend: 0.07 },
-  { angle: 13, inlet: 0.62, manhole: 0.34, bend: 0.07 },
-  { angle: 14, inlet: 0.62, manhole: 0.34, bend: 0.07 },
-  { angle: 15, inlet: 0.63, manhole: 0.35, bend: 0.08 },
-  { angle: 16, inlet: 0.64, manhole: 0.36, bend: 0.08 },
-  { angle: 17, inlet: 0.65, manhole: 0.38, bend: 0.09 },
-  { angle: 18, inlet: 0.66, manhole: 0.39, bend: 0.09 },
-  { angle: 19, inlet: 0.67, manhole: 0.40, bend: 0.09 },
-  { angle: 20, inlet: 0.68, manhole: 0.42, bend: 0.10 },
-  { angle: 21, inlet: 0.69, manhole: 0.43, bend: 0.10 },
-  { angle: 22, inlet: 0.70, manhole: 0.44, bend: 0.11 },
-  { angle: 23, inlet: 0.71, manhole: 0.46, bend: 0.11 },
-  { angle: 24, inlet: 0.73, manhole: 0.47, bend: 0.11 },
-  { angle: 25, inlet: 0.74, manhole: 0.48, bend: 0.12 },
-  { angle: 26, inlet: 0.76, manhole: 0.50, bend: 0.12 },
-  { angle: 27, inlet: 0.78, manhole: 0.51, bend: 0.13 },
-  { angle: 28, inlet: 0.80, manhole: 0.52, bend: 0.13 },
-  { angle: 29, inlet: 0.82, manhole: 0.54, bend: 0.13 },
-  { angle: 30, inlet: 0.83, manhole: 0.55, bend: 0.14 },
-  { angle: 31, inlet: 0.85, manhole: 0.56, bend: 0.14 },
-  { angle: 32, inlet: 0.87, manhole: 0.58, bend: 0.14 },
-  { angle: 33, inlet: 0.89, manhole: 0.59, bend: 0.14 },
-  { angle: 34, inlet: 0.90, manhole: 0.60, bend: 0.14 },
-  { angle: 35, inlet: 0.92, manhole: 0.62, bend: 0.15 },
-  { angle: 36, inlet: 0.94, manhole: 0.63, bend: 0.15 },
-  { angle: 37, inlet: 0.96, manhole: 0.64, bend: 0.16 },
-  { angle: 38, inlet: 0.98, manhole: 0.66, bend: 0.16 },
-  { angle: 39, inlet: 0.99, manhole: 0.67, bend: 0.16 },
-  { angle: 40, inlet: 1.01, manhole: 0.68, bend: 0.17 },
-  { angle: 41, inlet: 1.03, manhole: 0.70, bend: 0.17 },
-  { angle: 42, inlet: 1.05, manhole: 0.71, bend: 0.17 },
-  { angle: 43, inlet: 1.06, manhole: 0.72, bend: 0.17 },
-  { angle: 44, inlet: 1.08, manhole: 0.74, bend: 0.18 },
-  { angle: 45, inlet: 1.10, manhole: 0.75, bend: 0.18 },
-  { angle: 46, inlet: 1.11, manhole: 0.76, bend: 0.18 },
-  { angle: 47, inlet: 1.12, manhole: 0.76, bend: 0.19 },
-  { angle: 48, inlet: 1.13, manhole: 0.77, bend: 0.19 },
-  { angle: 49, inlet: 1.14, manhole: 0.78, bend: 0.19 },
-  { angle: 50, inlet: 1.15, manhole: 0.78, bend: 0.19 },
-  { angle: 51, inlet: 1.16, manhole: 0.79, bend: 0.19 },
-  { angle: 52, inlet: 1.17, manhole: 0.80, bend: 0.19 },
-  { angle: 53, inlet: 1.18, manhole: 0.80, bend: 0.19 },
-  { angle: 54, inlet: 1.19, manhole: 0.81, bend: 0.20 },
-  { angle: 55, inlet: 1.20, manhole: 0.82, bend: 0.20 },
-  { angle: 56, inlet: 1.21, manhole: 0.82, bend: 0.20 },
-  { angle: 57, inlet: 1.22, manhole: 0.83, bend: 0.20 },
-  { angle: 58, inlet: 1.23, manhole: 0.84, bend: 0.20 },
-  { angle: 59, inlet: 1.24, manhole: 0.84, bend: 0.20 },
-  { angle: 60, inlet: 1.25, manhole: 0.85, bend: 0.20 },
-  { angle: 61, inlet: 1.26, manhole: 0.85, bend: 0.20 },
-  { angle: 62, inlet: 1.27, manhole: 0.86, bend: 0.20 },
-  { angle: 63, inlet: 1.27, manhole: 0.86, bend: 0.20 },
-  { angle: 64, inlet: 1.28, manhole: 0.87, bend: 0.20 },
-  { angle: 65, inlet: 1.29, manhole: 0.87, bend: 0.20 },
-  { angle: 66, inlet: 1.30, manhole: 0.88, bend: 0.21 },
-  { angle: 67, inlet: 1.31, manhole: 0.88, bend: 0.21 },
-  { angle: 68, inlet: 1.32, manhole: 0.89, bend: 0.21 },
-  { angle: 69, inlet: 1.32, manhole: 0.89, bend: 0.21 },
-  { angle: 70, inlet: 1.33, manhole: 0.90, bend: 0.21 },
-  { angle: 71, inlet: 1.34, manhole: 0.91, bend: 0.21 },
-  { angle: 72, inlet: 1.35, manhole: 0.91, bend: 0.21 },
-  { angle: 73, inlet: 1.36, manhole: 0.91, bend: 0.21 },
-  { angle: 74, inlet: 1.37, manhole: 0.92, bend: 0.22 },
-  { angle: 75, inlet: 1.37, manhole: 0.92, bend: 0.22 },
-  { angle: 76, inlet: 1.38, manhole: 0.93, bend: 0.22 },
-  { angle: 77, inlet: 1.39, manhole: 0.93, bend: 0.22 },
-  { angle: 78, inlet: 1.40, manhole: 0.94, bend: 0.22 },
-  { angle: 79, inlet: 1.41, manhole: 0.94, bend: 0.22 },
-  { angle: 80, inlet: 1.42, manhole: 0.95, bend: 0.23 },
-  { angle: 81, inlet: 1.42, manhole: 0.95, bend: 0.23 },
-  { angle: 82, inlet: 1.43, manhole: 0.96, bend: 0.23 },
-  { angle: 83, inlet: 1.44, manhole: 0.96, bend: 0.23 },
-  { angle: 84, inlet: 1.45, manhole: 0.97, bend: 0.24 },
-  { angle: 85, inlet: 1.46, manhole: 0.97, bend: 0.24 },
-  { angle: 86, inlet: 1.47, manhole: 0.98, bend: 0.24 },
-  { angle: 87, inlet: 1.47, manhole: 0.98, bend: 0.24 },
-  { angle: 88, inlet: 1.49, manhole: 0.99, bend: 0.25 },
-  { angle: 89, inlet: 1.49, manhole: 0.99, bend: 0.25 },
-  { angle: 90, inlet: 1.50, manhole: 1.00, bend: 0.25 },
-];
 
 /* ---------------------------------------------------------------------
    Inlet Spacing — Core Computation Functions
@@ -1428,6 +1332,7 @@ function defaultRainfallSettings() {
     pipeStorm:   "10yr",
     pipe25Check: false,
     inletStorm:  "2yr",
+    daStormCols: ["2yr", "10yr"],
   };
 }
 
@@ -1436,6 +1341,16 @@ function availableStorms(src) {
   if (src === "mdsha") return ["2yr","10yr","25yr"];
   // noaa — full Atlas 14 return periods
   return ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"];
+}
+
+function visibleDaStorms(r) {
+  const available = availableStorms(r.rainfallSource);
+  const cols = new Set(r.daStormCols || ["2yr", "10yr"]);
+  cols.add(r.pipeStorm);
+  cols.add(r.inletStorm);
+  if (r.pipe25Check && available.includes("25yr")) cols.add("25yr");
+  const order = ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"];
+  return order.filter(s => available.includes(s) && cols.has(s));
 }
 
 function defaultInletSpacingSettings() {
@@ -2496,9 +2411,15 @@ function renderDrainage(){
     el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-drainage","Drainage Area")}, "\u{1F4CA} Detail")
   ]));
 
+  // Storm column selector — mirrors Rainfall & IDF tab
+  const colSelRow = el("div", {style:"padding:6px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"});
+  colSelRow.appendChild(el("span", {style:"color:#aaa;font-size:0.82em;white-space:nowrap;"}, "Show Q columns:"));
+  colSelRow.appendChild(renderDaStormColCheckboxes(state.rainfall));
+  section.appendChild(colSelRow);
+
   const tableWrap = el("div",{class:"table-wrap"});
   const table = el("table",{class:"data"});
-  const storms = availableStorms(state.rainfall.rainfallSource);
+  const storms = visibleDaStorms(state.rainfall);
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"ID"), el("th",{},"Description"), el("th",{},"Area A (ac)"),
     el("th",{},"C"),
@@ -3343,13 +3264,7 @@ function renderKb(){
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Angle vs. Kb"),
     el("div",{},[
-      el("button",{class:"btn btn-sm", style:"margin-right:8px;", onclick:()=>{ state.kb.push({angle:"", inlet:"", manhole:"", bend:""}); renderKb(); }}, "+ Add row"),
-      el("button",{class:"btn btn-sm", style:"margin-right:8px;", title:"Overwrites current table with MoCo Kb values from bburg-p-c.xlsx (Tables sheet). Generic AASHTO seed is the fresh-load default.",
-        onclick:()=>{
-          state.kb = MOCO_KB_PRESET.map(r=>({angle:r[0], inlet:r[1], manhole:r[2], bend:r[3]}));
-          renderAll();
-          toast("Kb table loaded from MoCo preset (bburg-p-c.xlsx Tables sheet).");
-        }}, "Load MoCo preset"),
+      el("button",{class:"btn btn-sm", onclick:()=>{ state.kb.push({angle:"", inlet:"", manhole:"", bend:""}); renderKb(); }}, "+ Add row"),
       el("button",{class:"btn btn-sm btn-ghost", onclick:()=>{ state.kb=defaultKbRows(); renderAll(); toast("Kb table reset to default values."); }}, "Reset to default")
     ])
   ]));
@@ -3521,6 +3436,43 @@ async function doNoaaFetch(r, statusEl) {
     statusEl.style.color = "var(--fail)";
     statusEl.textContent = _noaaFetchMsg;
   }
+}
+
+function renderDaStormColCheckboxes(r) {
+  const available = availableStorms(r.rainfallSource);
+  const shortLbl = {"1yr":"1-yr","2yr":"2-yr","5yr":"5-yr","10yr":"10-yr",
+                    "25yr":"25-yr","50yr":"50-yr","100yr":"100-yr","500yr":"500-yr"};
+  const wrap = el("div", {style:"display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:6px 0;"});
+  available.forEach(s => {
+    const isPipe     = s === r.pipeStorm;
+    const isInlet    = s === r.inletStorm;
+    const is25forced = s === "25yr" && r.pipe25Check;
+    const pinned     = isPipe || isInlet || is25forced;
+    const isChecked  = pinned || (r.daStormCols || ["2yr","10yr"]).includes(s);
+    const tip = isPipe     ? "Always shown — pipe design storm"
+              : isInlet    ? "Always shown — inlet design storm"
+              : is25forced ? "Always shown — 25-yr check enabled"
+              : "";
+    const chkEl = el("input", {
+      type: "checkbox",
+      "data-focus-key": "rf:daStormCols:" + s,
+      title: tip,
+      disabled: pinned ? "disabled" : null,
+      onchange: pinned ? null : (e) => {
+        const cols = new Set(r.daStormCols || ["2yr","10yr"]);
+        if (e.target.checked) cols.add(s); else cols.delete(s);
+        r.daStormCols = [...cols];
+        withFocusPreserved(renderAll);
+      }
+    });
+    chkEl.checked = isChecked;
+    wrap.appendChild(
+      el("label", {style:"display:flex;gap:5px;align-items:center;font-size:0.85em;"
+                        + (pinned ? "opacity:0.55;cursor:default;" : "cursor:pointer;")},
+        [chkEl, shortLbl[s] || s])
+    );
+  });
+  return wrap;
 }
 
 function renderRainfall() {
@@ -3775,6 +3727,17 @@ function renderRainfall() {
 
   stormSec.appendChild(stRow);
   c.appendChild(stormSec);
+
+  // Drainage Area column selector
+  const daColSec = el("div", {class:"section"});
+  daColSec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Drainage Area Q columns")]));
+  const daColRow = el("div", {style:"padding:8px 0;"});
+  daColRow.appendChild(el("p", {class:"view-desc", style:"margin:0 0 6px;"},
+    "Select which storm-event Q columns appear in the Drainage Area table. " +
+    "The pipe and inlet design storms are always shown."));
+  daColRow.appendChild(renderDaStormColCheckboxes(r));
+  daColSec.appendChild(daColRow);
+  c.appendChild(daColSec);
 
   // IDF table — implemented in Task 5
   renderRainfallIdfTable(c);
@@ -6463,7 +6426,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   resolvedInletFields, resolvedInletLabel,
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs,
-  MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES, MOCO_KB_PRESET,
+  MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES,
   kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 
 })();
