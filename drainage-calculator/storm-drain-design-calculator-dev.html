@@ -2142,6 +2142,23 @@ function el(tag, attrs, children){
   });
   return e;
 }
+function mkTxtInput(focusNs, getRenderFn) {
+  return function(row, field, w) {
+    return el("input", {class:"cell-input txt", type:"text", style:"width:"+w+"px",
+      value: row[field]||"",
+      "data-focus-key": focusNs+":"+row.id+":"+field,
+      oninput: (e) => { row[field]=e.target.value; withFocusPreserved(getRenderFn(row)); }});
+  };
+}
+function mkNumInput(focusNs, getRenderFn) {
+  return function(row, field, w) {
+    return el("input", {class:"cell-input", type:"text", inputmode:"decimal", step:"any",
+      style:"width:"+w+"px",
+      value: row[field]===undefined||row[field]===null?"":row[field],
+      "data-focus-key": focusNs+":"+row.id+":"+field,
+      oninput: (e) => { row[field]=e.target.value; withFocusPreserved(getRenderFn(row)); }});
+  };
+}
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
@@ -2431,6 +2448,8 @@ function renderOverview(){
 // ====== SECTION: Render — Drainage ======
 function renderDrainage(){
   const c = document.getElementById("view-drainage");
+  const txt = mkTxtInput("drainage", row=>()=>patchDrainageRow(row));
+  const num = mkNumInput("drainage", row=>()=>patchDrainageRow(row));
   c.innerHTML = "";
   c.appendChild(el("h1",{},"Drainage Area \u2014 Q = C \u00b7 i \u00b7 A"));
   c.appendChild(el("p",{class:"view-desc"},"One row per catchment. Link these to a Junction Structure on the next tab to feed captured runoff into the network."));
@@ -2527,14 +2546,6 @@ function renderDrainage(){
   if(state.drainage.length===0) section.appendChild(el("p",{class:"hint"},"No rows yet \u2014 click \u201c+ Add row\u201d to start."));
   c.appendChild(section);
 
-  function txt(row,field,w){
-    return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"drainage:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(()=>patchDrainageRow(row)); }});
-  }
-  function num(row,field,w){
-    return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"drainage:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(()=>patchDrainageRow(row)); }});
-  }
   function tcCell(row){
     const wrap = el("div",{style:"display:flex;gap:5px;align-items:center;flex-wrap:wrap;"});
     if(row.tcMethod==="tr55"){
@@ -2560,6 +2571,8 @@ function patchDrainageRow(row){
 // ====== SECTION: Render — Structures ======
 function renderStructures(){
   const c = document.getElementById("view-structures");
+  const txt = mkTxtInput("structures", ()=>renderStructures);
+  const num = mkNumInput("structures", ()=>renderStructures);
   c.innerHTML = "";
   c.appendChild(el("h1",{},"Junction Structures"));
   c.appendChild(el("p",{class:"view-desc"},"One row per structure. Total Flow, Hf, Hb and Upstream HGL are computed automatically from linked drainage areas and connected pipes (set up on the Pipe Sizing & Capacity tab). A Flow Splitter needs a Primary and a Secondary outgoing pipe \u2014 set each pipe's Role on the Pipe Sizing & Capacity tab."));
@@ -2614,14 +2627,6 @@ function renderStructures(){
   if(state.structures.length===0) section.appendChild(el("p",{class:"hint"},"No rows yet \u2014 click \u201c+ Add row\u201d to start."));
   c.appendChild(section);
 
-  function txt(row,field,w){
-    return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"structures:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderStructures); }});
-  }
-  function num(row,field,w){
-    return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"structures:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderStructures); }});
-  }
   function forceChk(row){
     return el("input",{type:"checkbox", style:"width:16px;height:16px;", checked: row.forceElev?"checked":null,"data-focus-key":"structures:"+row.id+":forceElev",
       onchange:(e)=>{ row.forceElev = e.target.checked; withFocusPreserved(renderStructures); }});
@@ -2784,6 +2789,8 @@ function renderStructures(){
 // ====== SECTION: Render — Pipes ======
 function renderPipes(){
   const c = document.getElementById("view-pipes");
+  const txtInput = mkTxtInput("pipes", ()=>renderAll);
+  const numInput = mkNumInput("pipes", ()=>renderAll);
   c.innerHTML = "";
   c.appendChild(el("h1",{},"Pipe Sizing & Capacity \u2014 Manning's Equation"));
   c.appendChild(el("p",{class:"view-desc"},"Every pipe connects a From structure to a To structure. Design Q is pulled automatically from the From structure's Total Flow. Angle is this pipe's deflection entering the To structure (used for structure-loss calculations there). For elliptical pipes, enter Size as SPAN x RISE in inches (e.g. 38x24)."));
@@ -2874,14 +2881,6 @@ function renderPipes(){
       return el("td", {class:"out computed-cell", style:"color:#aaa;"}, fmt(effN, 3));
     }
     return el("td", {}, numInput(row, "n", 60));
-  }
-  function txtInput(row,field,w){
-    return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"pipes:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }});
-  }
-  function numInput(row,field,w){
-    return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"pipes:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }});
   }
   function shapeSelect(row){
     const sel = el("select",{class:"cell-input",style:"width:96px","data-focus-key":"pipes:"+row.id+":shape", onchange:(e)=>{ row.shape=e.target.value; withFocusPreserved(renderAll); }});
@@ -3002,6 +3001,8 @@ function renderOutlet(){
   headCells.push(el("th",{},"Notes"), el("th",{},""));
   devTable.appendChild(el("thead",{},el("tr",{},headCells)));
   const devBody = el("tbody");
+  const txt = mkTxtInput("outlet-dev", ()=>renderOutlet);
+  const num = mkNumInput("outlet-dev", ()=>renderOutlet);
   devices.forEach(row=>{
     const cells = [
       el("td",{}, txt(row,"label",110)),
@@ -3156,14 +3157,6 @@ function renderOutlet(){
   }
   c.appendChild(curveSection);
 
-  function txt(row,field,w){
-    return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"outlet-dev:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderOutlet); }});
-  }
-  function num(row,field,w){
-    return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],"data-focus-key":"outlet-dev:"+row.id+":"+field,
-      oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderOutlet); }});
-  }
   function typeSel(row){
     const sel = el("select",{class:"cell-input",style:"width:90px","data-focus-key":"outlet-dev:"+row.id+":type", onchange:(e)=>{ row.type=e.target.value; withFocusPreserved(renderOutlet); }});
     [["orifice","Orifice"],["weir","Weir"],["pipe","Pipe"]].forEach(([v,l])=>{
@@ -3313,6 +3306,8 @@ function renderTable46(){
    Manning's n (Pipe Materials) tab
 --------------------------------------------------------------------- */
 function renderPipeN() {
+  const txtInput = mkTxtInput("pipe-n", ()=>renderAll);
+  const numInput = mkNumInput("pipe-n", ()=>renderAll);
   const c = document.getElementById("view-pipe-n");
   c.innerHTML = "";
   c.appendChild(el("h1", {}, "Manning's n — Pipe Materials"));
@@ -3349,19 +3344,6 @@ function renderPipeN() {
   section.appendChild(tableWrap);
   c.appendChild(section);
 
-  function txtInput(row, field, w) {
-    return el("input", {class:"cell-input txt", type:"text", style:"width:"+w+"px",
-      value: row[field] || "",
-      "data-focus-key": "pipe-n:" + row.id + ":" + field,
-      oninput: (e) => { row[field] = e.target.value; withFocusPreserved(renderAll); }});
-  }
-  function numInput(row, field, w) {
-    return el("input", {class:"cell-input", type:"text", inputmode:"decimal", step:"any",
-      style:"width:"+w+"px",
-      value: row[field] === undefined || row[field] === null ? "" : row[field],
-      "data-focus-key": "pipe-n:" + row.id + ":" + field,
-      oninput: (e) => { row[field] = e.target.value; withFocusPreserved(renderAll); }});
-  }
 }
 
 /* ---------------------------------------------------------------------
@@ -3402,6 +3384,7 @@ function renderKb(){
   section.appendChild(tableWrap);
   c.appendChild(section);
 
+  // Uses indexOf key (kb rows have no id field) — not compatible with mkNumInput factory.
   function numInput(row,field,w){
     return el("input",{class:"cell-input",type:"text",inputmode:"decimal",step:"any",style:"width:"+w+"px",value:row[field]===undefined||row[field]===null?"":row[field],
       "data-focus-key":"kb:"+state.kb.indexOf(row)+":"+field,
