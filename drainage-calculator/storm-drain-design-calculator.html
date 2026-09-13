@@ -2847,6 +2847,9 @@ function renderPipes(){
   c.appendChild(section);
 
   function materialSelect(row) {
+    if (row.material && !state.pipeMaterials.find(m => String(m.id) === String(row.material))) {
+      row.material = "";
+    }
     const sel = el("select", {class:"cell-input", style:"width:180px;",
       "data-focus-key": "pipes:" + row.id + ":material",
       onchange: (e) => { const v = e.target.value; const mat = state.pipeMaterials.find(m => String(m.id) === v); row.material = mat ? mat.id : ""; withFocusPreserved(renderAll); }});
@@ -2859,8 +2862,9 @@ function renderPipes(){
     return sel;
   }
   function nCell(row) {
-    if (row.material) {
-      return el("td", {class:"out computed-cell", style:"color:#aaa;"}, fmt(pipeEffectiveN(row), 3));
+    const effN = pipeEffectiveN(row);
+    if (row.material && effN > 0) {
+      return el("td", {class:"out computed-cell", style:"color:#aaa;"}, fmt(effN, 3));
     }
     return el("td", {}, numInput(row, "n", 60));
   }
@@ -3877,7 +3881,7 @@ function renderPipeSizing25() {
     const n     = pipeEffectiveN(row);
     const S     = pipeEffectiveSlope(row);
     let qfull = null, v = null, pass = null;
-    if (geo && isFinite(n) && isFinite(S) && S > 0) {
+    if (geo && isFinite(n) && n > 0 && isFinite(S) && S > 0) {
       const mf = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
       qfull = mf.Qfull; v = mf.V;
       pass = isFinite(q25) && isFinite(qfull) ? q25 <= qfull : null;
