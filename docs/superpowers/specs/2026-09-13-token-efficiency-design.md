@@ -32,10 +32,12 @@ SheetJS (56% of the file by bytes) is pure noise for editing sessions. The app J
 
 Two files live in `drainage-calculator/`:
 
-| File | Purpose |
-|---|---|
-| `storm-drain-design-calculator.html` | **Dev file.** SheetJS replaced by 1-line placeholder. Edited by developers and Claude. |
-| `storm-drain-design-calculator-dist.html` | **Dist file.** Built output, byte-identical to today's deployed file. Never hand-edited. |
+| File | Contains SheetJS? | Purpose |
+|---|---|---|
+| `storm-drain-design-calculator-dev.html` | **No** (placeholder) | What developers and Claude edit — lean, LLM-friendly. Never shared with end users. |
+| `storm-drain-design-calculator.html` | **Yes** (fully inlined) | Built output. What users download, clone, or open offline. Committed to `main`. Never hand-edited. |
+
+`storm-drain-design-calculator.html` keeps its current name so anyone who clones the repo gets a working file immediately. The dev file is a new artifact that only the developer touches.
 
 The SheetJS placeholder in the dev file:
 ```html
@@ -48,18 +50,20 @@ SheetJS source extracted to `drainage-calculator/lib/sheetjs-bundle.js` and chec
 
 `drainage-calculator/build.js` — Node.js, no dependencies beyond `fs`:
 
-1. Read `storm-drain-design-calculator.html`
+1. Read `storm-drain-design-calculator-dev.html`
 2. Read `lib/sheetjs-bundle.js`
 3. Replace `/* SHEETJS_BUNDLE */` with the bundle contents
-4. Write `storm-drain-design-calculator-dist.html`
+4. Write (overwrite) `storm-drain-design-calculator.html`
 
 Run with: `node drainage-calculator/build.js`
+
+Always run the build and commit both files together. `storm-drain-design-calculator.html` in the repo is always the built output of `storm-drain-design-calculator-dev.html`.
 
 ### Deploy workflow update
 
 `docs/deployment-runbook.md` must be updated to reflect:
-1. Run `node drainage-calculator/build.js` to produce the dist file
-2. Copy `storm-drain-design-calculator-dist.html` → `index.html` on `gh-pages` (not the dev file)
+1. Run `node drainage-calculator/build.js` before deploying
+2. Copy `storm-drain-design-calculator.html` → `index.html` on `gh-pages` (unchanged from current workflow, just adds the build step first)
 
 ### Expected gain
 
@@ -133,7 +137,7 @@ Add structured divider comments to the dev file's app JS so an LLM can be direct
 // ====== SECTION: Init ======
 ```
 
-These markers go in the dev file only. The dist file inherits them verbatim (~1 KB overhead, negligible).
+These markers go in the dev file (`storm-drain-design-calculator-dev.html`). The built `storm-drain-design-calculator.html` inherits them verbatim (~1 KB overhead, negligible).
 
 ---
 
@@ -141,7 +145,8 @@ These markers go in the dev file only. The dist file inherits them verbatim (~1 
 
 | Metric | Before | After |
 |---|---|---|
-| Dev file size | ~781 KB | ~344 KB |
-| Dev file lines | 6,588 | ~4,400–4,800 |
-| LLM context per session | ~781 KB | ~344 KB (full file) or far less (targeted section read) |
-| Deployed file | unchanged | unchanged |
+| Dev file (`-dev.html`) size | — (new file) | ~344 KB |
+| Dev file lines | — | ~4,400–4,800 |
+| LLM context per session | ~781 KB | ~344 KB (full dev file) or far less (targeted section read) |
+| User-facing file (`storm-drain-design-calculator.html`) | ~781 KB, fully working | ~781 KB, fully working (unchanged for users) |
+| Deployed GitHub Pages file | unchanged | unchanged |
