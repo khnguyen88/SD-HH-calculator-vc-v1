@@ -1808,7 +1808,7 @@ function calcPipeRow(row){
   const geo = pipeGeometry(row);
   const designQ = pipeDesignQ(row);
   if(!geo) return { areaSf:null, equivDiamIn:null, Qfull:null, V:null, pass:null, designQ };
-  const n = parseFloat(row.n), S = pipeEffectiveSlope(row);
+  const n = pipeEffectiveN(row), S = pipeEffectiveSlope(row);
   const {V, Qfull} = manningFullFlow(n, geo.areaSf, geo.equivDiamIn, S);
   return {
     areaSf: geo.areaSf, equivDiamIn: geo.equivDiamIn,
@@ -1875,7 +1875,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
   let Sf=0, Hf=0, Vout=0;
   if(geo){
     const R = (geo.equivDiamIn/12)/4;
-    Sf = frictionSlope(outPipeFlow, parseFloat(outPipe.n), geo.areaSf, R);
+    Sf = frictionSlope(outPipeFlow, pipeEffectiveN(outPipe), geo.areaSf, R);
     Hf = Sf*(parseFloat(outPipe.length)||0);
     Vout = geo.areaSf>0 ? totalFlow/geo.areaSf : 0;
   } else {
@@ -3855,7 +3855,7 @@ function renderPipeSizing25() {
   state.pipes.forEach(row => {
     const geo   = pipeGeometry(row);
     const q25   = pipeDesignQ(row, null, "25yr");
-    const n     = parseFloat(row.n);
+    const n     = pipeEffectiveN(row);
     const S     = pipeEffectiveSlope(row);
     let qfull = null, v = null, pass = null;
     if (geo && isFinite(n) && isFinite(S) && S > 0) {
