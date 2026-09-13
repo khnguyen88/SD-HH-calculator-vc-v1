@@ -2849,7 +2849,7 @@ function renderPipes(){
   function materialSelect(row) {
     const sel = el("select", {class:"cell-input", style:"width:180px;",
       "data-focus-key": "pipes:" + row.id + ":material",
-      onchange: (e) => { const v = e.target.value; const n = Number(v); row.material = v ? (Number.isFinite(n) ? n : v) : ""; withFocusPreserved(renderAll); }});
+      onchange: (e) => { const v = e.target.value; const mat = state.pipeMaterials.find(m => String(m.id) === v); row.material = mat ? mat.id : ""; withFocusPreserved(renderAll); }});
     sel.appendChild(el("option", {value:""}, "— (manual)"));
     state.pipeMaterials.forEach(m => {
       const o = el("option", {value: String(m.id)}, m.label);
