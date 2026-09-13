@@ -1431,17 +1431,17 @@ function seedExample(){
   state.drainage.push({id:da2, structureId:"DA-2", desc:"Parking area to St.2", area:0.9, C:0.85, iOverride:"", tc:8, cf:1.0, tcMethod:"direct", tr55:{segments:[]}});
 
   const stOut = nextId();
-  state.structures.push({id:stOut, structureId:"OUTFALL", desc:"Free outfall", drainageAreaId:"", type:"outfall", forceElev:true, startElev:100.0, crown:"", rim:""});
+  state.structures.push({id:stOut, structureId:"OUTFALL", desc:"Free outfall", drainageAreaId:"", type:"outfall", forceElev:true, startElev:100.0, rim:""});
   const stJ = nextId();
-  state.structures.push({id:stJ, structureId:"ST-J", desc:"Junction manhole", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", crown:103.5, rim:108.0});
+  state.structures.push({id:stJ, structureId:"ST-J", desc:"Junction manhole", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", rim:108.0});
   const st1 = nextId();
-  state.structures.push({id:st1, structureId:"ST-1", desc:"Inlet 1", drainageAreaId:da1, type:"inlet", forceElev:false, startElev:"", crown:105.0, rim:110.0});
+  state.structures.push({id:st1, structureId:"ST-1", desc:"Inlet 1", drainageAreaId:da1, type:"inlet", forceElev:false, startElev:"", rim:110.0});
   const st2 = nextId();
-  state.structures.push({id:st2, structureId:"ST-2", desc:"Inlet 2", drainageAreaId:da2, type:"inlet", forceElev:false, startElev:"", crown:106.0, rim:111.0});
+  state.structures.push({id:st2, structureId:"ST-2", desc:"Inlet 2", drainageAreaId:da2, type:"inlet", forceElev:false, startElev:"", rim:111.0});
   const split1 = nextId();
-  state.structures.push({id:split1, structureId:"SPLIT-1", desc:"Diversion structure downstream of BMP outlet", drainageAreaId:"", type:"splitter", forceElev:false, startElev:"", crown:103.0, rim:107.0, splitMethod:"capacity", splitCapacity:6.0, splitRatio:0.5});
+  state.structures.push({id:split1, structureId:"SPLIT-1", desc:"Diversion structure downstream of BMP outlet", drainageAreaId:"", type:"splitter", forceElev:false, startElev:"", rim:107.0, splitMethod:"capacity", splitCapacity:6.0, splitRatio:0.5});
   const bypass = nextId();
-  state.structures.push({id:bypass, structureId:"BYPASS", desc:"Secondary discharge point", drainageAreaId:"", type:"outfall", forceElev:true, startElev:97.0, crown:"", rim:""});
+  state.structures.push({id:bypass, structureId:"BYPASS", desc:"Secondary discharge point", drainageAreaId:"", type:"outfall", forceElev:true, startElev:97.0, rim:""});
 
   state.pipes.push({id:nextId(), fromStructureId:st1, toStructureId:stJ, angle:30, shape:"circular", size:"24", n:0.013, slope:0.005, length:200});
   state.pipes.push({id:nextId(), fromStructureId:st2, toStructureId:stJ, angle:90, shape:"circular", size:"18", n:0.013, slope:0.006, length:160});
@@ -1796,12 +1796,18 @@ function pipeDesignQ(pipeRow, seen, stormOverride){
   return totalFlow;
 }
 
-function pipeEffectiveSlope(pipe){
+function pipeInvertState(pipe) {
   const US = parseFloat(pipe.upstreamInvert);
   const DS = parseFloat(pipe.downstreamInvert);
   const L  = parseFloat(pipe.length);
-  if(isFinite(US) && isFinite(DS) && isFinite(L) && L > 0) return (US - DS) / L;
-  return parseFloat(pipe.slope);
+  const hasUS = isFinite(US), hasDS = isFinite(DS), hasL = isFinite(L) && L > 0;
+  if (hasUS && hasDS && hasL) return { usInvert: US, dsInvert: DS, slope: (US - DS) / L, assumed: false };
+  if (!hasUS && hasDS && hasL) return { usInvert: DS + 0.1, dsInvert: DS, slope: 0.1 / L, assumed: true };
+  return { usInvert: hasUS ? US : null, dsInvert: hasDS ? DS : null, slope: parseFloat(pipe.slope), assumed: false };
+}
+
+function pipeEffectiveSlope(pipe){
+  return pipeInvertState(pipe).slope;
 }
 
 function calcPipeRow(row){
@@ -1855,7 +1861,8 @@ function computeStructureCalc(structureId, seen, stormOverride){
       outPipe, downstream:null, Sf:0, Hf:0, kbColumn:null, kb:0, Hb:0, Vout:0,
       inflowCount:0, controlling:null, elevation: parseFloat(st.startElev)||0,
       isBase:true, warnings, isSplitter, splitInfo,
-      crownPass: st.crown!==""&&st.crown!=null ? (parseFloat(st.startElev)||0) <= parseFloat(st.crown)+1.0 : null,
+      crown: null, crownAssumed: false,
+      crownPass: null,
       rimPass: st.rim!==""&&st.rim!=null ? (parseFloat(st.startElev)||0) <= parseFloat(st.rim)-1.0 : null,
     };
   }
@@ -1864,7 +1871,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
     warnings.push("Circular structure reference detected \u2014 elevation cannot be resolved.");
     return { structure:st, totalFlow, captured:totalFlowInfo.captured, inflow:totalFlowInfo.inflow, outPipe, downstream:null,
       Sf:0, Hf:0, kbColumn:null, kb:0, Hb:0, Vout:0, inflowCount:0, controlling:null, elevation:NaN, isBase:false, warnings, isSplitter, splitInfo,
-      crownPass:null, rimPass:null };
+      crown:null, crownAssumed:false, crownPass:null, rimPass:null };
   }
   seen.add(structureId);
 
@@ -1914,7 +1921,9 @@ function computeStructureCalc(structureId, seen, stormOverride){
   Hb = (kb==null) ? 0 : kb*Vout*Vout/(2*G);
 
   const elevation = downstreamElev + Hf + Hb;
-  const crown = (st.crown!==""&&st.crown!=null) ? parseFloat(st.crown) : null;
+  const invSt = pipeInvertState(outPipe);
+  const crownAssumed = invSt.assumed;
+  const crown = (geo && invSt.usInvert !== null) ? invSt.usInvert + geo.equivDiamIn/12 : null;
   const rim = (st.rim!==""&&st.rim!=null) ? parseFloat(st.rim) : null;
 
   return {
@@ -1922,6 +1931,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
     outPipe, outPipeFlow, downstream, downstreamElev, Sf, Hf, kbColumn, kb, Hb, Vout,
     inflowCount: inflowPipes.length, inflowPipes, controlling, useCatalogKah,
     elevation, isBase:false, warnings, isSplitter, splitInfo,
+    crown, crownAssumed,
     crownPass: crown!==null ? elevation<=crown+1.0 : null,
     rimPass: rim!==null ? elevation<=rim-1.0 : null,
   };
@@ -2561,7 +2571,7 @@ function renderStructures(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Structures"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.structures.push({id:nextId(), structureId:"", desc:"", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", crown:"", rim:"", splitMethod:"capacity", splitCapacity:"", splitRatio:0.5, structureMode:"standard", agency:"", standardStructureId:"", structureCategory:"", shape:"", innerDiameter:"", innerWidth:"", innerLength:""}); renderAll(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.structures.push({id:nextId(), structureId:"", desc:"", drainageAreaId:"", type:"manhole", forceElev:false, startElev:"", rim:"", splitMethod:"capacity", splitCapacity:"", splitRatio:0.5, structureMode:"standard", agency:"", standardStructureId:"", structureCategory:"", shape:"", innerDiameter:"", innerWidth:"", innerLength:""}); renderAll(); }}, "+ Add row"),
     el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-structures","Junction Structures")}, "\u{1F5A8} Print Table"),
     el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-structures","Junction Structures")}, "\u{1F4CA} Detail")
   ]));
@@ -2570,7 +2580,7 @@ function renderStructures(){
   const table = el("table",{class:"data"});
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"Structure ID"), el("th",{},"Description"), el("th",{},"Drainage Area"), el("th",{},"Type"), el("th",{},"Split config"),
-    el("th",{},"Fixed?"), el("th",{},"Fixed/Start Elev"), el("th",{},"Crown (ft)"), el("th",{},"Rim/Grate (ft)"),
+    el("th",{},"Fixed?"), el("th",{},"Fixed/Start Elev"), el("th",{},"Rim/Grate (ft)"),
     el("th",{},"Mode"), el("th",{},"Agency / Category"), el("th",{},"Structure / Shape"), el("th",{},"Inner Size"), el("th",{class:"computed",title:"K_ah used in Hb calculation (controlling angle for 2-inflow structures)"},"K_ah"),
     el("th",{class:"computed"},"Captured Q"), el("th",{class:"computed"},"# In"), el("th",{class:"computed"},"Total Flow"),
     el("th",{},""), el("th",{},"")
@@ -2588,7 +2598,6 @@ function renderStructures(){
       el("td",{}, splitConfig(row)),
       el("td",{}, forceChk(row)),
       el("td",{}, num(row,"startElev",80)),
-      el("td",{}, num(row,"crown",75)),
       el("td",{}, num(row,"rim",75)),
       el("td",{}, modeToggle(row)),
       el("td",{}, isStandard ? agencySelect(row) : categorySelect(row)),
@@ -2814,12 +2823,13 @@ function renderPipes(){
       el("td",{}, numInput(row,"upstreamInvert",70)),
       el("td",{}, numInput(row,"downstreamInvert",70)),
       (()=>{
-        const S = pipeEffectiveSlope(row);
+        const inv = pipeInvertState(row);
+        const S = inv.slope;
         const _us=parseFloat(row.upstreamInvert),_ds=parseFloat(row.downstreamInvert),_len=parseFloat(row.length);
         const hasInverts = isFinite(_us)&&isFinite(_ds)&&isFinite(_len)&&_len>0;
-        return hasInverts
-          ? el("td",{class:"out computed-cell"}, isFinite(S)?fmt(S,4):"—")
-          : el("td",{}, numInput(row,"slope",75));
+        if (hasInverts) return el("td",{class:"out computed-cell"}, isFinite(S)?fmt(S,4):"—");
+        if (inv.assumed && isFinite(S)) return el("td",{class:"out computed-cell",style:"color:var(--warn);"}, fmt(S,4)+" *");
+        return el("td",{}, numInput(row,"slope",75));
       })(),
       el("td",{}, numInput(row,"length",70)),
       el("td",{class:"out computed-cell"}, fmt(calc.designQ,2)),
@@ -3943,17 +3953,20 @@ function renderHgl() {
     el("th",{class:"computed"},"Upstream HGL\n(ft)"),
     el("th",{},"US Inv\n(ft)"),
     el("th",{},"DS Inv\n(ft)"),
-    el("th",{},"Crown\n(ft)"),
+    el("th",{class:"computed"},"Pipe Crown\n(ft)"),
     el("th",{class:"computed"},"Crown\nCheck"),
     el("th",{},"Rim\n(ft)"),
     el("th",{class:"computed"},"Rim\nCheck"),
     el("th",{}, ""),
   ])));
   const tbody = el("tbody");
+  let hglHasAssumed = false;
   state.structures.forEach(row => {
     const calc = computeStructureCalc(row.id);
-    const crown = parseFloat(row.crown);
     const rim   = parseFloat(row.rim);
+    const compCrown = calc ? calc.crown : null;
+    const crownAssumed = calc ? calc.crownAssumed : false;
+    if (crownAssumed) hglHasAssumed = true;
     const crownStyle = calc && calc.crownPass === false ? "color:var(--fail);font-weight:700;" : "";
     const rimStyle   = calc && calc.rimPass   === false ? "color:var(--fail);font-weight:700;" : "";
     tbody.appendChild(el("tr", {}, [
@@ -3965,9 +3978,15 @@ function renderHgl() {
       el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hb)        ? fmt(calc.Hb,3)        : "—"),
       el("td",{class:"out computed-cell", style:"font-weight:700"},
         calc && isFinite(calc.elevation) ? fmt(calc.elevation,2) : "—"),
-      el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.upstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
+      (()=>{
+        if(!calc||!calc.outPipe) return el("td",{},"—");
+        const inv = pipeInvertState(calc.outPipe);
+        if(inv.usInvert===null) return el("td",{},"—");
+        return el("td",{style:inv.assumed?"color:var(--warn);":""}, fmt(inv.usInvert,2)+(inv.assumed?" *":""));
+      })(),
       el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.downstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
-      el("td",{}, isFinite(crown) ? fmt(crown,2) : "—"),
+      el("td",{class:"out computed-cell", style:compCrown!==null?(crownAssumed?"color:var(--warn);":""):""},
+        compCrown!==null ? fmt(compCrown,2)+(crownAssumed?" *":"") : "—"),
       el("td",{class:"out computed-cell", style:crownStyle},
         !calc ? "—" : calc.crownPass === null ? "—" : calc.crownPass ? "✓" : "✗ > crown+1"),
       el("td",{}, isFinite(rim) ? fmt(rim,2) : "—"),
@@ -3979,6 +3998,8 @@ function renderHgl() {
   table.appendChild(tbody);
   tableWrap.appendChild(table);
   section.appendChild(tableWrap);
+  if (hglHasAssumed)
+    section.appendChild(el("p",{class:"hint",style:"color:var(--warn);margin-top:6px;"}, "* U/S invert not entered — assumed as D/S invert + 0.1 ft. Enter the upstream invert on the Pipe Sizing & Capacity tab to use the actual value."));
   if (state.structures.length === 0)
     section.appendChild(el("p",{class:"hint"},"No structures defined. Add structures on the Junction Structures tab."));
   c.appendChild(section);
@@ -4009,7 +4030,7 @@ function renderHgl25(){
   const tableWrap = el("div", {class:"table-wrap"});
   const table = el("table", {class:"data"});
   table.appendChild(el("thead", {}, el("tr", {}, [
-    el("th",{},"Structure ID"), el("th",{},"Type"), el("th",{},"Crown (ft)"), el("th",{},"Rim (ft)"),
+    el("th",{},"Structure ID"), el("th",{},"Type"), el("th",{},"Rim (ft)"),
     el("th",{class:"computed"},"Total Flow Q₂₅\n(cfs)"),
     el("th",{class:"computed"},"Hf\n(ft)"),
     el("th",{class:"computed"},"Kb/Kₐₕ"),
@@ -4017,33 +4038,43 @@ function renderHgl25(){
     el("th",{class:"computed"},"Upstream HGL\n(ft)"),
     el("th",{},"US Inv\n(ft)"),
     el("th",{},"DS Inv\n(ft)"),
+    el("th",{class:"computed"},"Pipe Crown\n(ft)"),
     el("th",{class:"computed"},"Crown\nCheck"),
     el("th",{class:"computed"},"Rim\nCheck"),
     el("th",{},""),
   ])));
   const tbody = el("tbody");
+  let hgl25HasAssumed = false;
   state.structures.forEach(row => {
     const tf   = computeTotalFlow(row.id, null, "25yr");
     const calc = computeStructureCalc(row.id, null, "25yr");
     const hgl  = calc ? calc.elevation : null;
-    const crown = parseFloat(row.crown);
+    const compCrown = calc ? calc.crown : null;
+    const crownAssumed = calc ? calc.crownAssumed : false;
+    if (crownAssumed) hgl25HasAssumed = true;
     const rim   = parseFloat(row.rim);
-    const crownCheck = (isFinite(hgl) && isFinite(crown)) ? hgl <= crown + 1.0 : null;
-    const rimCheck   = (isFinite(hgl) && isFinite(rim))   ? hgl <= rim  - 1.0 : null;
+    const crownCheck = calc ? calc.crownPass : null;
+    const rimCheck   = (isFinite(hgl) && isFinite(rim)) ? hgl <= rim - 1.0 : null;
     const crownStyle = crownCheck === false ? "color:var(--fail);font-weight:700;" : "";
     const rimStyle   = rimCheck   === false ? "color:var(--fail);font-weight:700;" : "";
     tbody.appendChild(el("tr", {}, [
       el("td",{}, row.structureId||row.id),
       el("td",{}, row.type||""),
-      el("td",{}, isFinite(crown) ? fmt(crown,2) : "—"),
-      el("td",{}, isFinite(rim)   ? fmt(rim,2)   : "—"),
+      el("td",{}, isFinite(rim) ? fmt(rim,2) : "—"),
       el("td",{class:"out computed-cell"}, isFinite(tf.Q) ? fmt(tf.Q,2) : "—"),
       el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hf) ? fmt(calc.Hf,3) : "—"),
       el("td",{class:"out computed-cell"}, calc && calc.kb != null   ? fmt(calc.kb,2) : "—"),
       el("td",{class:"out computed-cell"}, calc && isFinite(calc.Hb) ? fmt(calc.Hb,3) : "—"),
       el("td",{class:"out computed-cell"}, isFinite(hgl)  ? fmt(hgl,2)  : "—"),
-      el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.upstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
+      (()=>{
+        if(!calc||!calc.outPipe) return el("td",{},"—");
+        const inv = pipeInvertState(calc.outPipe);
+        if(inv.usInvert===null) return el("td",{},"—");
+        return el("td",{style:inv.assumed?"color:var(--warn);":""}, fmt(inv.usInvert,2)+(inv.assumed?" *":""));
+      })(),
       el("td",{}, (()=>{ const p=calc&&calc.outPipe; const v=p!=null?parseFloat(p.downstreamInvert):NaN; return isFinite(v)?fmt(v,2):"—"; })()),
+      el("td",{class:"out computed-cell", style:compCrown!==null?(crownAssumed?"color:var(--warn);":""):""},
+        compCrown!==null ? fmt(compCrown,2)+(crownAssumed?" *":"") : "—"),
       el("td",{class:"out computed-cell", style:crownStyle},
         crownCheck === null ? "—" : crownCheck ? "✓" : "✗ > crown+1"),
       el("td",{class:"out computed-cell", style:rimStyle},
@@ -4054,7 +4085,10 @@ function renderHgl25(){
   table.appendChild(tbody);
   tableWrap.appendChild(table);
   section.appendChild(tableWrap);
-  if (state.structures.length === 0) section.appendChild(el("p",{class:"hint"},"No structures defined."));
+  if (hgl25HasAssumed)
+    section.appendChild(el("p",{class:"hint",style:"color:var(--warn);margin-top:6px;"}, "* U/S invert not entered — assumed as D/S invert + 0.1 ft. Enter the upstream invert on the Pipe Sizing & Capacity tab to use the actual value."));
+  if (state.structures.length === 0)
+    section.appendChild(el("p",{class:"hint"},"No structures defined. Add structures on the Junction Structures tab."));
   c.appendChild(section);
 }
 
@@ -4590,10 +4624,11 @@ function buildHglRowSheet(structureId, stormOverride){
       csResult("Upstream HGL", fmt(calc.elevation,2)+" ft"),
     ])));
   }
-  const crown = (st.crown!==""&&st.crown!=null)?parseFloat(st.crown):null;
+  const crown = calc.crown;
+  const crownAssumed = calc.crownAssumed;
   const rim   = (st.rim  !==""&&st.rim  !=null)?parseFloat(st.rim)  :null;
   body.push(csSection("Clearance checks", csTable([
-    ["Crown elevation",              crown!=null?fmt(crown,2)+" ft":"\u2014 not set"],
+    ["Pipe crown elevation",         crown!=null?fmt(crown,2)+" ft"+(crownAssumed?" * (assumed)":""):"\u2014 not computed"],
     ["Limit: HGL \u2264 Crown + 1.0 ft", crown!=null?fmt(crown+1,2)+" ft":"\u2014"],
     ["Result", calc.crownPass===null?"\u2014":(calc.crownPass?"OK":"EXCEEDS LIMIT")],
     ["Rim / grate elevation",        rim!=null?fmt(rim,2)+" ft":"\u2014 not set"],
@@ -5398,7 +5433,7 @@ function buildStructuresDetailSheet(){
     th("Total Q\n(cfs)","computed"), th("Out Pipe To"),
     th("Hf\n(ft)","computed"), th("Angle\n(°)"), th("Kb","computed"),
     th("Hb\n(ft)","computed"), th("U/S HGL\n(ft)","computed"),
-    th("Crown\n(ft)"), th("Crown Chk","computed"),
+    th("Pipe Crown\n(ft)","computed"), th("Crown Chk","computed"),
     th("Rim\n(ft)"),   th("Rim Chk","computed"),
   ];
   const rows = state.structures.map(row=>{
@@ -5409,7 +5444,9 @@ function buildStructuresDetailSheet(){
     const toSt = outPipe ? findStructure(outPipe.toStructureId) : null;
     const inflow = calc ? calc.inflow.reduce((s,p)=>s+(isFinite(p.Q)?p.Q:0),0) : 0;
     const angle = outPipe ? parseFloat(outPipe.angle)||0 : 0;
-    const crown = parseFloat(row.crown), rim = parseFloat(row.rim);
+    const compCrown = calc ? calc.crown : null;
+    const crownAssumed = calc ? calc.crownAssumed : false;
+    const rim = parseFloat(row.rim);
     const crownStyle = calc&&calc.crownPass===false ? "color:var(--fail);font-weight:700;" : "";
     const rimStyle   = calc&&calc.rimPass===false   ? "color:var(--fail);font-weight:700;" : "";
     return [
@@ -5424,7 +5461,8 @@ function buildStructuresDetailSheet(){
       el("td",{class:"out computed-cell"},calc&&calc.kb!=null?fmt(calc.kb,2):"—"),
       tdN(calc?calc.Hb:null,3),
       el("td",{class:"out computed-cell",style:"font-weight:700"},fmt(calc?calc.elevation:null,2)),
-      el("td",{},isFinite(crown)?fmt(crown,2):"—"),
+      el("td",{class:"out computed-cell",style:compCrown!==null&&crownAssumed?"color:var(--warn);":""},
+        compCrown!==null?fmt(compCrown,2)+(crownAssumed?" *":""):"—"),
       el("td",{class:"out computed-cell",style:crownStyle},
         !calc||calc.crownPass===null?"—":calc.crownPass?"✓":"✗"),
       el("td",{},isFinite(rim)?fmt(rim,2):"—"),
@@ -5569,7 +5607,7 @@ function buildHglDetailSheet(stormOverride){
     th("Hf design\n(ft)","computed"), th("Hf full\n(ft)","computed"),
     th("Angle\n(°)"), th("Kb","computed"), th("Hb\n(ft)","computed"),
     th("D/S HGL\n(ft)","computed"), th("U/S HGL\n(ft)","computed"),
-    th("Crown\n(ft)"), th("Crown Chk","computed"),
+    th("Pipe Crown\n(ft)","computed"), th("Crown Chk","computed"),
     th("Rim\n(ft)"),   th("Rim Chk","computed"),
   ];
   const rows = state.pipes.map(pipe=>{
@@ -5585,10 +5623,11 @@ function buildHglDetailSheet(stormOverride){
     const angle = parseFloat(pipe.angle)||0;
     const dsHGL = calcTo   ? calcTo.elevation   : null;
     const usHGL = calcFrom ? calcFrom.elevation  : null;
-    const crown = parseFloat(fromSt ? fromSt.crown : "");
+    const compCrown = calcFrom ? calcFrom.crown : null;
+    const crownAssumed = calcFrom ? calcFrom.crownAssumed : false;
     const rim   = parseFloat(fromSt ? fromSt.rim   : "");
-    const crownPass = (isFinite(usHGL)&&isFinite(crown)) ? usHGL<=crown+1.0 : null;
-    const rimPass   = (isFinite(usHGL)&&isFinite(rim))   ? usHGL<=rim-1.0   : null;
+    const crownPass = (isFinite(usHGL)&&compCrown!==null) ? usHGL<=compCrown+1.0 : null;
+    const rimPass   = (isFinite(usHGL)&&isFinite(rim))    ? usHGL<=rim-1.0       : null;
     const crownStyle = crownPass===false ? "color:var(--fail);font-weight:700;" : "";
     const rimStyle   = rimPass  ===false ? "color:var(--fail);font-weight:700;" : "";
 
@@ -5607,7 +5646,8 @@ function buildHglDetailSheet(stormOverride){
         el("td",{},fmt(angle,0)),
         el("td",{},"—"), el("td",{},"—"),
         tdN(dsHGL,2), tdN(usHGL,2),
-        el("td",{},isFinite(crown)?fmt(crown,2):"—"),
+        el("td",{class:"out computed-cell",style:compCrown!==null&&crownAssumed?"color:var(--warn);":""},
+          compCrown!==null?fmt(compCrown,2)+(crownAssumed?" *":""):"—"),
         el("td",{class:"out computed-cell",style:crownStyle},crownPass===null?"—":crownPass?"✓":"✗"),
         el("td",{},isFinite(rim)?fmt(rim,2):"—"),
         el("td",{class:"out computed-cell",style:rimStyle},rimPass===null?"—":rimPass?"✓":"✗ FLOOD"),
@@ -5640,7 +5680,8 @@ function buildHglDetailSheet(stormOverride){
       el("td",{class:"out computed-cell"},kb!=null?fmt(kb,2):"—"),
       tdN(Hb,3),
       tdN(dsHGL,2), tdN(usHGL,2),
-      el("td",{},isFinite(crown)?fmt(crown,2):"—"),
+      el("td",{class:"out computed-cell",style:compCrown!==null&&crownAssumed?"color:var(--warn);":""},
+        compCrown!==null?fmt(compCrown,2)+(crownAssumed?" *":""):"—"),
       el("td",{class:"out computed-cell",style:crownStyle},crownPass===null?"—":crownPass?"✓":"✗"),
       el("td",{},isFinite(rim)?fmt(rim,2):"—"),
       el("td",{class:"out computed-cell",style:rimStyle},rimPass===null?"—":rimPass?"✓":"✗ FLOOD"),
@@ -5881,15 +5922,16 @@ function buildWorkbook(){
   const wsPipe = XLSX.utils.aoa_to_sheet(pipeAoa);
 
   // ---- Junction Structure ----
-  const stHeader = ["Structure ID","Description","Drainage Area ID","Type","Force Fixed","Fixed-Start Elev (ft)","Crown Elev (ft)","Rim-Grate Elev (ft)",
+  const stHeader = ["Structure ID","Description","Drainage Area ID","Type","Force Fixed","Fixed-Start Elev (ft)","Pipe Crown (ft)","Rim-Grate Elev (ft)",
     "Captured Q (cfs)","Q from Pipes (cfs)","Total Flow (cfs)","Outgoing Pipe ID","Hf (ft)","Kb","Hb (ft)","Vout (fps)","Upstream HGL (ft)","Downstream Structure ID","Crown Check","Rim Check",
     "Split Method","Split Capacity (cfs)","Split Ratio (0-1)",
     "Structure Mode","Agency","Catalog ID","Category","Shape","Inner Dia (ft)","Inner W (ft)","Inner L (ft)"];
   const stAoa = [stHeader];
   state.structures.forEach(s=>{
     const daLabel = s.drainageAreaId ? ((findDrainage(s.drainageAreaId)||{}).structureId || s.drainageAreaId) : "";
+    const calcForCrown = computeStructureCalc(s.id);
     stAoa.push([s.structureId||s.id, s.desc||"", daLabel, s.type, s.forceElev?"TRUE":"FALSE", (s.startElev===""||s.startElev==null)?"":num(s.startElev),
-      (s.crown===""||s.crown==null)?"":num(s.crown), (s.rim===""||s.rim==null)?"":num(s.rim),
+      (calcForCrown&&calcForCrown.crown!==null)?num(calcForCrown.crown):"", (s.rim===""||s.rim==null)?"":num(s.rim),
       null,null,null,null,null,null,null,null,null,null,null,null,
       s.type==="splitter"?(s.splitMethod||"capacity"):"", s.type==="splitter"?num(s.splitCapacity):"", s.type==="splitter"?num(s.splitRatio,0.5):"",
       s.structureMode||"", s.agency||"", s.standardStructureId||"", s.structureCategory||"", s.shape||"",
@@ -5902,7 +5944,7 @@ function buildWorkbook(){
   // Now fill live formulas. Column letters:
   // Drainage Area: A id B desc C area D C E CA F iOverride G tc H cf I tcMethod J+ Q per storm (static values)
   // Pipe Sizing:   A id B from C to D angle E shape F size G n H usInv I dsInv J slope K len L designQ M area N qfull O vel P status Q splitRole R from|role key
-  // Structure:     A id B desc C daId D type E force F startElev G crown H rim
+  // Structure:     A id B desc C daId D type E force F startElev G pipeCrown(computed) H rim
   //                I capturedQ J qFromPipes K totalFlow L outPipeId M Hf N Kb O Hb P Vout Q upstreamHGL R downstreamId S crownChk T rimChk
   //                U splitMethod V splitCapacity W splitRatio
   //                X structureMode Y agency Z catalogId AA category AB shape AC innerDia AD innerW AE innerL
@@ -6309,7 +6351,6 @@ function importExcel(file){
             type: r["Type"]||"manhole",
             forceElev: String(r["Force Fixed"]).toUpperCase()==="TRUE",
             startElev: r["Fixed-Start Elev (ft)"]===""?"":r["Fixed-Start Elev (ft)"],
-            crown: r["Crown Elev (ft)"]===""?"":r["Crown Elev (ft)"],
             rim: r["Rim-Grate Elev (ft)"]===""?"":r["Rim-Grate Elev (ft)"],
             splitMethod: r["Split Method"]||"capacity",
             splitCapacity: r["Split Capacity (cfs)"]===""?"":r["Split Capacity (cfs)"],
