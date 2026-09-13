@@ -517,8 +517,26 @@ body.print-mode #printArea .cs-table-sheet{
   gap:2px;
 }
 .mobile-nav-panel.open{ display:flex; }
+.tablet-nav{
+  display:none;
+  flex-direction:row;
+  overflow-x:auto;
+  align-items:center;
+  gap:2px;
+}
 
-@media (max-width:760px){
+/* Tablet (481px–1024px): sidebar hidden, horizontal tab strip in topbar-center */
+@media (min-width:481px) and (max-width:1024px){
+  .sidebar{ display:none; }
+  .topbar{ gap:8px; padding:10px 14px; }
+  .topbar-center{ display:flex; flex:1 1 auto; overflow:hidden; }
+  .tablet-nav{ display:flex; }
+  .hamburger-only{ display:none !important; }
+  .mobile-nav-panel{ display:none !important; }
+}
+
+/* Mobile (≤480px): sidebar hidden, hamburger button only */
+@media (max-width:480px){
   .sidebar{ display:none; }
   .topbar{ gap:8px; padding:10px 14px; }
   .topbar-center{ display:flex; }
@@ -565,7 +583,8 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
         <span class="tab-label" id="tabLabel"></span>
       </div>
       <div class="topbar-center">
-        <button class="btn btn-sm" id="hamburgerBtn" aria-label="Open navigation menu">&#9776; Menu</button>
+        <button class="btn btn-sm hamburger-only" id="hamburgerBtn" aria-label="Open navigation menu">&#9776; Menu</button>
+        <nav id="tabletNav" class="tablet-nav"></nav>
       </div>
       <div class="topbar-right">
         <button class="btn btn-sm mobile-hidden" id="saveCompBtn" title="Save current project to browser storage">&#8964; Save</button>
@@ -1453,11 +1472,11 @@ function seedExample(){
   const bypass = nextId();
   state.structures.push({id:bypass, structureId:"BYPASS", desc:"Secondary discharge point", drainageAreaId:"", type:"outfall", forceElev:true, startElev:97.0, rim:""});
 
-  state.pipes.push({id:nextId(), fromStructureId:st1, toStructureId:stJ, angle:30, shape:"circular", size:"24", n:0.013, slope:0.005, length:200});
-  state.pipes.push({id:nextId(), fromStructureId:st2, toStructureId:stJ, angle:90, shape:"circular", size:"18", n:0.013, slope:0.006, length:160});
-  state.pipes.push({id:nextId(), fromStructureId:stJ, toStructureId:split1, angle:0, shape:"circular", size:"30", n:0.013, slope:0.004, length:100});
-  state.pipes.push({id:nextId(), fromStructureId:split1, toStructureId:stOut, angle:0, shape:"circular", size:"24", n:0.013, slope:0.004, length:150, splitRole:"primary"});
-  state.pipes.push({id:nextId(), fromStructureId:split1, toStructureId:bypass, angle:45, shape:"circular", size:"18", n:0.013, slope:0.005, length:120, splitRole:"secondary"});
+  state.pipes.push({id:nextId(), fromStructureId:st1, toStructureId:stJ, angle:30, shape:"circular", size:"24", n:0.013, slope:0.005, length:200, upstreamInvert:102.00, downstreamInvert:101.00});
+  state.pipes.push({id:nextId(), fromStructureId:st2, toStructureId:stJ, angle:90, shape:"circular", size:"18", n:0.013, slope:0.006, length:160, upstreamInvert:101.96, downstreamInvert:101.00});
+  state.pipes.push({id:nextId(), fromStructureId:stJ, toStructureId:split1, angle:0, shape:"circular", size:"30", n:0.013, slope:0.004, length:100, upstreamInvert:101.00, downstreamInvert:100.60});
+  state.pipes.push({id:nextId(), fromStructureId:split1, toStructureId:stOut, angle:0, shape:"circular", size:"24", n:0.013, slope:0.004, length:150, splitRole:"primary", upstreamInvert:100.60, downstreamInvert:100.00});
+  state.pipes.push({id:nextId(), fromStructureId:split1, toStructureId:bypass, angle:45, shape:"circular", size:"18", n:0.013, slope:0.005, length:120, splitRole:"secondary", upstreamInvert:97.60, downstreamInvert:97.00});
 
   // Outlet control structures (BMP/SWM riser). Each is independent: own
   // devices, own stage range/precision, own tailwater.
@@ -2419,6 +2438,15 @@ function renderNav(){
       onclick: () => { state.active = t.id; closeMobileNav(); renderAll(); }
     }, [ el("span", {class:"nav-num"}, String(i+1).padStart(2,"0")), t.label ]);
     mobileNav.appendChild(btn);
+  });
+  const tabletNav = document.getElementById("tabletNav");
+  tabletNav.innerHTML = "";
+  tabs.forEach((t, i) => {
+    const btn = el("button", {
+      class: "nav-btn" + (state.active === t.id ? " active" : ""),
+      onclick: () => { state.active = t.id; renderAll(); }
+    }, [ el("span", {class:"nav-num"}, String(i+1).padStart(2,"0")), t.label ]);
+    tabletNav.appendChild(btn);
   });
 }
 function showActiveView(){
