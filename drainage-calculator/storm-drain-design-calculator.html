@@ -664,6 +664,20 @@ const TABLE46 = [
   {cdia:144, carea:113.10,espan:180,erise:116,earea:118.6},
 ];
 
+function defaultPipeMaterials() {
+  return [
+    { id: 1, label: "RCP (Reinforced Concrete Pipe)",  n: 0.013 },
+    { id: 2, label: "CMP (Corrugated Metal Pipe)",      n: 0.024 },
+    { id: 3, label: "CMP w/ Paved Invert",              n: 0.018 },
+    { id: 4, label: "HDPE — smooth interior",           n: 0.012 },
+    { id: 5, label: "HDPE — corrugated",                n: 0.025 },
+    { id: 6, label: "PVC",                              n: 0.011 },
+    { id: 7, label: "CPEP",                             n: 0.011 },
+    { id: 8, label: "Ductile Iron Pipe",                n: 0.013 },
+    { id: 9, label: "Steel Pipe",                       n: 0.012 },
+  ];
+}
+
 function defaultKbRows(){
   return [
     {angle:5,  inlet:0.06, manhole:0.06, bend:0.06},
@@ -1387,6 +1401,7 @@ const state = {
   structures: [],
   pipes: [],
   kb: defaultKbRows(),
+  pipeMaterials: defaultPipeMaterials(),
   outletStructures: [],
   outletDevices: [],
   activeOutletId: "",
@@ -1495,6 +1510,14 @@ function manningFullFlow(n, areaSf, equivDiamIn, slope){
   const V = (1.486/n) * Math.pow(R, 2/3) * Math.sqrt(Math.max(slope,0));
   const Qfull = V*areaSf;
   return {R, V, Qfull};
+}
+
+function pipeEffectiveN(row) {
+  if (row.material) {
+    const mat = state.pipeMaterials.find(m => m.id === row.material);
+    if (mat) return parseFloat(mat.n) || 0;
+  }
+  return parseFloat(row.n) || 0;
 }
 
 function frictionSlope(Q, n, areaSf, R){
@@ -2182,6 +2205,7 @@ function captureState(){
     structures: state.structures,
     pipes: state.pipes,
     kb: state.kb,
+    pipeMaterials: state.pipeMaterials,
     outletStructures: state.outletStructures,
     outletDevices: state.outletDevices,
     activeOutletId: state.activeOutletId,
@@ -2198,6 +2222,7 @@ function restoreState(snap, projectName){
   state.structures = snap.structures || [];
   state.pipes = snap.pipes || [];
   state.kb = snap.kb || defaultKbRows();
+  state.pipeMaterials = snap.pipeMaterials || defaultPipeMaterials();
   state.outletStructures = snap.outletStructures || [];
   state.outletDevices = snap.outletDevices || [];
   state.activeOutletId = snap.activeOutletId || "";
