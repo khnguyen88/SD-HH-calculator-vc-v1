@@ -3432,6 +3432,43 @@ async function doNoaaFetch(r, statusEl) {
   }
 }
 
+function renderDaStormColCheckboxes(r) {
+  const available = availableStorms(r.rainfallSource);
+  const shortLbl = {"1yr":"1-yr","2yr":"2-yr","5yr":"5-yr","10yr":"10-yr",
+                    "25yr":"25-yr","50yr":"50-yr","100yr":"100-yr","500yr":"500-yr"};
+  const wrap = el("div", {style:"display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:6px 0;"});
+  available.forEach(s => {
+    const isPipe     = s === r.pipeStorm;
+    const isInlet    = s === r.inletStorm;
+    const is25forced = s === "25yr" && r.pipe25Check;
+    const pinned     = isPipe || isInlet || is25forced;
+    const isChecked  = pinned || (r.daStormCols || ["2yr","10yr"]).includes(s);
+    const tip = isPipe     ? "Always shown — pipe design storm"
+              : isInlet    ? "Always shown — inlet design storm"
+              : is25forced ? "Always shown — 25-yr check enabled"
+              : "";
+    const chkEl = el("input", {
+      type: "checkbox",
+      "data-focus-key": "rf:daStormCols:" + s,
+      title: tip,
+      disabled: pinned ? "disabled" : null,
+      onchange: pinned ? null : (e) => {
+        const cols = new Set(r.daStormCols || ["2yr","10yr"]);
+        if (e.target.checked) cols.add(s); else cols.delete(s);
+        r.daStormCols = [...cols];
+        withFocusPreserved(renderAll);
+      }
+    });
+    chkEl.checked = isChecked;
+    wrap.appendChild(
+      el("label", {style:"display:flex;gap:5px;align-items:center;font-size:0.85em;"
+                        + (pinned ? "opacity:0.55;cursor:default;" : "cursor:pointer;")},
+        [chkEl, shortLbl[s] || s])
+    );
+  });
+  return wrap;
+}
+
 function renderRainfall() {
   const c = document.getElementById("view-rainfall");
   if (!c) return;
@@ -3684,6 +3721,17 @@ function renderRainfall() {
 
   stormSec.appendChild(stRow);
   c.appendChild(stormSec);
+
+  // Drainage Area column selector
+  const daColSec = el("div", {class:"section"});
+  daColSec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, "Drainage Area Q columns")]));
+  const daColRow = el("div", {style:"padding:8px 0;"});
+  daColRow.appendChild(el("p", {class:"view-desc", style:"margin:0 0 6px;"},
+    "Select which storm-event Q columns appear in the Drainage Area table. " +
+    "The pipe and inlet design storms are always shown."));
+  daColRow.appendChild(renderDaStormColCheckboxes(r));
+  daColSec.appendChild(daColRow);
+  c.appendChild(daColSec);
 
   // IDF table — implemented in Task 5
   renderRainfallIdfTable(c);
