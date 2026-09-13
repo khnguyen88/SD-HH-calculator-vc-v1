@@ -2785,7 +2785,7 @@ function renderPipes(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Pipe runs"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, upstreamInvert:"", downstreamInvert:"", slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, material:"", upstreamInvert:"", downstreamInvert:"", slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
     el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F5A8} Print Table"),
     el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F4CA} Detail")
   ]));
@@ -2794,7 +2794,7 @@ function renderPipes(){
   const table = el("table",{class:"data"});
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"ID"), el("th",{},"From"), el("th",{},"To"), el("th",{},"Role"), el("th",{},"Angle (\u00b0)"),
-    el("th",{},"Shape"), el("th",{},"Size (in)"), el("th",{},"n"), el("th",{},"US Inv\n(ft)"), el("th",{},"DS Inv\n(ft)"), el("th",{},"Slope (ft/ft)"), el("th",{},"Length (ft)"),
+    el("th",{},"Shape"), el("th",{},"Size (in)"), el("th",{},"Material"), el("th",{},"n"), el("th",{},"US Inv\n(ft)"), el("th",{},"DS Inv\n(ft)"), el("th",{},"Slope (ft/ft)"), el("th",{},"Length (ft)"),
     el("th",{class:"computed"},"Design Q"), el("th",{class:"computed"},"Area (sf)"), el("th",{class:"computed"},"Qfull (cfs)"),
     el("th",{class:"computed"},"V (fps)"), el("th",{class:"computed"},"Status"), el("th",{},""), el("th",{},"")
   ])));
@@ -2809,7 +2809,8 @@ function renderPipes(){
       el("td",{}, numInput(row,"angle",60)),
       el("td",{}, shapeSelect(row)),
       el("td",{}, txtInput(row,"size",80)),
-      el("td",{}, numInput(row,"n",60)),
+      el("td",{}, materialSelect(row)),
+      nCell(row),
       el("td",{}, numInput(row,"upstreamInvert",70)),
       el("td",{}, numInput(row,"downstreamInvert",70)),
       (()=>{
@@ -2845,6 +2846,24 @@ function renderPipes(){
   if(state.pipes.length===0) section.appendChild(el("p",{class:"hint"},"No rows yet \u2014 click \u201c+ Add row\u201d to start. You'll need at least two structures defined first."));
   c.appendChild(section);
 
+  function materialSelect(row) {
+    const sel = el("select", {class:"cell-input", style:"width:180px;",
+      "data-focus-key": "pipes:" + row.id + ":material",
+      onchange: (e) => { const v = e.target.value; const n = Number(v); row.material = v ? (Number.isFinite(n) ? n : v) : ""; withFocusPreserved(renderAll); }});
+    sel.appendChild(el("option", {value:""}, "— (manual)"));
+    state.pipeMaterials.forEach(m => {
+      const o = el("option", {value: String(m.id)}, m.label);
+      if (String(row.material) === String(m.id)) o.selected = true;
+      sel.appendChild(o);
+    });
+    return sel;
+  }
+  function nCell(row) {
+    if (row.material) {
+      return el("td", {class:"out computed-cell", style:"color:#aaa;"}, fmt(pipeEffectiveN(row), 3));
+    }
+    return el("td", {}, numInput(row, "n", 60));
+  }
   function txtInput(row,field,w){
     return el("input",{class:"cell-input txt",type:"text",style:"width:"+w+"px",value:row[field]||"","data-focus-key":"pipes:"+row.id+":"+field,
       oninput:(e)=>{ row[field]=e.target.value; withFocusPreserved(renderAll); }});
@@ -3844,7 +3863,7 @@ function renderPipeSizing25() {
   const tableWrap = el("div", {class:"table-wrap"});
   const table = el("table", {class:"data"});
   table.appendChild(el("thead", {}, el("tr", {}, [
-    el("th",{},"From"), el("th",{},"To"), el("th",{},"Shape / Size"),
+    el("th",{},"From"), el("th",{},"To"), el("th",{},"Shape"), el("th",{},"Size (in)"), el("th",{},"Material"), el("th",{},"n"),
     el("th",{class:"computed"},"Design Q₂₅\n(cfs)"),
     el("th",{class:"computed"},"Q_full (cfs)"),
     el("th",{class:"computed"},"V (fps)"),
@@ -3865,13 +3884,13 @@ function renderPipeSizing25() {
     }
     const fromSt = findStructure(row.fromStructureId);
     const toSt   = findStructure(row.toStructureId);
-    const sizeLabel = row.shape === "elliptical"
-      ? (row.size || "?") + " ellip."
-      : (row.size || "?") + '" circ.';
     tbody.appendChild(el("tr", {}, [
       el("td",{}, fromSt ? (fromSt.structureId||fromSt.id) : (row.fromStructureId||"?")),
       el("td",{}, toSt   ? (toSt.structureId||toSt.id)     : (row.toStructureId||"?")),
-      el("td",{}, sizeLabel),
+      el("td",{}, row.shape==="circular"?"Circular":"Elliptical"),
+      el("td",{}, row.size||"—"),
+      el("td",{}, row.material ? (state.pipeMaterials.find(m=>m.id===row.material)||{}).label||"—" : "— (manual)"),
+      el("td",{class:"out computed-cell", style: row.material?"color:#aaa;":""}, fmt(pipeEffectiveN(row),3)),
       el("td",{class:"out computed-cell"}, isFinite(q25)   ? fmt(q25,2)   : "—"),
       el("td",{class:"out computed-cell"}, isFinite(qfull) ? fmt(qfull,2) : "—"),
       el("td",{class:"out computed-cell"}, isFinite(v)     ? fmt(v,2)     : "—"),
