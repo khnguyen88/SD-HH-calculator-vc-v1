@@ -667,15 +667,15 @@ const TABLE46 = [
 
 function defaultPipeMaterials() {
   return [
-    { id: 1, label: "RCP (Reinforced Concrete Pipe)",  n: 0.013 },
-    { id: 2, label: "CMP (Corrugated Metal Pipe)",      n: 0.024 },
-    { id: 3, label: "CMP w/ Paved Invert",              n: 0.018 },
-    { id: 4, label: "HDPE — smooth interior",           n: 0.012 },
-    { id: 5, label: "HDPE — corrugated",                n: 0.025 },
-    { id: 6, label: "PVC",                              n: 0.011 },
-    { id: 7, label: "CPEP",                             n: 0.011 },
-    { id: 8, label: "Ductile Iron Pipe",                n: 0.013 },
-    { id: 9, label: "Steel Pipe",                       n: 0.012 },
+    { id: 1, label: "RCP",              description: "Reinforced Concrete Pipe",                    n: 0.013 },
+    { id: 2, label: "CMP",              description: "Corrugated Metal Pipe",                       n: 0.024 },
+    { id: 3, label: "CMP w/ Paved Inv", description: "Corrugated Metal Pipe with Paved Invert",    n: 0.018 },
+    { id: 4, label: "HDPE (smooth)",    description: "High-Density Polyethylene — smooth interior", n: 0.012 },
+    { id: 5, label: "HDPE (corr.)",     description: "High-Density Polyethylene — corrugated",      n: 0.025 },
+    { id: 6, label: "PVC",              description: "Polyvinyl Chloride",                          n: 0.011 },
+    { id: 7, label: "CPEP",             description: "Corrugated Polyethylene Pipe",                n: 0.011 },
+    { id: 8, label: "DIP",              description: "Ductile Iron Pipe",                           n: 0.013 },
+    { id: 9, label: "Steel",            description: "Steel Pipe",                                  n: 0.012 },
   ];
 }
 
@@ -3314,7 +3314,7 @@ function renderPipeN() {
   section.appendChild(el("div", {class:"section-head"}, [
     el("h2", {}, "Pipe material reference"),
     el("div", {}, [
-      el("button", {class:"btn btn-sm", onclick:()=>{ state.pipeMaterials.push({id:nextId(), label:"", n:""}); renderPipeN(); }}, "+ Add row"),
+      el("button", {class:"btn btn-sm", onclick:()=>{ state.pipeMaterials.push({id:nextId(), label:"", description:"", n:""}); renderPipeN(); }}, "+ Add row"),
       el("button", {class:"btn btn-sm btn-ghost", onclick:()=>{ state.pipeMaterials=defaultPipeMaterials(); renderAll(); toast("Pipe material table reset to default values."); }}, "Reset to default")
     ])
   ]));
@@ -3322,14 +3322,16 @@ function renderPipeN() {
   const tableWrap = el("div", {class:"table-wrap"});
   const table = el("table", {class:"data"});
   table.appendChild(el("thead", {}, el("tr", {}, [
-    el("th", {}, "Pipe Material"),
+    el("th", {}, "Abbrev."),
+    el("th", {}, "Full Name / Description"),
     el("th", {}, "Manning's n"),
     el("th", {}, "")
   ])));
   const tbody = el("tbody");
   state.pipeMaterials.forEach(row => {
     tbody.appendChild(el("tr", {}, [
-      el("td", {}, txtInput(row, "label", 260)),
+      el("td", {}, txtInput(row, "label", 120)),
+      el("td", {}, txtInput(row, "description", 300)),
       el("td", {}, numInput(row, "n", 80)),
       el("td", {}, delBtn(()=>{ state.pipeMaterials = state.pipeMaterials.filter(r => r !== row); renderAll(); }))
     ]));
@@ -4407,7 +4409,7 @@ function buildPipeSheet(row, stormOverride){
     geoRows.push(["Matched Table 4-6 entry", geo.equivDiamIn+" in equivalent circular diameter"]);
   }
   geoRows.push(["Cross-sectional area, A", geo?fmt(geo.areaSf,3)+" sf":"\u2014"]);
-  geoRows.push(["Material", matEntry ? matEntry.label : "Manual"]);
+  geoRows.push(["Material", matEntry ? (matEntry.label + (matEntry.description ? " — " + matEntry.description : "")) : "Manual"]);
   geoRows.push(["Manning's n", fmt(pipeEffectiveN(row),3)]);
   const So = pipeEffectiveSlope(row);
   const _usInv = parseFloat(row.upstreamInvert);
