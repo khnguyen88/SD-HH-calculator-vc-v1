@@ -2411,6 +2411,12 @@ function renderDrainage(){
     el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-drainage","Drainage Area")}, "\u{1F4CA} Detail")
   ]));
 
+  // Storm column selector — mirrors Rainfall & IDF tab
+  const colSelRow = el("div", {style:"padding:6px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"});
+  colSelRow.appendChild(el("span", {style:"color:#aaa;font-size:0.82em;white-space:nowrap;"}, "Show Q columns:"));
+  colSelRow.appendChild(renderDaStormColCheckboxes(state.rainfall));
+  section.appendChild(colSelRow);
+
   const tableWrap = el("div",{class:"table-wrap"});
   const table = el("table",{class:"data"});
   const storms = visibleDaStorms(state.rainfall);
