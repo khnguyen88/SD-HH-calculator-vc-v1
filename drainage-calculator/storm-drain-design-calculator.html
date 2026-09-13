@@ -4375,6 +4375,7 @@ function buildPipeSheet(row, stormOverride){
     el("div",{class:"cs-note"}, designNote),
     csResult("Design Q"+(stormOverride?" ("+stormOverride+")":""), fmt(designQ,2)+" cfs"),
   ])));
+  const matEntry = row.material ? state.pipeMaterials.find(m => m.id === row.material) : null;
   const geoRows = [
     ["Shape", row.shape==="circular"?"Circular":"Elliptical"],
     ["Size", row.shape==="circular" ? (row.size||"\u2014")+" in diameter" : (row.size||"\u2014")+" in (span \u00d7 rise)"],
@@ -4383,7 +4384,8 @@ function buildPipeSheet(row, stormOverride){
     geoRows.push(["Matched Table 4-6 entry", geo.equivDiamIn+" in equivalent circular diameter"]);
   }
   geoRows.push(["Cross-sectional area, A", geo?fmt(geo.areaSf,3)+" sf":"\u2014"]);
-  geoRows.push(["Manning's n", fmt(parseFloat(row.n),3)]);
+  geoRows.push(["Material", matEntry ? matEntry.label : "Manual"]);
+  geoRows.push(["Manning's n", fmt(pipeEffectiveN(row),3)]);
   const So = pipeEffectiveSlope(row);
   const _usInv = parseFloat(row.upstreamInvert);
   const _dsInv = parseFloat(row.downstreamInvert);
@@ -4399,7 +4401,7 @@ function buildPipeSheet(row, stormOverride){
     const R = (geo.equivDiamIn/12)/4;
     body.push(csSection("Manning's Equation \u2014 full-flow capacity", el("div",{},[
       csFormula(["V = (1.486/n) \u00d7 R^(2/3) \u00d7 S^(1/2)", "R = D/4 = "+fmt(R,3)+" ft"]),
-      csFormula(["V = (1.486/"+fmt(parseFloat(row.n),3)+") \u00d7 "+fmt(R,3)+"^(2/3) \u00d7 "+fmt(So,4)+"^(1/2)"]),
+      csFormula(["V = (1.486/"+fmt(pipeEffectiveN(row),3)+") \u00d7 "+fmt(R,3)+"^(2/3) \u00d7 "+fmt(So,4)+"^(1/2)"]),
       csResult("V (full flow)", fmt(calc.V,2)+" fps"),
       csFormula(["Qfull = V \u00d7 A = "+fmt(calc.V,2)+" \u00d7 "+fmt(geo.areaSf,3)]),
       csResult("Qfull", fmt(calc.Qfull,2)+" cfs"),
