@@ -667,6 +667,7 @@ const TABLE46 = [
   {cdia:144, carea:113.10,espan:180,erise:116,earea:118.6},
 ];
 
+// ====== SECTION: Data Tables ======
 function defaultPipeMaterials() {
   return [
     { id: 1, label: "RCP",              description: "Reinforced Concrete Pipe",                    n: 0.013 },
@@ -1074,6 +1075,7 @@ const INLET_STRUCTURES = [
    Inlet Spacing — Core Computation Functions
 --------------------------------------------------------------------- */
 
+// ====== SECTION: Hydrology / Rational Method ======
 function interpolatePL(tc, breakpoints) {
   if (!breakpoints || breakpoints.length === 0) return 0;
   if (tc <= breakpoints[0][0]) return breakpoints[0][1];
@@ -1644,6 +1646,7 @@ const TR55_CHANNEL_N = {
 };
 const TR55_SEGMENT_TYPES = [["sheet","Sheet flow"],["shallow","Shallow concentrated flow"],["channel","Channel / pipe flow"]];
 
+// ====== SECTION: TR-55 Travel Time ======
 function tr55SheetFlowTt(n, L, s, P2){
   if(![n,L,s,P2].every(v=>isFinite(v) && v>0)) return 0;
   return (0.007*Math.pow(n*L, 0.8)) / (Math.pow(P2,0.5) * Math.pow(s,0.4));
@@ -1707,6 +1710,7 @@ function computeTr55(row){
 /* ---------------------------------------------------------------------
    Network graph helpers
 --------------------------------------------------------------------- */
+// ====== SECTION: Network Graph / Flow ======
 function findStructure(id){ return state.structures.find(s=>s.id===id) || null; }
 function findDrainage(id){ return state.drainage.find(d=>d.id===id) || null; }
 function findPipe(id){ return state.pipes.find(p=>p.id===id) || null; }
@@ -1798,6 +1802,7 @@ function pipeDesignQ(pipeRow, seen, stormOverride){
   return totalFlow;
 }
 
+// ====== SECTION: Pipe Hydraulics ======
 function pipeInvertState(pipe) {
   const US = parseFloat(pipe.upstreamInvert);
   const DS = parseFloat(pipe.downstreamInvert);
@@ -1954,6 +1959,7 @@ const fmt = (v,d=2)=> (v===null||v===undefined||!isFinite(v)) ? "\u2014" : Numbe
    Weir: two regimes - free (unsubmerged) and submerged (Villemonte
    correction), for rectangular or V-notch weirs.
 ======================================================================= */
+// ====== SECTION: Outlet Rating Curves ======
 function circularSegment(h, r){
   // h = water depth above invert (0..2r), r = radius (ft). Returns wetted
   // area (sf) and the head from the water surface down to that area's
@@ -2130,6 +2136,7 @@ function computeRatingCurve(osId){
 /* ---------------------------------------------------------------------
    DOM helpers
 --------------------------------------------------------------------- */
+// ====== SECTION: DOM Utilities ======
 function el(tag, attrs, children){
   const e = document.createElement(tag);
   if(attrs) for(const k in attrs){
@@ -2191,6 +2198,7 @@ function toast(msg, isErr){
 const SAVES_KEY = "sdCalc_saves";
 const SAVES_MAX = 5;
 
+// ====== SECTION: State / Persistence ======
 function getSaves(){
   try {
     const raw = localStorage.getItem(SAVES_KEY);
@@ -2384,6 +2392,7 @@ function showActiveView(){
 /* ---------------------------------------------------------------------
    Overview tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Overview ======
 function renderOverview(){
   const c = document.getElementById("view-overview");
   c.innerHTML = "";
@@ -2436,6 +2445,7 @@ function renderOverview(){
 /* ---------------------------------------------------------------------
    Drainage Area tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Drainage ======
 function renderDrainage(){
   const c = document.getElementById("view-drainage");
   c.innerHTML = "";
@@ -2564,6 +2574,7 @@ function patchDrainageRow(row){
 /* ---------------------------------------------------------------------
    Junction Structures tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Structures ======
 function renderStructures(){
   const c = document.getElementById("view-structures");
   c.innerHTML = "";
@@ -2787,6 +2798,7 @@ function renderStructures(){
 /* ---------------------------------------------------------------------
    Pipe Sizing & Capacity tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Pipes ======
 function renderPipes(){
   const c = document.getElementById("view-pipes");
   c.innerHTML = "";
@@ -2928,6 +2940,7 @@ function renderPipes(){
 /* ---------------------------------------------------------------------
    Outlet Structure tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Outlet ======
 function renderOutlet(){
   const c = document.getElementById("view-outlet");
   c.innerHTML = "";
@@ -3592,6 +3605,7 @@ function renderDaStormColCheckboxes(r) {
   return wrap;
 }
 
+// ====== SECTION: Render — Rainfall ======
 function renderRainfall() {
   const c = document.getElementById("view-rainfall");
   if (!c) return;
@@ -3863,6 +3877,7 @@ function renderRainfall() {
 /* ---------------------------------------------------------------------
    Pipe Sizing & Capacity — 25-yr tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Pipe Sizing ======
 function renderPipeSizing25() {
   const c = document.getElementById("view-pipe-sizing-25");
   if (!c) return;
@@ -3927,6 +3942,7 @@ function renderPipeSizing25() {
 /* ---------------------------------------------------------------------
    HGL tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — HGL ======
 function renderHgl() {
   const c = document.getElementById("view-hgl");
   if (!c) return;
@@ -4010,6 +4026,7 @@ function renderHgl() {
 /* ---------------------------------------------------------------------
    HGL — 25-yr Check tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — HGL 25 ======
 function renderHgl25(){
   const c = document.getElementById("view-hgl-25");
   if (!c) return;
@@ -4097,6 +4114,7 @@ function renderHgl25(){
 /* ---------------------------------------------------------------------
    Inlet Spacing tab
 --------------------------------------------------------------------- */
+// ====== SECTION: Render — Inlet Spacing ======
 function renderInletSpacing(){
   const c = document.getElementById("view-inlet-spacing");
   if(!c) return;
@@ -4337,6 +4355,7 @@ function renderAll(){
 /* =======================================================================
    Detail calculation sheets (preview + print)
 ======================================================================= */
+// ====== SECTION: Calc Sheets ======
 function csSection(title, node){
   return el("div",{class:"cs-block"},[ el("div",{class:"cs-block-title"}, title), node ]);
 }
@@ -5235,6 +5254,7 @@ function buildInletSpacingSheet(row, comp, settings){
 }
 
 // printSize: falsy = letter portrait, "letter" = letter landscape, "tabloid" = 11×17 landscape
+// ====== SECTION: Print ======
 function printNodes(nodes, printSize){
   const pa = document.getElementById("printArea");
   pa.innerHTML = "";
@@ -5773,6 +5793,7 @@ window.addEventListener("afterprint", ()=>{
 /* =======================================================================
    Excel Export
 ======================================================================= */
+// ====== SECTION: Excel Export ======
 function num(v,def){ const n=parseFloat(v); return isFinite(n)?n:(def!==undefined?def:0); }
 function colLetter(n){ let s=""; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
 function round(v,d){ if(!isFinite(v)) return 0; const p=Math.pow(10,d); return Math.round(v*p)/p; }
@@ -6226,6 +6247,7 @@ function exportExcel(){
 /* =======================================================================
    Excel Import
 ======================================================================= */
+// ====== SECTION: Excel Import ======
 function sheetToRows(wb, name){
   const ws = wb.Sheets[name];
   if(!ws) return null;
@@ -6513,6 +6535,7 @@ function importExcel(file){
 /* ---------------------------------------------------------------------
    Init
 --------------------------------------------------------------------- */
+// ====== SECTION: Init ======
 function init(){
   seedExample();
   renderAll();
