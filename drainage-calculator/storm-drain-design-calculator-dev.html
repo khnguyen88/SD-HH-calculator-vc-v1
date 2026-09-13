@@ -527,20 +527,25 @@ body.print-mode #printArea .cs-table-sheet{
 
 /* Tablet (481px–1024px): sidebar hidden, horizontal tab strip in topbar-center */
 @media (min-width:481px) and (max-width:1024px){
+  .app{ grid-template-columns:1fr; }
   .sidebar{ display:none; }
   .topbar{ gap:8px; padding:10px 14px; }
-  .topbar-center{ display:flex; flex:1 1 auto; overflow:hidden; }
-  .tablet-nav{ display:flex; }
+  .topbar-center{ display:flex; flex:1 1 auto; min-width:0; }
+  .tablet-nav{ display:flex; flex:1 1 auto; }
   .hamburger-only{ display:none !important; }
   .mobile-nav-panel{ display:none !important; }
+  .mobile-hidden{ display:none !important; }
 }
 
 /* Mobile (≤480px): sidebar hidden, hamburger button only */
 @media (max-width:480px){
+  .app{ grid-template-columns:1fr; }
   .sidebar{ display:none; }
-  .topbar{ gap:8px; padding:10px 14px; }
+  .topbar{ gap:6px; padding:8px 10px; }
   .topbar-center{ display:flex; }
   .mobile-hidden{ display:none !important; }
+  .tab-label{ display:none; }
+  .btn-label{ display:none; }
 }
 
 /* ---------------------------------------------------------------------
@@ -597,9 +602,9 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
             <div id="savesList"></div>
           </div>
         </div>
-        <button class="btn" id="importBtn" title="Import a previously exported .xlsx file">&#8593; Import from Excel</button>
+        <button class="btn" id="importBtn" title="Import a previously exported .xlsx file">&#8593;<span class="btn-label"> Import from Excel</span></button>
         <input type="file" id="importFile" accept=".xlsx">
-        <button class="btn btn-primary" id="exportBtn" title="Export all tables to a .xlsx file">&#8595; Export to Excel</button>
+        <button class="btn btn-primary" id="exportBtn" title="Export all tables to a .xlsx file">&#8595;<span class="btn-label"> Export to Excel</span></button>
       </div>
     </div>
 
