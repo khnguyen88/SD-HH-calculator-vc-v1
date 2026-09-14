@@ -4469,7 +4469,7 @@ function buildDrainageSheet(row){
       ["Frequency correction, Cf", fmt(calc.cf, 2)],
       ...iRows,
     ])),
-    csSection("Rational Method \u2014 Q = Cf \u00d7 C \u00d7 i \u00d7 A", el("div", {}, calc.storms.map(s => {
+    csSection("Rational Method \u2014 Q = Cf \u00d7 C \u00d7 i \u00d7 A", el("div", {}, visibleDaStorms(r).map(s => {
       const label = {"2yr":"Q\u2082","10yr":"Q\u2081\u2080","25yr":"Q\u2082\u2085","5yr":"Q\u2085"}[s] || ("Q "+s);
       const tag = s === r.pipeStorm ? " \u2190 pipe design storm" : s === r.inletStorm ? " \u2190 inlet design storm" : "";
       const tc  = parseFloat(row.tc);
