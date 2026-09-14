@@ -5489,7 +5489,7 @@ function makeDetailSheet(title, heads, dataRows){
 
 function buildDrainageDetailSheet(){
   const rf = state.rainfall;
-  const storms = availableStorms(rf.rainfallSource);
+  const storms = visibleDaStorms(rf);
   const th = (t,c)=>el("th",c?{class:c}:{},t);
   const tdN = (v,d=2)=>el("td",{class:"out computed-cell"},fmt(v,d));
   const heads = [
