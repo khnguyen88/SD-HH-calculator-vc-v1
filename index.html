@@ -2657,15 +2657,17 @@ function renderDrainage(){
   c.appendChild(section);
 
   function tcCell(row){
-    const wrap = el("div",{style:"display:flex;gap:5px;align-items:center;flex-wrap:wrap;"});
+    const wrap = el("div",{style:"display:flex;flex-direction:column;gap:4px;"});
     if(row.tcMethod==="tr55"){
       const tr = computeTr55(row);
-      wrap.appendChild(el("span",{class:"out tc-readonly-value", style:"min-width:40px;display:inline-block;", title:"Computed by TR-55 segments below"}, fmt(tr.totalMin,1)));
-      wrap.appendChild(el("button",{class:"btn btn-sm", style:"padding:4px 8px;", title:"Edit the TR-55 sheet/shallow/channel flow segments", onclick:()=>openTr55Modal(row)}, "Edit TR-55"));
-      wrap.appendChild(el("button",{class:"btn btn-sm btn-danger", style:"padding:4px 8px;", title:"Discard the TR-55 segments and type Tc directly", onclick:()=>{ row.tcMethod="direct"; row.tc=fmt(tr.totalMin,1); renderDrainage(); }}, "\u21a9 Direct entry"));
+      wrap.appendChild(el("span",{class:"out tc-readonly-value", style:"min-width:55px;display:inline-block;", title:"Computed by TR-55 segments below"}, fmt(tr.totalMin,1)));
+      const btnRow = el("div",{style:"display:flex;gap:4px;flex-wrap:wrap;"});
+      btnRow.appendChild(el("button",{class:"btn btn-sm", style:"padding:4px 8px;", title:"Edit the TR-55 sheet/shallow/channel flow segments", onclick:()=>openTr55Modal(row)}, "Edit TR-55"));
+      btnRow.appendChild(el("button",{class:"btn btn-sm btn-danger", style:"padding:4px 8px;", title:"Discard the TR-55 segments and type Tc directly", onclick:()=>{ row.tcMethod="direct"; row.tc=fmt(tr.totalMin,1); renderDrainage(); }}, "\u21a9 Direct entry"));
+      wrap.appendChild(btnRow);
     } else {
       wrap.appendChild(num(row,"tc",55));
-      wrap.appendChild(el("button",{class:"btn btn-sm", style:"padding:4px 8px;", title:"Build Tc from sheet flow, shallow concentrated flow, and channel flow segments", onclick:()=>{ row.tcMethod="tr55"; if(!row.tr55 || !row.tr55.segments) row.tr55={segments:[]}; openTr55Modal(row); }}, "Use TR-55 \u2192"));
+      wrap.appendChild(el("button",{class:"btn btn-sm", style:"padding:4px 8px;width:fit-content;", title:"Build Tc from sheet flow, shallow concentrated flow, and channel flow segments", onclick:()=>{ row.tcMethod="tr55"; if(!row.tr55 || !row.tr55.segments) row.tr55={segments:[]}; openTr55Modal(row); }}, "Use TR-55 \u2192"));
     }
     return wrap;
   }
