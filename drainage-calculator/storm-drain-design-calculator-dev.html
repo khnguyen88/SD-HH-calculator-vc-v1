@@ -2575,7 +2575,7 @@ function renderDrainage(){
       const isInlet = s === state.rainfall.inletStorm;
       const accent  = isPipe ? "#4a9eff" : (isInlet ? "#f0a500" : "");
       const lbl = {"2yr":"Q₂","10yr":"Q₁₀","25yr":"Q₂₅","5yr":"Q₅"}[s] || ("Q "+s);
-      return el("th", {class:"computed", style: accent?"color:"+accent+";":""}, lbl+"\n(cfs)");
+      return el("th", {class:"computed", "data-storm":s, style: accent?"color:"+accent+";":""}, lbl+"\n(cfs)");
     }),
     el("th",{class:"computed"},"Structure"),
     el("th",{},""), el("th",{},"")
@@ -5472,7 +5472,10 @@ function makeDetailSheet(title, heads, dataRows){
 
 function buildDrainageDetailSheet(){
   const rf = state.rainfall;
-  const storms = visibleDaStorms(rf);
+  const domStormEls = document.querySelectorAll("#view-drainage table.data thead th[data-storm]");
+  const storms = domStormEls.length
+    ? Array.from(domStormEls).map(th => th.dataset.storm)
+    : visibleDaStorms(rf);
   const th = (t,c)=>el("th",c?{class:c}:{},t);
   const tdN = (v,d=2)=>el("td",{class:"out computed-cell"},fmt(v,d));
   const heads = [
