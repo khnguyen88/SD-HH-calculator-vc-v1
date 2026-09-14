@@ -521,9 +521,29 @@ body.print-mode #printArea .cs-table-sheet{
   display:none;
   flex-direction:row;
   overflow-x:auto;
+  scrollbar-width:none;
   align-items:center;
   gap:2px;
+  flex:1 1 auto;
 }
+.tablet-nav::-webkit-scrollbar{ display:none; }
+
+.carousel-btn{
+  all:unset;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  width:28px;
+  height:28px;
+  border-radius:var(--radius);
+  color:var(--muted);
+  cursor:pointer;
+  font-size:22px;
+  line-height:1;
+}
+.carousel-btn:hover{ background:var(--panel-raise); color:var(--text); }
+.carousel-btn:disabled{ opacity:0.2; cursor:default; pointer-events:none; }
 
 /* Tablet (481px–1024px): sidebar hidden, three stacked topbar rows */
 @media (min-width:481px) and (max-width:1024px){
@@ -531,12 +551,12 @@ body.print-mode #printArea .cs-table-sheet{
   .sidebar{ display:none; }
   .topbar{ flex-direction:column; align-items:stretch; gap:0; padding:0; }
   .topbar-left{ padding:8px 14px; }
-  .topbar-center{ display:flex; padding:4px 8px; background:var(--panel-alt); border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft); }
-  .topbar-right{ padding:6px 14px; justify-content:flex-end; flex-wrap:nowrap; }
-  .tablet-nav{ display:flex; flex:1 1 auto; overflow-x:auto; flex-wrap:nowrap; }
+  .topbar-center{ display:flex; align-items:center; padding:4px 8px; gap:2px; background:var(--panel-alt); border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft); }
+  .topbar-right{ padding:6px 14px; justify-content:flex-end; flex-wrap:wrap; }
+  .tablet-nav{ display:flex; }
+  .carousel-btn{ display:flex; }
   .hamburger-only{ display:none !important; }
   .mobile-nav-panel{ display:none !important; }
-  .mobile-hidden{ display:none !important; }
 }
 
 /* Mobile (≤480px): sidebar hidden, hamburger button only */
@@ -591,7 +611,9 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
       </div>
       <div class="topbar-center">
         <button class="btn btn-sm hamburger-only" id="hamburgerBtn" aria-label="Open navigation menu">&#9776; Menu</button>
+        <button class="carousel-btn carousel-prev tablet-only" id="tabCarouselPrev" aria-label="Scroll tabs left">&#8249;</button>
         <nav id="tabletNav" class="tablet-nav"></nav>
+        <button class="carousel-btn carousel-next tablet-only" id="tabCarouselNext" aria-label="Scroll tabs right">&#8250;</button>
       </div>
       <div class="topbar-right">
         <button class="btn btn-sm mobile-hidden" id="saveCompBtn" title="Save current project to browser storage">&#8964; Save</button>
@@ -6612,6 +6634,21 @@ function init(){
     document.getElementById("mobileNavPanel").classList.toggle("open");
   });
   document.addEventListener("click", () => closeMobileNav());
+
+  (function initCarousel(){
+    const nav = document.getElementById("tabletNav");
+    const prev = document.getElementById("tabCarouselPrev");
+    const next = document.getElementById("tabCarouselNext");
+    function sync(){
+      prev.disabled = nav.scrollLeft <= 1;
+      next.disabled = nav.scrollLeft >= nav.scrollWidth - nav.clientWidth - 1;
+    }
+    prev.addEventListener("click", () => { nav.scrollBy({ left:-200, behavior:"smooth" }); });
+    next.addEventListener("click", () => { nav.scrollBy({ left:200, behavior:"smooth" }); });
+    nav.addEventListener("scroll", sync, { passive:true });
+    new ResizeObserver(sync).observe(nav);
+    sync();
+  })();
   fileInput.addEventListener("change", (e)=>{
     const f = e.target.files[0];
     if(f) importExcel(f);
