@@ -595,7 +595,7 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
         <circle cx="28" cy="11" r="2" fill="#38C6B4"/>
       </svg>
       <div class="brand-text">
-        <div class="brand-title">Storm Drain Calc</div>
+        <div class="brand-title">Drainage Calc</div>
         <div class="brand-sub">Design &amp; HGL Tool</div>
       </div>
     </div>
@@ -2633,7 +2633,7 @@ function renderDrainage(){
         }
         return cell;
       })(),
-      ...calc.storms.map(s => {
+      ...storms.map(s => {
         const isPipe  = s === state.rainfall.pipeStorm;
         const isInlet = s === state.rainfall.inletStorm;
         const accent  = isPipe ? "#4a9eff" : (isInlet ? "#f0a500" : "");
