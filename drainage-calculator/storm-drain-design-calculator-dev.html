@@ -758,10 +758,55 @@ const STRUCTURE_TYPES = [
   ["junction","Junction"], ["splitter","Flow Splitter"], ["outfall","Outfall"]
 ];
 
+const _mdshaEntries = [
+  // Precast Manholes — MD 384 series
+  { id:"mdsha-mh-48",          label:"48-in MH (MD 384.01)",          category:"access_hole", shape:"round",       innerDiameter:4.0,  innerWidth:null,  innerLength:null },
+  { id:"mdsha-mh-60",          label:"60-in MH (MD 384.03)",          category:"access_hole", shape:"round",       innerDiameter:5.0,  innerWidth:null,  innerLength:null },
+  { id:"mdsha-mh-72",          label:"72-in MH (MD 384.05)",          category:"access_hole", shape:"round",       innerDiameter:6.0,  innerWidth:null,  innerLength:null },
+  { id:"mdsha-mh-84",          label:"84-in MH (MD 384.07)",          category:"access_hole", shape:"round",       innerDiameter:7.0,  innerWidth:null,  innerLength:null },
+  { id:"mdsha-mh-96",          label:"96-in MH (MD 384.09)",          category:"access_hole", shape:"round",       innerDiameter:8.0,  innerWidth:null,  innerLength:null },
+  { id:"mdsha-mh-120",         label:"120-in MH (MD 384.11)",         category:"access_hole", shape:"round",       innerDiameter:10.0, innerWidth:null,  innerLength:null },
+  // Standard Circular Manhole — MD 383.21
+  { id:"mdsha-mh-std",         label:"Std Circular MH (MD 383.21)",   category:"access_hole", shape:"round",       innerDiameter:4.0,  innerWidth:null,  innerLength:null },
+  // WR / WRM Curb Box Inlets — MD 374.04–374.10 (innerWidth=along curb, innerLength=into road)
+  { id:"mdsha-inlet-wr",        label:"WR Inlet (MD 374.04)",          category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:5.5,  innerLength:3.5 },
+  { id:"mdsha-inlet-wrm",       label:"WRM Inlet (MD 374.05)",         category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:5.5,  innerLength:3.5 },
+  { id:"mdsha-inlet-wr-single", label:"Single WR Inlet (MD 374.06)",   category:"inlet", shape:"square",      innerDiameter:null, innerWidth:2.9,  innerLength:null },
+  { id:"mdsha-inlet-wr-triple", label:"Triple WR Inlet (MD 374.08)",   category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:8.4,  innerLength:3.5 },
+  { id:"mdsha-inlet-wrm-triple",label:"Triple WRM Inlet (MD 374.10)",  category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:8.4,  innerLength:3.5 },
+  // NR / NRM Curb Box Inlets — MD 374.14–374.15
+  { id:"mdsha-inlet-nr",        label:"NR Inlet (MD 374.14)",          category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:3.75, innerLength:3.5 },
+  { id:"mdsha-inlet-nrm",       label:"NRM Inlet (MD 374.15)",         category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:3.75, innerLength:3.5 },
+  // COG (Curb Opening Gutter) Inlets — MD 374.51 (innerWidth=throat T, innerLength=box W=4 ft)
+  { id:"mdsha-inlet-cog-5",     label:"COG 5' Inlet (MD 374.51)",      category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:5.0,  innerLength:4.0 },
+  { id:"mdsha-inlet-cog-10",    label:"COG 10' Inlet (MD 374.51)",     category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:10.0, innerLength:4.0 },
+  { id:"mdsha-inlet-cog-15",    label:"COG 15' Inlet (MD 374.51)",     category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:15.0, innerLength:4.0 },
+  { id:"mdsha-inlet-cog-20",    label:"COG 20' Inlet (MD 374.51)",     category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:20.0, innerLength:4.0 },
+  // COS (Curb Opening Square / Center Access) Inlets — MD 374.61
+  { id:"mdsha-inlet-cos-5",     label:"COS 5' Inlet (MD 374.61)",      category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:5.0,  innerLength:4.0 },
+  { id:"mdsha-inlet-cos-10",    label:"COS 10' Inlet (MD 374.61)",     category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:10.0, innerLength:4.0 },
+  { id:"mdsha-inlet-cos-15",    label:"COS 15' Inlet (MD 374.61)",     category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:15.0, innerLength:4.0 },
+  { id:"mdsha-inlet-cos-20",    label:"COS 20' Inlet (MD 374.61)",     category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:20.0, innerLength:4.0 },
+  // Type S and Type HS Combination Inlets — MD 374.70 / MD 374.72
+  { id:"mdsha-inlet-type-s",    label:"Type S Inlet (MD 374.70)",      category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:5.5,  innerLength:3.5 },
+  { id:"mdsha-inlet-type-hs",   label:"Type HS Inlet (MD 374.72)",     category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:5.5,  innerLength:3.5 },
+];
+
 const STRUCTURE_CATALOG = {
-  mcdot: [],
-  mdsha: [],
-  mdot:  [],
+  mcdot: [
+    // Inlets per MCDOT Drainage Design Criteria (Nov 2013/June 2014), Table 4-3
+    // MCDOT manholes follow MDSHA standards; select MDSHA agency for manhole selection
+    { id:"mcdot-inlet-typeA",      label:"Type A COS Inlet (MC-501.01)",      category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"mcdot-inlet-typeB",      label:"Type B COG Inlet (MC-502.01)",      category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"mcdot-inlet-typeB-rev",  label:"Type B COG Rev (MC-502.02)",        category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"mcdot-inlet-typeD",      label:"Type D Terminal Inlet (MC-503.01)", category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"mcdot-inlet-typeE",      label:"Type E Ditch Inlet (MC-504.01)",    category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"mcdot-inlet-typeE4",     label:"Type E-4 Ditch Inlet (MC-505.01)", category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"mcdot-inlet-typeJ",      label:"Type J Ditch Inlet (MC-506.01)",    category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:null, innerLength:null },
+    { id:"mcdot-inlet-typeJ-term", label:"Type J Ditch Terminus (MC-506.02)",category:"inlet", shape:"rectangular", innerDiameter:null, innerWidth:null, innerLength:null },
+  ],
+  mdsha: _mdshaEntries,
+  mdot:  _mdshaEntries,  // MDOT SHA uses the same standards as MDSHA
   pgder: [
     { id:"pgder-mh-48",        label:"48-in MH (SD 21.1)",        category:"access_hole", shape:"round",       innerDiameter:4.0, innerWidth:null, innerLength:null },
     { id:"pgder-mh-60",        label:"60-in MH (SD 21.2)",        category:"access_hole", shape:"round",       innerDiameter:5.0, innerWidth:null, innerLength:null },
