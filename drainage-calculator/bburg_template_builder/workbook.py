@@ -11,6 +11,7 @@ from bburg_template_builder.sheets.lookups import (
 )
 from bburg_template_builder.sheets.noaa14 import build_noaa14_sheet
 from bburg_template_builder.sheets.pipes import build_pipes_sheet
+from bburg_template_builder.sheets.rationals_mcdot import build_rationals_sheet
 from bburg_template_builder.sheets.structures import build_structures_sheet
 
 
@@ -41,4 +42,5 @@ def build_workbook() -> Workbook:
     build_da_catchments_sheet(wb)
     build_structures_sheet(wb)
     build_pipes_sheet(wb)
+    build_rationals_sheet(wb)
     return wb
