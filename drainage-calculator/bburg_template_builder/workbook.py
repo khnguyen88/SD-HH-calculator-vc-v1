@@ -1,6 +1,8 @@
 """Builds the full bburg-p-c-template workbook. Called by build_bburg_template.py."""
 from openpyxl import Workbook
 
+from bburg_template_builder.sheets.config import build_config_sheet
+
 
 def build_workbook() -> Workbook:
     """Construct the template workbook. Each sheet module is called in dependency order.
@@ -16,9 +18,9 @@ def build_workbook() -> Workbook:
       8. HGL, HGL_Example (reads everything)
     """
     wb = Workbook()
-    # Remove default "Sheet"; sheet modules create what they need.
     default = wb.active
     if default is not None:
         wb.remove(default)
-    # Sheet modules will be wired in subsequent tasks.
+
+    build_config_sheet(wb)
     return wb
