@@ -2,6 +2,7 @@
 from openpyxl import Workbook
 
 from bburg_template_builder.sheets.config import build_config_sheet
+from bburg_template_builder.sheets.idf_lookup import build_idf_lookup_sheet
 from bburg_template_builder.sheets.noaa14 import build_noaa14_sheet
 
 
@@ -25,4 +26,5 @@ def build_workbook() -> Workbook:
 
     build_config_sheet(wb)
     build_noaa14_sheet(wb)
+    build_idf_lookup_sheet(wb)
     return wb
