@@ -2,6 +2,7 @@
 from openpyxl import Workbook
 
 from bburg_template_builder.sheets.config import build_config_sheet
+from bburg_template_builder.sheets.da_catchments import build_da_catchments_sheet
 from bburg_template_builder.sheets.idf_lookup import build_idf_lookup_sheet
 from bburg_template_builder.sheets.lookups import (
     build_kb_values_sheet,
@@ -35,4 +36,5 @@ def build_workbook() -> Workbook:
     build_landuse_lookup_sheet(wb)
     build_pipe_properties_sheet(wb)
     build_kb_values_sheet(wb)
+    build_da_catchments_sheet(wb)
     return wb
