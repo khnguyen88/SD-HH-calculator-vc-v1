@@ -10,6 +10,7 @@ from bburg_template_builder.sheets.lookups import (
     build_pipe_properties_sheet,
 )
 from bburg_template_builder.sheets.noaa14 import build_noaa14_sheet
+from bburg_template_builder.sheets.pipes import build_pipes_sheet
 from bburg_template_builder.sheets.structures import build_structures_sheet
 
 
@@ -39,4 +40,5 @@ def build_workbook() -> Workbook:
     build_kb_values_sheet(wb)
     build_da_catchments_sheet(wb)
     build_structures_sheet(wb)
+    build_pipes_sheet(wb)
     return wb
