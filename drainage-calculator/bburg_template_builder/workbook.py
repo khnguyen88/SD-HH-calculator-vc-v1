@@ -2,6 +2,7 @@
 from openpyxl import Workbook
 
 from bburg_template_builder.sheets.config import build_config_sheet
+from bburg_template_builder.sheets.noaa14 import build_noaa14_sheet
 
 
 def build_workbook() -> Workbook:
@@ -23,4 +24,5 @@ def build_workbook() -> Workbook:
         wb.remove(default)
 
     build_config_sheet(wb)
+    build_noaa14_sheet(wb)
     return wb

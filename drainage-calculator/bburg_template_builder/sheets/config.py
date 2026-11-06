@@ -41,9 +41,15 @@ def build_config_sheet(wb: Workbook) -> None:
         wb.defined_names[name] = DefinedName(name=name, attr_text=ref)
 
     # Data validation dropdowns.
-    # County: for this task, seed a static list; Task 3 will replace with a NOAA14 column reference.
+    # County dropdown: helper range on Config!E2:E{N} lists every MD county + DC.
+    # Keeps the dropdown-source visible and inspectable on the Config sheet itself.
+    from bburg_template_builder.seed_data import NOAA14_SEED, NOAA14_BLANK_COUNTIES
+    counties_for_dropdown = list(NOAA14_SEED.keys()) + list(NOAA14_BLANK_COUNTIES)
+    for i, c in enumerate(counties_for_dropdown):
+        ws.cell(row=2 + i, column=5, value=c)
+    last_county_row = 1 + len(counties_for_dropdown)
     dv_county = DataValidation(type="list",
-                               formula1='"Montgomery,Prince George\'s,DC"',
+                               formula1=f"=Config!$E$2:$E${last_county_row}",
                                allow_blank=False)
     dv_county.add("B2")
     ws.add_data_validation(dv_county)
@@ -64,3 +70,4 @@ def build_config_sheet(wb: Workbook) -> None:
     ws.column_dimensions["A"].width = 22
     ws.column_dimensions["B"].width = 34
     ws.column_dimensions["C"].width = 60
+    ws.column_dimensions["E"].width = 22
