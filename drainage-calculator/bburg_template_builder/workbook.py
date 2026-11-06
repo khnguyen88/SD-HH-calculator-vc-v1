@@ -4,6 +4,7 @@ from openpyxl import Workbook
 from bburg_template_builder.sheets.config import build_config_sheet
 from bburg_template_builder.sheets.da_catchments import build_da_catchments_sheet
 from bburg_template_builder.sheets.idf_lookup import build_idf_lookup_sheet
+from bburg_template_builder.sheets.inlet_spacing import build_inlet_spacing_sheets
 from bburg_template_builder.sheets.lookups import (
     build_kb_values_sheet,
     build_landuse_lookup_sheet,
@@ -43,4 +44,5 @@ def build_workbook() -> Workbook:
     build_structures_sheet(wb)
     build_pipes_sheet(wb)
     build_rationals_sheet(wb)
+    build_inlet_spacing_sheets(wb)
     return wb
