@@ -295,7 +295,7 @@
     // BFS hop-distance from the outfall backward along pipes (follow pipes upstream:
     // for each structure S, find pipes where toId == S's id; those pipes' fromId
     // structures are at hopDistance = S's hopDistance + 1).
-    const hop = {};
+    const hop = Object.create(null);
     hop[outfallSid] = 0;
     const queue = [outfallSid];
     while (queue.length) {
@@ -313,7 +313,7 @@
     for (const s of structures) if (!(s.id in hop)) hop[s.id] = maxHop + 2;
 
     // Group by hop level, assign x-indices in insertion order
-    const levels = {};
+    const levels = Object.create(null);
     for (const s of structures) {
       const h = hop[s.id];
       (levels[h] = levels[h] || []).push(s);
