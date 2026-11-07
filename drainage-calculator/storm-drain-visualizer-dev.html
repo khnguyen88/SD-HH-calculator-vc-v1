@@ -58,7 +58,6 @@
     if (attrs) for (const k in attrs) {
       const v = attrs[k];
       if (k === "class") e.className = v;
-      else if (k === "html") e.innerHTML = v;
       else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
       else if (v === null || v === undefined) { /* skip: do NOT setAttribute(k, null) */ }
       else e.setAttribute(k, v);
@@ -638,6 +637,10 @@
     if (imported.config && (imported.config.hglMethod === "hec22" || imported.config.hglMethod === "legacy-both-crown")) {
       state.ui.hglMethod = imported.config.hglMethod;
     }
+
+    // Any import invalidates the previous walk: reset the cursor and branch memory.
+    state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
+    state.ui.branchChoices = { byStructureId: {} };
   }
   // --- xlsx importer (task-06) ---
   async function importFromXlsxFile(file) {
@@ -760,6 +763,10 @@
       kbTable: null
     };
     state.ui.mode = "explore";
+
+    // Any import invalidates the previous walk: reset the cursor and branch memory.
+    state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
+    state.ui.branchChoices = { byStructureId: {} };
   }
   // --- auto-layout (task-07) ---
   function autoLayoutStructures(structures, pipes, outfallSid) {
@@ -1220,7 +1227,7 @@
   }
 
   document.addEventListener("keydown", (ev) => {
-    if (ev.shiftKey) return;
+    if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
     if (isTypingTarget(ev)) return;
     if (isBranchPopupOpen()) return;  // popup owns the keyboard while open
     if (ev.key === "ArrowUp") {
@@ -1985,7 +1992,7 @@
 
   // V hotkey (also 'v' lowercase). Ignore while typing in form controls.
   document.addEventListener("keydown", (ev) => {
-    if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
+    if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
     if (isBranchPopupOpen() || document.getElementById("overridePanel")) return;  // a modal owns the keyboard
     const t = ev.target;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;

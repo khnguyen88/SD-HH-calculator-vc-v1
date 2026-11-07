@@ -111,6 +111,24 @@ test("roundtrip: invalid JSON is rejected without mutating state.imported", asyn
   assert.strictEqual(window.state.ui.mode, beforeMode);
 });
 
+test("roundtrip: re-import resets a stale cursor and branch memory", async () => {
+  const { window } = loadVisualizer();
+  await bootWithJson(window, SEED);
+
+  // Simulate a stale walk left over from prior interaction.
+  window.state.cursor = { kind: "pipe", id: "P1", pathStack: ["OUT", "P1"] };
+  window.state.ui.branchChoices.byStructureId.X = {};
+
+  await bootWithJson(window, SEED);
+
+  assert.strictEqual(window.state.cursor.id, "OUT", "cursor reset to outfall");
+  assert.strictEqual(
+    Object.keys(window.state.ui.branchChoices.byStructureId).length,
+    0,
+    "branch memory cleared"
+  );
+});
+
 test("roundtrip: kbTable is preserved through export+reimport", async () => {
   const { window } = loadVisualizer();
   const customKb = [
