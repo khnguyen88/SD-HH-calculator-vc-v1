@@ -35,9 +35,12 @@ const SEED = {
   outfall: { structureId: "OUT", tailwaterElev: 100 }
 };
 
+// jsdom 24 does not implement Blob/File.prototype.text(), so ensureFileText()
+// polyfills it with jsdom's FileReader. This still exercises the real File +
+// importFromJsonFile path.
 async function bootWithJson(window, obj) {
-  const blob = new window.Blob([JSON.stringify(obj)], { type: "application/json" });
-  const file = new window.File([blob], "seed.json", { type: "application/json" });
+  const file = new window.File([JSON.stringify(obj)], "seed.json", { type: "application/json" });
+  ensureFileText(window);
   await window.importFromJsonFile(file);
 }
 
@@ -80,12 +83,10 @@ test("roundtrip: invalid JSON is rejected without mutating state.imported", asyn
   await bootWithJson(window, SEED);
   const before = window.state.imported;
   const bad = Object.assign({}, SEED, { schemaVersion: 99 });
-  let threw = false;
-  try { await bootWithJson(window, bad); } catch (e) { threw = true; }
-  assert.ok(threw, "bad JSON should throw");
-  // state.imported is intentionally allowed to be nulled by the bootstrap's catch;
-  // but setOverride called before re-import has been reset. Here we just assert
-  // bootWithJson threw.
+  await assert.rejects(() => bootWithJson(window, bad), "bad JSON should throw");
+  // The validator runs before any state write, so a rejected import mutates nothing.
+  assert.strictEqual(window.state.imported, before, "state.imported untouched");
+  assert.strictEqual(window.state.imported.structures.length, 2, "still the SEED network");
 });
 
 test("roundtrip: kbTable is preserved through export+reimport", async () => {
