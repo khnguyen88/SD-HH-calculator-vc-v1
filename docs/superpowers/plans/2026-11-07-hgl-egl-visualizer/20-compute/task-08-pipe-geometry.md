@@ -55,14 +55,16 @@ Implement pipe area and hydraulic radius for both circular and elliptical shapes
   }
 
   function pipeAreaElliptical(spanRise) {
-    const row = TABLE_4_6.find((r) => r.span_rise === spanRise);
+    const key = normalizeSize("elliptical", spanRise);
+    const row = key ? TABLE_4_6.find((r) => r.span_rise === key) : null;
     if (!row) throw new Error("elliptical size not in Table 4-6: " + spanRise);
     return row.ell_area_sf;
   }
 
   // Elliptical hydraulic radius uses the equivalent circular diameter from Table 4-6.
   function pipeRadiusElliptical(spanRise) {
-    const row = TABLE_4_6.find((r) => r.span_rise === spanRise);
+    const key = normalizeSize("elliptical", spanRise);
+    const row = key ? TABLE_4_6.find((r) => r.span_rise === key) : null;
     if (!row) throw new Error("elliptical size not in Table 4-6: " + spanRise);
     return (row.dia_in / 12) / 4;
   }
@@ -77,6 +79,30 @@ Implement pipe area and hydraulic radius for both circular and elliptical shapes
     if (shape === "circular") return pipeRadiusCircular(Number(size));
     if (shape === "elliptical") return pipeRadiusElliptical(String(size));
     throw new Error("unknown pipe shape: " + shape);
+  }
+
+  // Normalize shape and size strings from imports; mirrors main-app pipeGeometry leniency.
+  function normalizeShape(value) {
+    return String(value == null ? "" : value).trim().toLowerCase();
+  }
+
+  // Circular: numeric diameter. Elliptical: nearest Table 4-6 span x rise key.
+  function normalizeSize(shape, value) {
+    if (shape === "circular") return Number(value);
+    const parts = String(value == null ? "" : value)
+      .toLowerCase().replace(/[×\s]/g, "").split("x");
+    const span = parseFloat(parts[0]);
+    const rise = parseFloat(parts[1]);
+    if (!isFinite(span) || !isFinite(rise)) return null;
+    let best = null;
+    let bestDiff = Infinity;
+    for (const row of TABLE_4_6) {
+      if (row.span_rise == null) continue;
+      const dims = row.span_rise.split("x").map(Number);
+      const diff = Math.abs(dims[0] - span) + Math.abs(dims[1] - rise);
+      if (diff < bestDiff) { bestDiff = diff; best = row.span_rise; }
+    }
+    return best;
   }
 ```
 

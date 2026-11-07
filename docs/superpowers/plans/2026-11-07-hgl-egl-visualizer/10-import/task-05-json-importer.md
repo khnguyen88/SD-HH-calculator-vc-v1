@@ -28,7 +28,12 @@ Read a user-selected `.json` file, validate it via task-04, and populate `state.
     const overrides = Array.isArray(obj._overrides) ? obj._overrides : [];
     const imported = {
       structures: obj.structures.map((s) => Object.assign({}, s)),
-      pipes: obj.pipes.map((p) => Object.assign({}, p)),
+      pipes: obj.pipes.map((p) => {
+        const copy = Object.assign({}, p);
+        copy.shape = normalizeShape(copy.shape);
+        copy.size = normalizeSize(copy.shape, copy.size);
+        return copy;
+      }),
       outfall: Object.assign({}, obj.outfall),
       config: Object.assign({}, obj.config || {}),
       kbTable: Array.isArray(obj.kbTable) ? obj.kbTable.slice() : null

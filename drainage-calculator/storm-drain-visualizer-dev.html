@@ -140,14 +140,16 @@
   }
 
   function pipeAreaElliptical(spanRise) {
-    const row = TABLE_4_6.find((r) => r.span_rise === spanRise);
+    const key = normalizeSize("elliptical", spanRise);
+    const row = key ? TABLE_4_6.find((r) => r.span_rise === key) : null;
     if (!row) throw new Error("elliptical size not in Table 4-6: " + spanRise);
     return row.ell_area_sf;
   }
 
   // Elliptical hydraulic radius uses the equivalent circular diameter from Table 4-6.
   function pipeRadiusElliptical(spanRise) {
-    const row = TABLE_4_6.find((r) => r.span_rise === spanRise);
+    const key = normalizeSize("elliptical", spanRise);
+    const row = key ? TABLE_4_6.find((r) => r.span_rise === key) : null;
     if (!row) throw new Error("elliptical size not in Table 4-6: " + spanRise);
     return (row.dia_in / 12) / 4;
   }
@@ -162,6 +164,30 @@
     if (shape === "circular") return pipeRadiusCircular(Number(size));
     if (shape === "elliptical") return pipeRadiusElliptical(String(size));
     throw new Error("unknown pipe shape: " + shape);
+  }
+
+  // Normalize shape and size strings from imports; mirrors main-app pipeGeometry leniency.
+  function normalizeShape(value) {
+    return String(value == null ? "" : value).trim().toLowerCase();
+  }
+
+  // Circular: numeric diameter. Elliptical: nearest Table 4-6 span x rise key.
+  function normalizeSize(shape, value) {
+    if (shape === "circular") return Number(value);
+    const parts = String(value == null ? "" : value)
+      .toLowerCase().replace(/[×\s]/g, "").split("x");
+    const span = parseFloat(parts[0]);
+    const rise = parseFloat(parts[1]);
+    if (!isFinite(span) || !isFinite(rise)) return null;
+    let best = null;
+    let bestDiff = Infinity;
+    for (const row of TABLE_4_6) {
+      if (row.span_rise == null) continue;
+      const dims = row.span_rise.split("x").map(Number);
+      const diff = Math.abs(dims[0] - span) + Math.abs(dims[1] - rise);
+      if (diff < bestDiff) { bestDiff = diff; best = row.span_rise; }
+    }
+    return best;
   }
 
   // --- Manning's friction (task-09) ---
@@ -446,12 +472,16 @@
         if (typeof p[f] !== "number" || p[f] < 0) push("pipes[" + i + "]." + f + " must be non-negative number");
       });
       if (typeof p.n !== "number" || p.n <= 0) push("pipes[" + i + "].n must be positive number");
-      if (p.shape !== "circular" && p.shape !== "elliptical") {
+      const shape = normalizeShape(p.shape);
+      if (shape !== "circular" && shape !== "elliptical") {
         push("pipes[" + i + "].shape must be 'circular' or 'elliptical'");
-      } else if (p.shape === "circular") {
-        if (typeof p.size !== "number" || !(p.size > 0)) push("pipes[" + i + "].size must be a positive number (circular)");
-      } else if (typeof p.size !== "string" || !TABLE_4_6.some((r) => r.span_rise === p.size)) {
-        push("pipes[" + i + "].size must be a Table 4-6 span x rise (elliptical)");
+      } else {
+        const size = normalizeSize(shape, p.size);
+        if (shape === "circular" && !(typeof size === "number" && isFinite(size) && size > 0)) {
+          push("pipes[" + i + "].size must be a positive diameter (circular)");
+        } else if (shape === "elliptical" && size == null) {
+          push("pipes[" + i + "].size must be SPANxRISE (elliptical)");
+        }
       }
       if (p.designQ != null && (typeof p.designQ !== "number" || !isFinite(p.designQ))) {
         push("pipes[" + i + "].designQ must be a finite number");
@@ -486,7 +516,12 @@
     const overrides = Array.isArray(obj._overrides) ? obj._overrides : [];
     const imported = {
       structures: obj.structures.map((s) => Object.assign({}, s)),
-      pipes: obj.pipes.map((p) => Object.assign({}, p)),
+      pipes: obj.pipes.map((p) => {
+        const copy = Object.assign({}, p);
+        copy.shape = normalizeShape(copy.shape);
+        copy.size = normalizeSize(copy.shape, copy.size);
+        return copy;
+      }),
       outfall: Object.assign({}, obj.outfall),
       config: Object.assign({}, obj.config || {}),
       kbTable: Array.isArray(obj.kbTable) ? obj.kbTable.slice() : null
@@ -573,12 +608,17 @@
       if (fromId == null || fromId === "" || toId == null || toId === "") {
         throw new Error("Pipe row " + (i + 2) + " missing From/To Structure");
       }
+      const shape = normalizeShape(r["Shape"] || "circular");
+      const size = normalizeSize(shape, r["Size"] || (shape === "circular" ? 18 : ""));
+      if (size == null || (shape === "circular" && !(isFinite(size) && size > 0))) {
+        throw new Error("Pipe row " + (i + 2) + " has an invalid Size for " + shape);
+      }
       return {
         id:         String(r["Pipe ID"] || r.id || ("P-" + (i+1))),
         fromId:     String(fromId),
         toId:       String(toId),
-        shape:      String(r["Shape"] || "circular").toLowerCase(),
-        size:       r["Size"] || 18,
+        shape,
+        size,
         n:          num(r["Manning's n"] ?? r.n, 0.013),
         slope:      num(r["Slope (ft/ft)"] ?? r.slope, 0.005),
         length:     num(r["Length (ft)"] ?? r.length, 0),

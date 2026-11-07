@@ -52,12 +52,16 @@ Validate that an imported JSON object matches schemaVersion 1. Reject malformed 
         if (typeof p[f] !== "number" || p[f] < 0) push("pipes[" + i + "]." + f + " must be non-negative number");
       });
       if (typeof p.n !== "number" || p.n <= 0) push("pipes[" + i + "].n must be positive number");
-      if (p.shape !== "circular" && p.shape !== "elliptical") {
+      const shape = normalizeShape(p.shape);
+      if (shape !== "circular" && shape !== "elliptical") {
         push("pipes[" + i + "].shape must be 'circular' or 'elliptical'");
-      } else if (p.shape === "circular") {
-        if (typeof p.size !== "number" || !(p.size > 0)) push("pipes[" + i + "].size must be a positive number (circular)");
-      } else if (typeof p.size !== "string" || !TABLE_4_6.some((r) => r.span_rise === p.size)) {
-        push("pipes[" + i + "].size must be a Table 4-6 span x rise (elliptical)");
+      } else {
+        const size = normalizeSize(shape, p.size);
+        if (shape === "circular" && !(typeof size === "number" && isFinite(size) && size > 0)) {
+          push("pipes[" + i + "].size must be a positive diameter (circular)");
+        } else if (shape === "elliptical" && size == null) {
+          push("pipes[" + i + "].size must be SPANxRISE (elliptical)");
+        }
       }
       if (p.designQ != null && (typeof p.designQ !== "number" || !isFinite(p.designQ))) {
         push("pipes[" + i + "].designQ must be a finite number");
@@ -110,6 +114,10 @@ console.assert(r.valid === false && r.errors.some((e) => e.includes("shape")), "
 // Duplicate id across structures and pipes rejected
 r = validateImportedJson({ ...ok, structures: [...ok.structures, { id: "P1", type: "manhole" }] });
 console.assert(r.valid === false && r.errors.some((e) => e.includes("duplicate id")), "duplicate id check failed");
+
+// Circular size may be exported as text
+r = validateImportedJson({ ...ok, pipes: [{ ...ok.pipes[0], size: "18" }] });
+console.assert(r.valid === true, "string circular size rejected:", r.errors);
 
 console.log("task-04 validator smoke test: OK");
 ```
