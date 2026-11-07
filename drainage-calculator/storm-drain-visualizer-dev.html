@@ -1892,6 +1892,56 @@
     if (row.kind === "end")   return csResult("Total rise over walked path", fmtNum(row.detail.totalRise, 3), "ft");
     return el("div", null, "(no detail)");
   }
+  // --- Two-inflow detail (task-30) ---
+
+  function renderTwoInflowDetail(row) {
+    const d = row.detail;
+    const res = d.result;
+    const cands = res.candidateLosses || [];
+    if (cands.length !== 2) return csWarn("Expected 2 candidate losses, got " + cands.length);
+
+    const candTable = el("table", { style: "font-family:ui-monospace,monospace; font-size:12px; border-collapse:collapse;" }, [
+      el("tr", { style: "border-bottom:1px solid #999;" }, [
+        el("th", { style: "padding:3px 10px; text-align:left;" }, "angle"),
+        el("th", { style: "padding:3px 10px; text-align:right;" }, "V_i/3"),
+        el("th", { style: "padding:3px 10px; text-align:right;" }, "Kb(angle)"),
+        el("th", { style: "padding:3px 10px; text-align:right;" }, "Lv = Kb·V²/(2g)"),
+        el("th", { style: "padding:3px 10px;" }, "")
+      ])
+    ]);
+    for (const c of cands) {
+      const marker = c.isControlling
+        ? el("span", { style: "color:#0a7a0a; font-weight:700;" }, "← controls (smaller)")
+        : el("span", { style: "color:#999;" }, "(not used)");
+      candTable.appendChild(el("tr", { style: "border-bottom:1px dotted #ccc;" }, [
+        el("td", { style: "padding:3px 10px;" }, fmtNum(c.angle, 1) + "°"),
+        el("td", { style: "padding:3px 10px; text-align:right;" }, fmtNum(c.V, 3)),
+        el("td", { style: "padding:3px 10px; text-align:right;" }, fmtNum(c.Kb, 3)),
+        el("td", { style: "padding:3px 10px; text-align:right;" }, fmtNum(c.Lv, 4)),
+        el("td", { style: "padding:3px 10px;" }, marker)
+      ]));
+    }
+
+    return el("div", null, [
+      csSection("two inflows — controlling-angle method", el("div", { style: "font-size:12px; color:#444; margin-bottom:6px;" }, [
+        "Compute Lv = Kb·V²/(2g) for each inflow using that inflow's partial velocity (V_i/3 = Q_i / A_out). ",
+        el("b", null, "The SMALLER of the two Lv's picks the controlling angle θc."),
+        " (The counter-intuitive detail: smaller Lv → θc, not larger. Per main spec §1.4.)"
+      ])),
+      candTable,
+      csSection("controlling angle", csFormula(
+        "θc  (angle giving the SMALLER Lv)",
+        null,
+        fmtNum(res.thetaControlling, 1), "°"
+      )),
+      csSection("Hb at the structure", csFormula(
+        "Hb = Kb(θc) · V_out²/(2g)",
+        fmtNum(res.kbUsed, 3) + " · " + fmtNum(velocityHead(d.Aout > 0 ? d.Qtotal / d.Aout : 0), 4),
+        fmtNum(res.Hb, 4), "ft"
+      )),
+      csResult("Hb", fmtNum(res.Hb, 4), "ft")
+    ]);
+  }
   // ==== ledger-render: end ====
 
   // ==== bootstrap: begin ====
