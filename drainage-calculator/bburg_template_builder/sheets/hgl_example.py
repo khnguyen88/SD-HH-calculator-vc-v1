@@ -129,7 +129,7 @@ def build_hgl_example_sheet(wb: Workbook) -> None:
         # HGL_dn_raw
         ws.cell(row=row, column=1, value="HGL_dn_raw")
         if idx == 0:
-            ws.cell(row=row, column=2, value="= TW_input")
+            ws.cell(row=row, column=2, value=" = TW_input")
             ws.cell(row=row, column=3, value=f"={tw_cell}")
             ws.cell(row=row, column=4, value=f"={tw_cell}")
         else:
