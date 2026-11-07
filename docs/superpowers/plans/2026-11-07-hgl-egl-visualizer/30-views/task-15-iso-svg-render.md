@@ -4,6 +4,8 @@
 
 `renderIso(svgEl, state)` populates the `<svg id="viewSvg">` with one group per structure and one line per pipe. Depth-sorted by `(x + y)` ascending. Selected cursor element gets a yellow glow. Implements spec §3.1.
 
+Note: task-22 made `renderIso` override-aware — structure `x`/`y` are resolved via `resolveField` over `s.overrides`.
+
 ## Preconditions
 
 - Prior tasks: task-01, task-03, task-05 or 06 or 07 (something that populates `state.imported`), task-14.
@@ -63,10 +65,14 @@
       return;
     }
 
-    // Build (x,y,z=rim) for each structure
-    const pts = s.imported.structures.map((st) => ({
-      id: st.id, type: st.type, x: st.x || 0, y: st.y || 0, z: (st.rim || 0)
-    }));
+    // Build (x,y,z=rim) for each structure, resolving x/y overrides (task-22).
+    const pts = s.imported.structures.map((st) => {
+      const rx = resolveField(st.id, "x", s.imported, s.overrides);
+      const ry = resolveField(st.id, "y", s.imported, s.overrides);
+      const x = (typeof rx === "number" && isFinite(rx)) ? rx : 0;
+      const y = (typeof ry === "number" && isFinite(ry)) ? ry : 0;
+      return { id: st.id, type: st.type, x, y, z: (st.rim || 0) };
+    });
     const b = isoBounds(pts, 2.0);
     const pad = 40;
     const vbW = Math.max(100, b.maxX - b.minX + 2 * pad);

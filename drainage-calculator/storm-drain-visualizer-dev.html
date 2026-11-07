@@ -866,10 +866,14 @@
       return;
     }
 
-    // Build (x,y,z=rim) for each structure
-    const pts = s.imported.structures.map((st) => ({
-      id: st.id, type: st.type, x: st.x || 0, y: st.y || 0, z: (st.rim || 0)
-    }));
+    // Build (x,y,z=rim) for each structure, resolving x/y overrides (task-22).
+    const pts = s.imported.structures.map((st) => {
+      const rx = resolveField(st.id, "x", s.imported, s.overrides);
+      const ry = resolveField(st.id, "y", s.imported, s.overrides);
+      const x = (typeof rx === "number" && isFinite(rx)) ? rx : 0;
+      const y = (typeof ry === "number" && isFinite(ry)) ? ry : 0;
+      return { id: st.id, type: st.type, x, y, z: (st.rim || 0) };
+    });
     const b = isoBounds(pts, 2.0);
     const pad = 40;
     const vbW = Math.max(100, b.maxX - b.minX + 2 * pad);
@@ -1181,6 +1185,7 @@
   }
 
   document.addEventListener("keydown", (ev) => {
+    if (ev.shiftKey) return;
     if (isTypingTarget(ev)) return;
     if (isBranchPopupOpen()) return;  // popup owns the keyboard while open
     if (ev.key === "ArrowUp") {
@@ -1313,6 +1318,41 @@
     } else {
       openBranchPopup(sid, opts);
     }
+  });
+
+  // --- Shift+Arrow nudge (task-22) ---
+
+  const NUDGE_FT = 10;
+
+  function nudgeSelectedStructure(dx, dy) {
+    if (state.ui.mode !== "edit") return;
+    if (!state.cursor || state.cursor.kind !== "structure") return;
+    const sid = state.cursor.id;
+    const str = state.imported && state.imported.structures.find((s) => s.id === sid);
+    if (!str) return;
+
+    // Overrides are a separate layer; never mutate state.imported (task-23 depends on
+    // imported staying the immutable source). renderIso resolves x/y overrides.
+    const ov = state.overrides.byId[sid] = state.overrides.byId[sid] || {};
+    const curX = (typeof ov.x === "number") ? ov.x : (typeof str.x === "number" ? str.x : 0);
+    const curY = (typeof ov.y === "number") ? ov.y : (typeof str.y === "number" ? str.y : 0);
+    ov.x = curX + dx;
+    ov.y = curY + dy;
+    renderAll();
+  }
+
+  document.addEventListener("keydown", (ev) => {
+    if (isTypingTarget(ev)) return;
+    if (isBranchPopupOpen()) return;
+    if (!ev.shiftKey) return;
+    let dx = 0, dy = 0;
+    if (ev.key === "ArrowUp") dy = -NUDGE_FT;
+    else if (ev.key === "ArrowDown") dy = NUDGE_FT;
+    else if (ev.key === "ArrowLeft") dx = -NUDGE_FT;
+    else if (ev.key === "ArrowRight") dx = NUDGE_FT;
+    else return;
+    ev.preventDefault();
+    nudgeSelectedStructure(dx, dy);
   });
   // ==== navigation: end ====
 
