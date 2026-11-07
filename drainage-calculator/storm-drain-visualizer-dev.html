@@ -638,6 +638,10 @@
     if (typeof XLSX === "undefined") throw new Error("SheetJS not loaded — did you open the BUILT file?");
 
     const num = (v, fallback) => { const n = Number(v); return isFinite(n) ? n : fallback; };
+    // Return the first value that is present and numeric; null if none qualify.
+    const pickNum = (...vals) => { for (const v of vals) { if (v != null && v !== "") { const n = Number(v); if (isFinite(n)) return n; } } return null; };
+    // Return the first value that is present (non-null, non-empty); null otherwise.
+    const pick = (...vals) => { for (const v of vals) if (v != null && v !== "") return v; return null; };
 
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array" });
@@ -652,18 +656,27 @@
       throw new Error("Not a storm-drain export: expected 'Junction Structure' and 'Pipe Sizing' sheets");
     }
 
-    const structureIdOf = (r) => r["Structure ID"] || r.structureId || r["structureId"] || "";
+    const structureIdOf = (r) => r["Structure ID"] || r["Structure"] || r.structureId || r["structureId"] || "";
 
     const daRows   = sh("Drainage Area");
     const strRows  = sh("Junction Structure");
     const pipeRows = sh("Pipe Sizing");
     const outRows  = sh("Outlet Structures");
 
-    // Build captured-Q lookup: drainage-area row has structureId + computed Q
+    // Build captured-Q lookup: drainage-area row has structureId + computed Q.
+    // The main-app export names storm columns "Q_<storm> (cfs)", not "Q (cfs)".
+    const qOf = (r) => {
+      if (r["Q (cfs)"] != null) return num(r["Q (cfs)"], 0);
+      if (r.Q != null) return num(r.Q, 0);
+      for (const k of Object.keys(r)) {
+        if (/^Q.*\(cfs\)$/i.test(k)) { const n = pickNum(r[k]); if (n != null) return n; }
+      }
+      return 0;
+    };
     const capturedByStructureId = Object.create(null);
     for (const r of daRows) {
       const sid = structureIdOf(r);
-      const q = num(r["Q (cfs)"] ?? r.Q, 0);
+      const q = qOf(r);
       if (sid) capturedByStructureId[sid] = (capturedByStructureId[sid] || 0) + q;
     }
 
@@ -673,14 +686,15 @@
       type:         String(r["Type"] || r.type || "manhole").toLowerCase(),
       x:            num(r["X"] ?? r.x, 0),
       y:            num(r["Y"] ?? r.y, 0),
-      rim:          r["Rim"] != null ? num(r["Rim"], null) : null,
-      startElev:    r["Start Elev"] != null ? num(r["Start Elev"], null) : null,
-      crown:        r["Crown"] != null ? num(r["Crown"], null) : null,
-      forceElev:    r["Force Elev"] === true || r["Force Elev"] === "TRUE",
-      capturedQ:    capturedByStructureId[structureIdOf(r)] || 0,
-      totalQ:       num(r["Total Q (cfs)"], 0),
+      rim:          pickNum(r["Rim-Grate Elev (ft)"], r["Rim"], r.rim),
+      startElev:    pickNum(r["Fixed-Start Elev (ft)"], r["Start Elev"], r.startElev),
+      crown:        pickNum(r["Pipe Crown (ft)"], r["Crown"], r.crown),
+      forceElev:    r["Force Elev"] === true || r["Force Elev"] === "TRUE" || r["Force Fixed"] === true || r["Force Fixed"] === "TRUE",
+      capturedQ:    pickNum(r["Captured Q (cfs)"]) != null ? pickNum(r["Captured Q (cfs)"]) : (capturedByStructureId[structureIdOf(r)] || 0),
+      totalQ:       pickNum(r["Total Flow (cfs)"], r["Total Q (cfs)"]) ?? 0,
       Hb:           num(r["Hb (ft)"], 0),
-      elevation:    num(r["Upstream EGL (ft)"], 0)
+      elevation:    pickNum(r["Upstream HGL (ft)"], r["Upstream EGL (ft)"]) ?? 0,
+      outPipeId:    String(pick(r["Outgoing Pipe ID"], r.outPipeId) || "")
     }));
 
     const pipes = pipeRows.map((r, i) => {
@@ -690,18 +704,18 @@
         throw new Error("Pipe row " + (i + 2) + " missing From/To Structure");
       }
       const shape = normalizeShape(r["Shape"] || "circular");
-      const size = normalizeSize(shape, r["Size"] || (shape === "circular" ? 18 : ""));
+      const size = normalizeSize(shape, pick(r["Size (in or SPANxRISE)"], r["Size"], shape === "circular" ? 18 : ""));
       if (size == null || (shape === "circular" && !(isFinite(size) && size > 0))) {
         throw new Error("Pipe row " + (i + 2) + " has an invalid Size for " + shape);
       }
       return {
-        id:         String(r["Pipe ID"] || r.id || ("P-" + (i+1))),
+        id:         String(pick(r["ID"], r["Pipe ID"], r.id) || ("P-" + (i+1))),
         fromId:     String(fromId),
         toId:       String(toId),
         shape,
         size,
-        n:          num(r["Manning's n"] ?? r.n, 0.013),
-        slope:      num(r["Slope (ft/ft)"] ?? r.slope, 0.005),
+        n:          num(pick(r["n"], r["Manning's n"], r.n), 0.013),
+        slope:      num(pick(r["Slope (ft-ft)"], r["Slope (ft/ft)"], r.slope), 0.005),
         length:     num(r["Length (ft)"] ?? r.length, 0),
         angle:      num(r["Angle (deg)"] ?? r.angle, 0),
         designQ:    num(r["Design Q (cfs)"], 0),
@@ -720,10 +734,16 @@
       outfallSid = lowest.id;
       outfallTw = lowest.startElev;
     }
-    // Override tailwater from Outlet Structures sheet if the outfall is linked there
+    // Override tailwater from Outlet Structures when an outlet links to the outfall.
+    // The sheet's own id is "Outlet Structure ID"; the linked junction is
+    // "Tailwater Linked Structure ID", and the fixed elevation is
+    // "Tailwater Fixed Elevation (ft)" (legacy fallback: "TW Elevation").
     for (const r of outRows) {
-      const sid = String(r["Structure ID"] || r.structureId || "");
-      if (sid === outfallSid && r["TW Elevation"] != null) outfallTw = num(r["TW Elevation"], outfallTw);
+      const linkedSid = String(r["Tailwater Linked Structure ID"] || r["Structure ID"] || r.structureId || "");
+      if (linkedSid === outfallSid) {
+        const twFixed = pickNum(r["Tailwater Fixed Elevation (ft)"], r["TW Elevation"]);
+        if (twFixed != null) outfallTw = twFixed;
+      }
     }
 
     state.overrides = { byId: {} };
