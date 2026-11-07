@@ -185,7 +185,52 @@
     return Sf * L;
   }
 
-  // (task-10 through task-13 insert here)
+  // --- Kb lookup (task-10) ---
+
+  // KB_SEED: standard AASHTO bend-loss curve (matches main app defaultKbRows(), spec §1.6).
+  // 12 rows, 5° → 0.06 ... 90° → 0.70. All three columns seeded identically — users are
+  // expected to override per column before using for submittal.
+  const KB_SEED = [
+    { angleDeg:  5,  inlet: 0.06, manhole: 0.06, bend: 0.06 },
+    { angleDeg: 10,  inlet: 0.13, manhole: 0.13, bend: 0.13 },
+    { angleDeg: 15,  inlet: 0.19, manhole: 0.19, bend: 0.19 },
+    { angleDeg: 20,  inlet: 0.25, manhole: 0.25, bend: 0.25 },
+    { angleDeg: 25,  inlet: 0.30, manhole: 0.30, bend: 0.30 },
+    { angleDeg: 30,  inlet: 0.35, manhole: 0.35, bend: 0.35 },
+    { angleDeg: 40,  inlet: 0.43, manhole: 0.43, bend: 0.43 },
+    { angleDeg: 50,  inlet: 0.50, manhole: 0.50, bend: 0.50 },
+    { angleDeg: 60,  inlet: 0.56, manhole: 0.56, bend: 0.56 },
+    { angleDeg: 70,  inlet: 0.61, manhole: 0.61, bend: 0.61 },
+    { angleDeg: 80,  inlet: 0.66, manhole: 0.66, bend: 0.66 },
+    { angleDeg: 90,  inlet: 0.70, manhole: 0.70, bend: 0.70 }
+  ];
+
+  // Linear interpolation across the Kb table, clamping at endpoints.
+  //   structureType ∈ "inlet" | "manhole" | "bend" (junction/splitter also map to bend/manhole upstream).
+  function kbAt(angleDeg, structureType, kbTable) {
+    const col = (structureType === "inlet") ? "inlet"
+              : (structureType === "manhole") ? "manhole"
+              : (structureType === "bend") ? "bend"
+              : (structureType === "junction") ? "bend"
+              : (structureType === "splitter") ? "manhole"
+              : "manhole";
+    const table = (kbTable && kbTable.length > 0) ? kbTable : KB_SEED;
+    const sorted = table.slice().sort((a, b) => a.angleDeg - b.angleDeg);
+
+    if (angleDeg <= sorted[0].angleDeg) return sorted[0][col];
+    if (angleDeg >= sorted[sorted.length - 1].angleDeg) return sorted[sorted.length - 1][col];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const lo = sorted[i], hi = sorted[i + 1];
+      if (angleDeg >= lo.angleDeg && angleDeg <= hi.angleDeg) {
+        if (hi.angleDeg === lo.angleDeg) return lo[col];  // duplicate-angle guard (main-app parity)
+        const t = (angleDeg - lo.angleDeg) / (hi.angleDeg - lo.angleDeg);
+        return lo[col] + t * (hi[col] - lo[col]);
+      }
+    }
+    return sorted[sorted.length - 1][col];
+  }
+
+  // (task-11 through task-13 insert here)
   // ==== compute: end ====
 
   // ==== import: begin ====

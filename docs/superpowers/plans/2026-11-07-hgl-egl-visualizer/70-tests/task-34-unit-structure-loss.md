@@ -80,8 +80,8 @@ test("structureLoss: non-array inflows returns error", () => {
 
 test("kbAt: linear interpolation 35° (between 30° and 40°)", () => {
   const { window, fn } = loadVisualizer();
-  // 30→0.35, 40→0.44 → midpoint at 35° → 0.395.
-  assert.ok(Math.abs(fn("kbAt")(35, "bend", window.KB_SEED) - 0.395) < 1e-12);
+  // 30→0.35, 40→0.43 → midpoint at 35° → 0.39.
+  assert.ok(Math.abs(fn("kbAt")(35, "bend", window.KB_SEED) - 0.39) < 1e-12);
 });
 
 test("kbAt: clamp below first row and above last row", () => {

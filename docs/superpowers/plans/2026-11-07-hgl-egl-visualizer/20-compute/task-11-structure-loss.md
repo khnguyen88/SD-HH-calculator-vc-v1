@@ -96,8 +96,8 @@ console.assert(r.thetaControlling === 30, "1-inflow theta");
 
 // 2-inflow controlling-angle counter-example:
 //   Aout=1.767 sf.
-//   Inflow A: angle=10°, Q=6 cfs → V=3.39 → Hv=0.179 → Lv1=0.12·0.179 = 0.0215
-//   Inflow B: angle=60°, Q=2 cfs → V=1.13 → Hv=0.020 → Lv2=0.59·0.020 = 0.0118
+//   Inflow A: angle=10°, Q=6 cfs → V=3.39 → Hv=0.179 → Lv1=0.13·0.179 = 0.0233
+//   Inflow B: angle=60°, Q=2 cfs → V=1.13 → Hv=0.020 → Lv2=0.56·0.020 = 0.0112
 //   Lv1 > Lv2 → SMALLER is Lv2 → thetaC = B's angle = 60°
 r = structureLoss(
   [{ angleDeg: 10, Qcfs: 6 }, { angleDeg: 60, Qcfs: 2 }],
