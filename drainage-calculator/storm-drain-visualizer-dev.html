@@ -1501,6 +1501,93 @@
   // Toolbar button
   const modeBtn = document.getElementById("modeToggle");
   if (modeBtn) modeBtn.addEventListener("click", () => setMode(state.ui.mode === "edit" ? "explore" : "edit"));
+
+  // --- Override badge + reset panel (task-25) ---
+
+  function renderOverrideBadge() {
+    let badge = document.getElementById("overrideBadge");
+    const count = listOverrides().length;
+    if (!badge) {
+      const topbar = document.querySelector(".topbar");
+      if (!topbar) return;
+      badge = el("button", { id: "overrideBadge", type: "button", style: "display:none;" });
+      badge.addEventListener("click", openOverridePanel);
+      topbar.appendChild(badge);
+    }
+    if (count === 0) {
+      badge.style.display = "none";
+    } else {
+      badge.style.display = "";
+      badge.textContent = count + " fields overridden";
+      badge.style.cssText = "background:#ffd60a; color:#1a1a1a; border:none; padding:4px 10px; border-radius:4px; font-weight:600;";
+    }
+  }
+
+  function closeOverridePanel() {
+    const p = document.getElementById("overridePanel");
+    if (p) p.remove();
+  }
+
+  function openOverridePanel() {
+    closeOverridePanel();
+    const ovs = listOverrides();
+    const panel = el("div", {
+      id: "overridePanel",
+      style: "position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); "
+           + "background:#161b22; color:#e6edf3; padding:16px 20px; border:1px solid #30363d; "
+           + "border-radius:6px; font-family:system-ui,sans-serif; min-width:420px; max-height:70vh; overflow:auto; z-index:1000;"
+    });
+    panel.appendChild(el("div", { style: "font-weight:600; margin-bottom:10px;" }, "Active overrides (" + ovs.length + ")"));
+    if (ovs.length === 0) {
+      panel.appendChild(el("div", { style: "color:#8b949e;" }, "No overrides. Edits in the ledger will appear here."));
+    } else {
+      const table = el("table", { style: "width:100%; border-collapse:collapse; font-family:ui-monospace,monospace; font-size:12px;" });
+      const head = el("tr", { style: "border-bottom:1px solid #30363d;" }, [
+        el("th", { style: "text-align:left; padding:4px;" }, "Element"),
+        el("th", { style: "text-align:left; padding:4px;" }, "Field"),
+        el("th", { style: "text-align:right; padding:4px;" }, "Original"),
+        el("th", { style: "text-align:right; padding:4px;" }, "New"),
+        el("th", { style: "padding:4px;" }, "")
+      ]);
+      table.appendChild(head);
+      for (const o of ovs) {
+        const revertBtn = el("button", {
+          type: "button",
+          style: "padding:2px 8px;",
+          onclick: () => { revertOverride(o.elementId, o.field); renderAll(); openOverridePanel(); }
+        }, "Revert");
+        const row = el("tr", { style: "border-bottom:1px solid #21262d;" }, [
+          el("td", { style: "padding:4px;" }, o.elementId),
+          el("td", { style: "padding:4px;" }, o.field),
+          el("td", { style: "padding:4px; text-align:right;" }, String(o.originalValue)),
+          el("td", { style: "padding:4px; text-align:right; color:#ffd60a;" }, String(o.newValue)),
+          el("td", { style: "padding:4px;" }, revertBtn)
+        ]);
+        table.appendChild(row);
+      }
+      panel.appendChild(table);
+    }
+
+    const footer = el("div", { style: "margin-top:12px; display:flex; gap:8px; justify-content:flex-end;" }, [
+      el("button", { type: "button",
+        onclick: () => { resetAllOverrides(); renderAll(); openOverridePanel(); }
+      }, "Reset all"),
+      el("button", { type: "button", onclick: closeOverridePanel }, "Close")
+    ]);
+    panel.appendChild(footer);
+
+    document.body.appendChild(panel);
+  }
+
+  // Esc closes the panel. Capture phase + stopImmediatePropagation so the walk
+  // handlers (registered earlier, bubble phase) don't also run resetWalk.
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && document.getElementById("overridePanel")) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      closeOverridePanel();
+    }
+  }, true);
   // ==== edit-mode: end ====
 
   // ==== ledger-render: begin ====
@@ -1512,6 +1599,7 @@
     renderActiveView();
     // ledger render is wired in by group 60
     if (typeof renderLedger === "function") renderLedger();
+    if (typeof renderOverrideBadge === "function") renderOverrideBadge();
   }
 
   // V hotkey (also 'v' lowercase). Ignore while typing in form controls.
