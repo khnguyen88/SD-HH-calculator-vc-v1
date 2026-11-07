@@ -32,3 +32,8 @@ CLAUDE.md
 
 # Git worktrees
 .worktrees/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
