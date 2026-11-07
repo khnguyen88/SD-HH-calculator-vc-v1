@@ -39,6 +39,11 @@ Validate that an imported JSON object matches schemaVersion 1. Reject malformed 
       ["rim", "startElev", "crown"].forEach((f) => {
         if (s[f] != null && typeof s[f] !== "number") push("structures[" + i + "]." + f + " must be a number");
       });
+      ["x", "y"].forEach((f) => {
+        if (s[f] != null && (typeof s[f] !== "number" || !isFinite(s[f]))) {
+          push("structures[" + i + "]." + f + " must be a finite number");
+        }
+      });
     });
 
     if (!Array.isArray(obj.pipes)) push("pipes must be an array");
