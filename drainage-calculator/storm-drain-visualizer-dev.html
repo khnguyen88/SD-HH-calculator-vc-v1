@@ -214,20 +214,29 @@
               : (structureType === "junction") ? "bend"
               : (structureType === "splitter") ? "manhole"
               : "manhole";
-    const table = (kbTable && kbTable.length > 0) ? kbTable : KB_SEED;
-    const sorted = table.slice().sort((a, b) => a.angleDeg - b.angleDeg);
+    const source = (kbTable && kbTable.length > 0) ? kbTable : KB_SEED;
+    const rows = source
+      .filter((r) => r && isFinite(parseFloat(r.angleDeg)))
+      .map((r) => ({
+        angleDeg: parseFloat(r.angleDeg),
+        inlet: parseFloat(r.inlet) || 0,
+        manhole: parseFloat(r.manhole) || 0,
+        bend: parseFloat(r.bend) || 0
+      }))
+      .sort((a, b) => a.angleDeg - b.angleDeg);
+    const table = rows.length > 0 ? rows : KB_SEED.map((r) => ({ ...r }));
 
-    if (angleDeg <= sorted[0].angleDeg) return sorted[0][col];
-    if (angleDeg >= sorted[sorted.length - 1].angleDeg) return sorted[sorted.length - 1][col];
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const lo = sorted[i], hi = sorted[i + 1];
+    if (angleDeg <= table[0].angleDeg) return table[0][col];
+    if (angleDeg >= table[table.length - 1].angleDeg) return table[table.length - 1][col];
+    for (let i = 0; i < table.length - 1; i++) {
+      const lo = table[i], hi = table[i + 1];
       if (angleDeg >= lo.angleDeg && angleDeg <= hi.angleDeg) {
         if (hi.angleDeg === lo.angleDeg) return lo[col];  // duplicate-angle guard (main-app parity)
         const t = (angleDeg - lo.angleDeg) / (hi.angleDeg - lo.angleDeg);
         return lo[col] + t * (hi[col] - lo[col]);
       }
     }
-    return sorted[sorted.length - 1][col];
+    return table[table.length - 1][col];
   }
 
   // (task-11 through task-13 insert here)
@@ -510,6 +519,11 @@
       renderAll();
     }
   });
+  // Expose top-level bindings for the jsdom test harness (top-level const/let
+  // declarations are not properties of `window`).
+  window.state = state;
+  window.KB_SEED = KB_SEED;
+  window.TABLE_4_6 = TABLE_4_6;
   renderAll();
   // ==== bootstrap: end ====
 </script>

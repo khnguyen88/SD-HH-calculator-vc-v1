@@ -4,6 +4,8 @@
 
 Set up `drainage-calculator/visualizer-tests/` with Node 18 `node --test`, `jsdom`, and the real `xlsx` package. All subsequent test tasks depend on this harness. A loader function reads the dev HTML, boots it into jsdom, and returns a handle exposing `window`, `document`, and the inlined functions.
 
+The dev HTML explicitly exposes `window.state`, `window.KB_SEED`, and `window.TABLE_4_6` in its bootstrap block so the harness and tests can read these top-level bindings (top-level `const`/`let` declarations are not properties of `window`).
+
 Implements spec §8 (testing strategy). Mirrors main spec §C.
 
 ## Preconditions
