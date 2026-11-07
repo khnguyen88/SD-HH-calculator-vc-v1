@@ -4,7 +4,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node --test ."
+    "test": "node --test"
   },
   "dependencies": {
     "jsdom": "^24.0.0",
