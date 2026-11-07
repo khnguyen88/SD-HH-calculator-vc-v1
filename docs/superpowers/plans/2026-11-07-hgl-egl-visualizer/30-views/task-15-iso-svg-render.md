@@ -45,7 +45,7 @@
     const common = { stroke: strokeColor, "stroke-width": isSelected ? 2 : 1, fill: fillColor };
     if (type === "inlet")   return svgEl("polygon", Object.assign({ points: `${cx},${cy-s} ${cx+s},${cy+s} ${cx-s},${cy+s}` }, common));
     if (type === "manhole") return svgEl("rect",    Object.assign({ x: cx-s, y: cy-s, width: 2*s, height: 2*s }, common));
-    if (type === "bend")    return svgEl("polyline", Object.assign({ points: `${cx-s},${cy+s} ${cx},${cy-s} ${cx+s},${cy+s}`, fill: "none" }, common));
+    if (type === "bend")    return svgEl("polyline", Object.assign({}, common, { points: `${cx-s},${cy+s} ${cx},${cy-s} ${cx+s},${cy+s}`, fill: "none" }));
     if (type === "junction")return svgEl("circle",  Object.assign({ cx: cx, cy: cy, r: s }, common));
     if (type === "splitter")return svgEl("rect",    Object.assign({ x: cx-s, y: cy-s, width: 2*s, height: 2*s, "stroke-dasharray": "3 2" }, common));
     if (type === "outfall") return svgEl("g", null, [
