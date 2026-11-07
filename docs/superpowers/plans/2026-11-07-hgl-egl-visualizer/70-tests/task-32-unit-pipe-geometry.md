@@ -40,9 +40,9 @@ test("pipeRadiusCircular = D/4", () => {
   assert.strictEqual(fn("pipeRadiusCircular")(24), 0.5);
 });
 
-test("pipeAreaElliptical 38x24 = 5.1 sf per Table 4-6", () => {
+test("pipeAreaElliptical 38x24 = 6.3 sf per Table 4-6", () => {
   const { fn } = loadVisualizer();
-  assert.strictEqual(fn("pipeAreaElliptical")("38x24"), 5.1);
+  assert.strictEqual(fn("pipeAreaElliptical")("38x24"), 6.3);
 });
 
 test("elliptical hydraulic radius matches equivalent circular R", () => {
@@ -56,7 +56,7 @@ test("pipeArea dispatches by shape", () => {
   const { fn } = loadVisualizer();
   const pA = fn("pipeArea");
   assert.ok(Math.abs(pA("circular", 18) - fn("pipeAreaCircular")(18)) < EPS, "circular dispatch");
-  assert.strictEqual(pA("elliptical", "38x24"), 5.1, "elliptical dispatch");
+  assert.strictEqual(pA("elliptical", "38x24"), 6.3, "elliptical dispatch");
 });
 
 test("pipeArea throws on unknown shape", () => {

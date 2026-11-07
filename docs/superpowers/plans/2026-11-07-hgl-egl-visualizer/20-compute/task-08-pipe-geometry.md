@@ -17,16 +17,16 @@ Implement pipe area and hydraulic radius for both circular and elliptical shapes
   // --- pipe geometry (task-08) ---
 
   // Table 4-6: circular diameter (in), elliptical span×rise (in), elliptical area (sf).
-  // The circular_area column is DERIVED (π·d²/4 in ft²) and asserted against the table in tests.
+  // Elliptical values mirror the main app's TABLE46 (spec §1.5).
   const TABLE_4_6 = [
-    { dia_in: 15, span_rise: "18x11", ell_area_sf: 1.1 },
+    { dia_in: 15, span_rise: null, ell_area_sf: null },
     { dia_in: 18, span_rise: "23x14", ell_area_sf: 1.8 },
-    { dia_in: 21, span_rise: "27x17", ell_area_sf: 2.6 },
-    { dia_in: 24, span_rise: "30x19", ell_area_sf: 3.3 },
-    { dia_in: 27, span_rise: "34x22", ell_area_sf: 4.1 },
-    { dia_in: 30, span_rise: "38x24", ell_area_sf: 5.1 },
-    { dia_in: 33, span_rise: "42x27", ell_area_sf: 6.3 },
-    { dia_in: 36, span_rise: "45x29", ell_area_sf: 7.4 },
+    { dia_in: 21, span_rise: null, ell_area_sf: null },
+    { dia_in: 24, span_rise: "30x19", ell_area_sf: 4.1 },
+    { dia_in: 27, span_rise: "34x22", ell_area_sf: 5.1 },
+    { dia_in: 30, span_rise: "38x24", ell_area_sf: 6.3 },
+    { dia_in: 33, span_rise: "42x27", ell_area_sf: 7.4 },
+    { dia_in: 36, span_rise: "45x29", ell_area_sf: 8.8 },
     { dia_in: 42, span_rise: "53x34", ell_area_sf: 10.2 },
     { dia_in: 48, span_rise: "60x38", ell_area_sf: 12.9 },
     { dia_in: 54, span_rise: "68x43", ell_area_sf: 16.6 },
@@ -92,13 +92,13 @@ console.assert(Math.abs(a - Math.PI * 2.25 / 4) < 1e-12, "pipeAreaCircular(18): 
 // R = D/4 = 18/48 = 0.375 ft
 console.assert(Math.abs(pipeRadiusCircular(18) - 0.375) < 1e-12, "pipeRadiusCircular(18)");
 
-// Elliptical: 38x24 → 5.1 sf per Table 4-6
-console.assert(pipeAreaElliptical("38x24") === 5.1, "pipeAreaElliptical(38x24)");
+// Elliptical: 38x24 → 6.3 sf per Table 4-6
+console.assert(pipeAreaElliptical("38x24") === 6.3, "pipeAreaElliptical(38x24)");
 console.assert(Math.abs(pipeRadiusElliptical("38x24") - pipeRadiusCircular(30)) < 1e-12, "elliptical R matches circular 30");
 
 // Dispatch
 console.assert(pipeArea("circular", 18) === a, "dispatch circular");
-console.assert(pipeArea("elliptical", "38x24") === 5.1, "dispatch elliptical");
+console.assert(pipeArea("elliptical", "38x24") === 6.3, "dispatch elliptical");
 
 // Unknown shape throws
 let threw = false;
