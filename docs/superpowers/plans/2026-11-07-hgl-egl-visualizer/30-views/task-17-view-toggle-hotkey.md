@@ -2,7 +2,7 @@
 
 ## Context
 
-Wire the `V` key and the toolbar `[ISO | PROFILE]` label to toggle `state.ui.view` and re-render the top-half SVG. Also implement a `renderActiveView` dispatcher used by `renderAll`. Implements spec §5.1 (hotkey) and §3.3 (toolbar).
+Wire the `V` key and the toolbar `[ISO | profile]` label to toggle `state.ui.view` and re-render the top-half SVG. Align the static markup with the runtime label so there is no first-paint flash, and give it `cursor:pointer` since it is clickable. Also implement a `renderActiveView` dispatcher used by `renderAll`. Implements spec §5.1 (hotkey) and §3.3 (toolbar).
 
 ## Preconditions
 
@@ -22,9 +22,10 @@ Wire the `V` key and the toolbar `[ISO | PROFILE]` label to toggle `state.ui.vie
       renderIso(svg, state);
     } else {
       // Build ledger from current path (or empty) and annotate for the active HGL method.
-      const path = (state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
+      const path = (state.imported && state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
         ? state.cursor.pathStack
-        : (state.imported ? [state.imported.outfall.structureId] : []);
+        : (state.imported && state.imported.outfall && state.imported.outfall.structureId
+            ? [state.imported.outfall.structureId] : []);
       const rows = buildLedger(path, state, state.imported ? state.imported.kbTable : null, state.ui.hglMethod);
       const annotated = annotateLedgerHgl(rows, state, state.ui.hglMethod);
       renderProfile(svg, state, annotated);
@@ -59,7 +60,9 @@ Replace with:
 
   // V hotkey (also 'v' lowercase).
   document.addEventListener("keydown", (ev) => {
-    if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA" || ev.target.tagName === "SELECT")) return;
+    if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
+    const t = ev.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     if (ev.key === "v" || ev.key === "V") {
       ev.preventDefault();
       toggleView();

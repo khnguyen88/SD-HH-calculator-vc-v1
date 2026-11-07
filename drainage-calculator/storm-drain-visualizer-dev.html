@@ -44,7 +44,7 @@
 </div>
 <div class="viewframe">
   <div class="tools">
-    <span id="viewToggle">[ISO | PROFILE]</span>
+    <span id="viewToggle" style="cursor:pointer">[ISO | profile]</span>
     <span style="margin-left: 16px">cursor: <span id="cursorLabel" class="num">(none)</span></span>
   </div>
   <svg id="viewSvg" preserveAspectRatio="xMidYMid meet"></svg>
@@ -1041,7 +1041,7 @@
       renderIso(svg, state);
     } else {
       // Build ledger from current path (or empty) and annotate for the active HGL method.
-      const path = (state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
+      const path = (state.imported && state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
         ? state.cursor.pathStack
         : (state.imported && state.imported.outfall && state.imported.outfall.structureId
             ? [state.imported.outfall.structureId] : []);
@@ -1081,6 +1081,7 @@
 
   // V hotkey (also 'v' lowercase). Ignore while typing in form controls.
   document.addEventListener("keydown", (ev) => {
+    if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
     const t = ev.target;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     if (ev.key === "v" || ev.key === "V") {
