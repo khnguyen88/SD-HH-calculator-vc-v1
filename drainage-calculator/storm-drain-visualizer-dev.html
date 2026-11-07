@@ -776,6 +776,34 @@
   // ==== import: end ====
 
   // ==== views: begin ====
+  // --- Iso projection (task-14) ---
+
+  const ISO_COS30 = Math.cos(Math.PI / 6);   // 0.866025...
+  const ISO_SIN30 = Math.sin(Math.PI / 6);   // 0.5
+
+  // Project world (x, y, z) to screen (sx, sy).
+  //   x, y in world units (feet); z in feet; kZ is vertical exaggeration (default 2.0).
+  //   screen_y is flipped (positive screen_y goes down).
+  function projectIso(x, y, z, kZ) {
+    const K = (typeof kZ === "number" && isFinite(kZ)) ? kZ : 2.0;
+    const sx = (x - y) * ISO_COS30;
+    const sy = (x + y) * ISO_SIN30 - z * K;
+    return { sx, sy };
+  }
+
+  // Compute view bounds for a set of world points; used by renderIso to set SVG viewBox.
+  function isoBounds(points, kZ) {
+    if (!points || points.length === 0) return { minX: 0, maxX: 100, minY: 0, maxY: 100 };
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of points) {
+      const pr = projectIso(p.x, p.y, p.z || 0, kZ);
+      if (pr.sx < minX) minX = pr.sx;
+      if (pr.sx > maxX) maxX = pr.sx;
+      if (pr.sy < minY) minY = pr.sy;
+      if (pr.sy > maxY) maxY = pr.sy;
+    }
+    return { minX, maxX, minY, maxY };
+  }
   // (task-14 through task-17 insert here)
   // ==== views: end ====
 
