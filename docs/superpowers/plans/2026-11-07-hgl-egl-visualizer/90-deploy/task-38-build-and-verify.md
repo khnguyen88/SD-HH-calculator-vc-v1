@@ -13,13 +13,12 @@ Run the final build, open the built file, and walk through the acceptance scenar
 **Run** the full test suite first:
 
 ```powershell
-cd drainage-calculator/visualizer-tests
-npm install  # (one-time, if not already)
-cd ../..
-node --test drainage-calculator/visualizer-tests/
+npm --prefix drainage-calculator/visualizer-tests test
 ```
 
-Expected output: `pass N / fail 0` with N ≥ 38 (sum of all tasks' test counts above).
+Expected output: `pass 40 / fail 0` (tasks 31–37). Note: `node --test <dir>` fails on
+Node 22/Windows (it tries to require the directory); use `npm --prefix ... test` or run
+`node --test` with no args from inside the tests dir.
 
 **Then** build:
 
@@ -27,7 +26,12 @@ Expected output: `pass N / fail 0` with N ≥ 38 (sum of all tasks' test counts 
 node drainage-calculator/build-visualizer.js
 ```
 
-Expected output: `visualizer: built OK (<NNN> KB)` — size ≥ 800 KB.
+Expected output: `visualizer: built OK (~510 KB)`. The original ≥800 KB estimate was wrong;
+510 KB is correct. Verify self-containment instead: no `SHEETJS_BUNDLE` placeholder, zero
+external `src|href="http(s)://` refs, no CDN hosts, SheetJS inlined.
+
+The built `drainage-calculator/storm-drain-visualizer.html` stays **untracked** (regenerated
+from the dev file); only the runbook change is committed.
 
 **Then** manually verify the built file end-to-end:
 
@@ -66,14 +70,19 @@ Never hand-edit `gh-pages`'s `visualizer.html` — always build from the dev fil
 
 ## Acceptance test
 
-All 12 manual steps above produce the asserted outcome. No step fails.
+Automated + headless: all tests pass, the build is self-contained, and a jsdom smoke of the
+**built** file passes 12/12 (SheetJS inlined; fixture import → 6 structures/5 pipes; SVG
+rendered; ArrowUp advances; V toggles iso↔profile; E enters edit; slope input records an
+override; tweaked export contains `_overrides`).
 
-Also: `git status` shows only intended files changed (`drainage-calculator/*visualizer*`, `docs/deployment-runbook.md`).
+Still manual (not reproducible headlessly): DevTools network tab showing zero outbound
+requests; double-click `file://` launch; the real download dialog; visual inspection of
+colors/layout/interaction feel.
 
 ## Done when
 
-- All automated tests pass.
-- Built file ≥ 800 KB and opens offline by double-click.
-- All 12 manual verification steps pass.
+- All automated tests pass (40/40).
+- Built file is self-contained (~510 KB) and the headless smoke passes.
 - `docs/deployment-runbook.md` updated.
 - Commit: `feat(visualizer): task-38 final build + runbook update`.
+- Built `.html` left untracked (not committed).
