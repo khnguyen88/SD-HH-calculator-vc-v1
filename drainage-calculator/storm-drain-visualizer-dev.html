@@ -1909,8 +1909,12 @@
         el("th", { style: "padding:3px 10px;" }, "")
       ])
     ]);
+    // Derive the marker from the loss itself, not `isControlling`: when both
+    // inflows share an angle the engine marks both true, which would label the
+    // larger loss "smaller".
+    const minLv = Math.min(cands[0].Lv, cands[1].Lv);
     for (const c of cands) {
-      const marker = c.isControlling
+      const marker = c.Lv === minLv
         ? el("span", { style: "color:#0a7a0a; font-weight:700;" }, "← controls (smaller)")
         : el("span", { style: "color:#999;" }, "(not used)");
       candTable.appendChild(el("tr", { style: "border-bottom:1px dotted #ccc;" }, [
