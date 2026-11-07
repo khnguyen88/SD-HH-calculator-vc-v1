@@ -1,7 +1,7 @@
 # Handoff: Legacy workbook `#REF!` repair
 
-**Status:** paused mid-task on 2026-11-07. Next session should resume from
-"The workaround we were about to try" below.
+**Status:** COMPLETE 2026-11-07. The legacy workbook now has zero external
+links and zero `#REF!`/`#NAME?` cells. See "Workaround applied" below.
 
 ## Goal
 
@@ -9,8 +9,8 @@
    seeded from the legacy 10-yr network.
 2. `docs/bburg-p-c-legacy.xlsx` has no `#REF!`/`#NAME?`.
 
-Both are currently true for formula text, but the legacy HGL-25yr sheet still
-contains 255 external-workbook references that Excel will re-resolve on open.
+Both are true: the legacy `HGL 25-yr` external references now resolve to a
+hidden local cache, and the package contains no external-link parts.
 
 ## Verified current state (2026-11-07)
 
@@ -21,10 +21,11 @@ contains 255 external-workbook references that Excel will re-resolve on open.
 - Seed network extracted from `docs/bburg-p-c-legacy.xlsx` (not the import file):
   9 DA rows, 14 structures (outfalls CULVERT-A/CULVERT-B), 12 pipes p1–p12.
 
-### Legacy — mostly done
-- `openpyxl` audit: **formula-text `#REF!` = 0, `#NAME?` = 0**, 13 sheets.
-- Cached errors remaining (pre-existing, not REF/NAME):
-  `#VALUE!` 1273, `#DIV/0!` 941, `#N/A` 2.
+### Legacy — DONE
+- `openpyxl` audit: **formula-text `#REF!` = 0, `#NAME?` = 0**, 14 sheets
+  (13 original + hidden `_Ext10yrCache`).
+- Excel audit: **0 `#REF!`, 0 `#NAME?`**. Remaining legacy noise:
+  `#VALUE!` 1273, `#DIV/0!` 763 (10 are the hidden cache), `#N/A` 2.
 - ` 10 Yr MoCo HGL`: recoverable rows restored and verified:
   rows 20, 22, 23, 25, 26, 29, 34, 35 all show `Ok!` with sensible HGL/freeboard.
   Rows whose `C`/`D` referenced deleted cells were cleared (unrecoverable).
@@ -50,34 +51,47 @@ contains 255 external-workbook references that Excel will re-resolve on open.
    COM use the plain name (`MAXIFS`); when writing with openpyxl the builder
    normalizer (`bburg_template_builder/xlfn.py`) adds them.
 5. PowerShell `$PID` is read-only; use `$pipeId`.
+6. **`Workbooks.Open(..., ReadOnly:=$true)` can still rewrite the file** (Excel
+   updates calc-chain/metadata; observed as a 1-byte change). Verify against a
+   copy in `%TEMP%`, or restore the committed artifact afterward.
 
-## The workaround we were about to try (NOT applied)
+## Workaround applied (2026-11-07)
 
 `HGL 25-yr` is a legacy sheet copied from a separate Baltimore project. Its
 last-known external values are **cached inside the xlsx** at
 `xl/externalLinks/externalLink3.xml`, sheetId 4 (`Storm Sewer -10yr`):
 
-- Cached cells: 74, columns `B,C,J,M,N,R,S,T,W,AM`, rows `13,15,16,17,18,20,22,23`.
-- 255 current formulas reference valid external addresses; 138 distinct refs.
-  Of those, **69 are uncached** (all rows 25–43) because the source rows were
-  blank/`#DIV/0!` there.
-- 328 cells already cleared had `'[3]Storm Sewer -10yr'!#REF!` (deleted source
-  cell, no address) — truly unrecoverable.
-- 9 internal `'10 Yr Pipe Capacity'!#REF!` — also unrecoverable.
+- All **153 distinct** referenced addresses are cached in the external-link XML
+  (74 real values, 10 `#DIV/0!`, 69 blank). The earlier hand-written
+  `_ext_cache.json` had only the 74 real values; parsing the XML directly gave
+  complete coverage.
+- 255 formulas referenced the Fenton workbook; all now point at the hidden
+  `_Ext10yrCache` sheet.
+- 328 `'[3]Storm Sewer -10yr'!#REF!` cells and 9 internal
+  `'10 Yr Pipe Capacity'!#REF!` cells remain cleared (unrecoverable).
 
-Proposed design (user suggested a hidden helper column/sheet):
+What was done (Excel COM, script kept out of the repo):
 
-1. Add a hidden worksheet `_Ext10yrCache`, mirroring the cached cell addresses
-   and values (write `docs/_ext_cache.json`, already generated, 74 cells).
-2. Use Excel `Range.Replace` with `LookAt:=xlPart`:
-   `'[3]Storm Sewer -10yr'!` → `_Ext10yrCache!` across all sheets.
-3. Leave uncached helper cells blank (faithful to the source, which was blank).
-4. Hide the sheet (`Visible = 0`), `CalculateFullRebuild()`, save via COM.
-5. Audit: formula-text `REF`/`NAME` = 0; report cached `#DIV/0!`/`#VALUE!` as
-   expected legacy noise.
+1. Copied `_Ext10yrCache` values from a parser run over `externalLink3.xml`.
+2. Added hidden `_Ext10yrCache` (Visible = 0) with 74 values, 10 `=1/0` cells
+   (faithful to the original `#DIV/0!`), and 69 blanks.
+3. **Key gotcha:** Excel displays external refs as the *resolved full path*,
+   e.g. `'U:\...\[Fenton_StormDrain_Comps - Existing.xlsx]Storm Sewer -10yr'!C18`,
+   not the stored `[3]` index form that openpyxl shows. A `Range.Replace` on the
+   `[3]` string silently matches nothing. The fix was to walk formula cells and
+   regex-replace `'[^']*\]Storm Sewer -10yr'!` → `_Ext10yrCache!` (255 cells).
+4. Deleted the 18 unused `_DUR*`/`_INT*` defined names that pointed at
+   `HOCO_Rational_Inlets.xls` (links [1]/[2]) and the 7 broken `#REF!` names.
+   Excel then dropped all three external-link parts from the package.
+5. `CalculateFullRebuild()`, save via COM.
 
-The COM command to do this was written but **the user rejected it** before it
-ran, to pause the task. No changes from that command are in the file.
+Verified after save:
+- openpyxl: external refs = 0, formula-text `REF`/`NAME` = 0, external-link
+  parts = 0.
+- Excel: **0 `#REF!`, 0 `#NAME?`**; remaining legacy noise is `#VALUE!` 1273,
+  `#DIV/0!` 763 (10 are the hidden cache), `#N/A` 2.
+- `HGL 25-yr` values match the pre-change backup except 27 last-bit float
+  differences; formula text and computed values otherwise identical.
 
 ## Files touched this session
 
@@ -88,23 +102,21 @@ ran, to pause the task. No changes from that command are in the file.
 - `drainage-calculator/bburg_template_builder/sheets/pipes.py` — `Design_Q_cfs`.
 - `drainage-calculator/bburg_template_builder/xlfn.py` — `_xlfn` prefix normalizer.
 - `drainage-calculator/bburg_template_builder/tests/*` — updated expectations.
-- `drainage-calculator/repair_legacy_workbook.py` — **obsolete/misleading**: its
-  openpyxl save produces an unopenable file. Either rewrite with COM or delete.
+- `drainage-calculator/repair_legacy_workbook.py` — deleted; its openpyxl save
+  produced an unopenable file.
 
 ## Remaining tasks
 
-1. Decide on `HGL 25-yr` workaround (above) and apply via COM, or accept the
-   cleared state.
-2. Delete/rewrite `drainage-calculator/repair_legacy_workbook.py`; it documents
-   the wrong approach.
-3. Remove temp dumps: `docs/_legacy_dump.txt`, `docs/_legacy_dump2.txt`,
-   `docs/_legacy_hgl_formulas.txt`, `docs/_hgl_restore.json`,
-   `docs/_ext_cache.json` (keep the JSON if resuming the workaround).
-4. Re-run `python -m pytest drainage-calculator/bburg_template_builder/tests`
-   (last known: 81 passed).
-5. Re-verify the template in Excel after any further edits.
-6. Do not commit `CLAUDE.md` (gitignored) and do not add LLM attribution
-   trailers to commits.
+All done 2026-11-07:
+
+- [x] Apply the `_Ext10yrCache` workaround via COM.
+- [x] Delete obsolete `drainage-calculator/repair_legacy_workbook.py`.
+- [x] Remove temp dumps `_legacy_dump*.txt`, `_legacy_hgl_formulas.txt`,
+      `_hgl_restore.json`, `_ext_cache.json`.
+- [x] `pytest drainage-calculator/bburg_template_builder/tests` — 81 passed.
+- [x] Template re-verified in Excel — 0 error cells.
+- [ ] Commit the legacy workbook change (do not commit `CLAUDE.md`; no LLM
+      attribution trailers).
 
 ## Useful commands
 
