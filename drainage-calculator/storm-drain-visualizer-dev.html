@@ -142,7 +142,50 @@
 
     return { valid: errors.length === 0, errors };
   }
-  // (task-05 through task-07 insert here)
+
+  // --- json importer (task-05) ---
+  async function importFromJsonFile(file) {
+    const text = await file.text();
+    let obj;
+    try { obj = JSON.parse(text); }
+    catch (e) { throw new Error("JSON parse error: " + e.message); }
+
+    const result = validateImportedJson(obj);
+    if (!result.valid) throw new Error("JSON validation failed: " + result.errors.join("; "));
+
+    // Separate the tweaked-export sidecar (if present) before copying `imported`.
+    const overrides = Array.isArray(obj._overrides) ? obj._overrides : [];
+    const imported = {
+      structures: obj.structures.map((s) => Object.assign({}, s)),
+      pipes: obj.pipes.map((p) => Object.assign({}, p)),
+      outfall: Object.assign({}, obj.outfall),
+      config: Object.assign({}, obj.config || {}),
+      kbTable: Array.isArray(obj.kbTable) ? obj.kbTable.slice() : null
+    };
+
+    // If this is a tweaked export, imported fields currently hold the TWEAKED values.
+    // Walk `_overrides` and restore the originalValue onto imported so `state.imported`
+    // is a clean baseline; the newValue goes into state.overrides.
+    state.overrides = { byId: {} };
+    for (const ov of overrides) {
+      // Find and mutate the imported element
+      const el = imported.structures.find((s) => s.id === ov.elementId)
+              || imported.pipes.find((p) => p.id === ov.elementId);
+      if (el) el[ov.field] = ov.originalValue;
+      // Record in state.overrides
+      state.overrides.byId[ov.elementId] = state.overrides.byId[ov.elementId] || {};
+      state.overrides.byId[ov.elementId][ov.field] = ov.newValue;
+    }
+
+    state.imported = imported;
+    state.ui.mode = overrides.length > 0 ? "edit" : "explore";
+
+    // Apply hglMethod from config if provided
+    if (imported.config && (imported.config.hglMethod === "hec22" || imported.config.hglMethod === "legacy-both-crown")) {
+      state.ui.hglMethod = imported.config.hglMethod;
+    }
+  }
+  // (task-06 through task-07 insert here)
   // ==== import: end ====
 
   // ==== views: begin ====
@@ -165,10 +208,19 @@
   function renderAll() {
     // (fleshed out as views/ledger/navigation tasks land)
   }
-  document.getElementById("fileInput").addEventListener("change", (ev) => {
+  document.getElementById("fileInput").addEventListener("change", async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
     document.getElementById("fileName").textContent = f.name;
-    // (task-05/06 wire the actual import here)
+    try {
+      const name = f.name.toLowerCase();
+      if (name.endsWith(".json")) await importFromJsonFile(f);
+      else if (name.endsWith(".xlsx")) await importFromXlsxFile(f);  // added by task-06
+      else throw new Error("Unsupported file type: " + f.name);
+      renderAll();
+    } catch (err) {
+      alert("Import failed: " + err.message);
+      state.imported = null;
+    }
   });
   renderAll();
   // ==== bootstrap: end ====
