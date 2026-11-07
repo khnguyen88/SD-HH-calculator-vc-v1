@@ -1588,6 +1588,68 @@
       closeOverridePanel();
     }
   }, true);
+
+  // --- Tweaked JSON export (task-26) ---
+
+  function buildTweakedJsonExport() {
+    if (!state.imported) throw new Error("no imported data to export");
+    const ovs = listOverrides();
+
+    // Merge overrides into element fields for output
+    const mergeField = (el) => {
+      const ov = state.overrides.byId[el.id];
+      if (!ov) return Object.assign({}, el);
+      return Object.assign({}, el, ov);
+    };
+    const structures = state.imported.structures.map(mergeField);
+    const pipes = state.imported.pipes.map(mergeField);
+
+    return {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      sourceApp: "storm-drain-hgl-visualizer",
+      basedOn: {
+        sourceApp: state.imported.config && state.imported.config.sourceApp || "unknown",
+        exportedAt: state.imported.config && state.imported.config.exportedAt || null
+      },
+      config: Object.assign({}, state.imported.config || {}, { hglMethod: state.ui.hglMethod }),
+      structures, pipes,
+      outfall: Object.assign({}, state.imported.outfall),
+      kbTable: state.imported.kbTable || null,
+      _overrides: ovs
+    };
+  }
+
+  function downloadTweakedJson() {
+    const obj = buildTweakedJsonExport();
+    const text = JSON.stringify(obj, null, 2);
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.download = "visualizer-tweaked-" + stamp + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Wire a toolbar button
+  (function () {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+    const btn = el("button", {
+      type: "button",
+      id: "exportTweakedBtn",
+      style: "margin-left:4px;",
+      onclick: () => {
+        try { downloadTweakedJson(); }
+        catch (e) { alert("Export failed: " + e.message); }
+      }
+    }, "export tweaked");
+    topbar.appendChild(btn);
+  })();
   // ==== edit-mode: end ====
 
   // ==== ledger-render: begin ====
