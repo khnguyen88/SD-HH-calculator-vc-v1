@@ -77,4 +77,16 @@ test("xlsx import: reads the real main-app export headers", async () => {
   assert.ok(stj.totalQ > 0, "ST-J totalQ read from Total Flow (cfs)");
   assert.ok(stj.outPipeId && stj.outPipeId.length > 0, "ST-J outPipeId read");
   assert.strictEqual(stj.outPipeId, "r14");
+
+  // Captured Q comes from the Junction Structure sheet, not the 1-yr DA column.
+  const st1 = imp.structures.find((s) => s.id === "ST-1");
+  assert.ok(st1 && st1.capturedQ > 0, "ST-1 capturedQ read");
+
+  // Import resets the walk cursor and branch choices (stale-path guard).
+  assert.strictEqual(window.state.cursor.id, "OUTFALL", "cursor reset to outfall");
+  assert.strictEqual(
+    Object.keys(window.state.ui.branchChoices.byStructureId).length,
+    0,
+    "branch choices cleared"
+  );
 });

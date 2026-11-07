@@ -674,6 +674,9 @@
 
     // Build captured-Q lookup: drainage-area row has structureId + computed Q.
     // The main-app export names storm columns "Q_<storm> (cfs)", not "Q (cfs)".
+    // Fallback only: the Junction Structure sheet's own "Captured Q (cfs)" is
+    // authoritative. When that is absent we cannot tell which storm column is
+    // the design storm, so take the first Q_* column rather than guess.
     const qOf = (r) => {
       if (r["Q (cfs)"] != null) return num(r["Q (cfs)"], 0);
       if (r.Q != null) return num(r.Q, 0);
@@ -689,22 +692,27 @@
       if (sid) capturedByStructureId[sid] = (capturedByStructureId[sid] || 0) + q;
     }
 
-    const structures = strRows.map((r, i) => ({
-      id:           String(structureIdOf(r) || ("S-" + (i+1))),
-      label:        String(r["Label"] || r.label || structureIdOf(r) || ""),
-      type:         String(r["Type"] || r.type || "manhole").toLowerCase(),
-      x:            num(r["X"] ?? r.x, 0),
-      y:            num(r["Y"] ?? r.y, 0),
-      rim:          pickNum(r["Rim-Grate Elev (ft)"], r["Rim"], r.rim),
-      startElev:    pickNum(r["Fixed-Start Elev (ft)"], r["Start Elev"], r.startElev),
-      crown:        pickNum(r["Pipe Crown (ft)"], r["Crown"], r.crown),
-      forceElev:    r["Force Elev"] === true || r["Force Elev"] === "TRUE" || r["Force Fixed"] === true || r["Force Fixed"] === "TRUE",
-      capturedQ:    pickNum(r["Captured Q (cfs)"]) != null ? pickNum(r["Captured Q (cfs)"]) : (capturedByStructureId[structureIdOf(r)] || 0),
-      totalQ:       pickNum(r["Total Flow (cfs)"], r["Total Q (cfs)"]) ?? 0,
-      Hb:           num(r["Hb (ft)"], 0),
-      elevation:    pickNum(r["Upstream HGL (ft)"], r["Upstream EGL (ft)"]) ?? 0,
-      outPipeId:    String(pick(r["Outgoing Pipe ID"], r.outPipeId) || "")
-    }));
+    const structures = strRows.map((r, i) => {
+      // The Junction Structure sheet carries the real Captured Q; the DA-sheet
+      // lookup is only a fallback for JSON-style sheets.
+      const captured = pickNum(r["Captured Q (cfs)"]);
+      return {
+        id:           String(structureIdOf(r) || ("S-" + (i+1))),
+        label:        String(pick(r["Label"], r["Description"], r.label) || structureIdOf(r) || ""),
+        type:         String(r["Type"] || r.type || "manhole").toLowerCase(),
+        x:            num(r["X"] ?? r.x, 0),
+        y:            num(r["Y"] ?? r.y, 0),
+        rim:          pickNum(r["Rim-Grate Elev (ft)"], r["Rim"], r.rim),
+        startElev:    pickNum(r["Fixed-Start Elev (ft)"], r["Start Elev"], r.startElev),
+        crown:        pickNum(r["Pipe Crown (ft)"], r["Crown"], r.crown),
+        forceElev:    r["Force Elev"] === true || r["Force Elev"] === "TRUE" || r["Force Fixed"] === true || r["Force Fixed"] === "TRUE",
+        capturedQ:    captured != null ? captured : (capturedByStructureId[structureIdOf(r)] || 0),
+        totalQ:       pickNum(r["Total Flow (cfs)"], r["Total Q (cfs)"]) ?? 0,
+        Hb:           num(r["Hb (ft)"], 0),
+        elevation:    pickNum(r["Upstream HGL (ft)"], r["Upstream EGL (ft)"]) ?? 0,
+        outPipeId:    String(pick(r["Outgoing Pipe ID"], r.outPipeId) || "")
+      };
+    });
 
     const pipes = pipeRows.map((r, i) => {
       const fromId = r["From Structure"] != null && r["From Structure"] !== "" ? r["From Structure"] : r.fromId;
