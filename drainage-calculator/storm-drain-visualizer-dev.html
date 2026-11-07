@@ -164,7 +164,28 @@
     throw new Error("unknown pipe shape: " + shape);
   }
 
-  // (task-09 through task-13 insert here)
+  // --- Manning's friction (task-09) ---
+
+  // Friction slope at design Q (full-flow).
+  //   Q in cfs, n unitless, A in ft², R in ft.
+  //   Returns Sf in ft/ft (unitless but conceptually ft of head per ft of pipe).
+  //   Formula: Sf = ( Q·n / (1.486·A·R^(2/3)) )²
+  function frictionSlope(Q, n, A, R) {
+    if (!(isFinite(Q) && isFinite(n) && isFinite(A) && isFinite(R))) return 0;
+    if (A <= 0 || R <= 0) return 0;
+    const num = Q * n;
+    const den = 1.486 * A * Math.pow(R, 2 / 3);
+    const ratio = num / den;
+    return ratio * ratio;
+  }
+
+  // Friction loss along the pipe.  L in ft.  Returns Hf in ft.
+  function frictionLoss(Sf, L) {
+    if (!(isFinite(Sf) && isFinite(L))) return 0;
+    return Sf * L;
+  }
+
+  // (task-10 through task-13 insert here)
   // ==== compute: end ====
 
   // ==== import: begin ====
