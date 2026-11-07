@@ -38,7 +38,7 @@ In edit mode, the expanded ledger row shows editable inputs for its row kind. Ev
         const raw = ev.target.value;
         if (raw.trim() === "") { revertOverride(elementId, field); withFocusPreserved(renderAll); return; }
         const n = Number(raw);
-        if (!isFinite(n)) return; // partial ("0.", "-", "1e") — keep the text, store nothing
+        if (!isFinite(n)) return; // partial ("-", "1e", ".") — keep the text, store nothing
         const cur = resolveField(elementId, field, imported, overrides);
         if (cur === n) return;    // no semantic change yet; preserves "0.0" / "1.50"
         setOverride(elementId, field, n);
