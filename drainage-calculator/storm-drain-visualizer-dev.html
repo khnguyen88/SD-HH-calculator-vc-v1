@@ -417,10 +417,18 @@
     if (obj.schemaVersion !== 1) push("schemaVersion must be 1 (got " + obj.schemaVersion + ")");
     if (typeof obj.sourceApp !== "string") push("sourceApp must be a string");
 
+    const seenIds = Object.create(null);
+    const claimId = (id, where) => {
+      if (typeof id !== "string" || !id) return;
+      if (seenIds[id]) push("duplicate id '" + id + "' (" + where + ")");
+      else seenIds[id] = true;
+    };
+
     if (!Array.isArray(obj.structures)) push("structures must be an array");
     else obj.structures.forEach((s, i) => {
       if (!s || typeof s !== "object") { push("structures[" + i + "] not an object"); return; }
       if (typeof s.id !== "string" || !s.id) push("structures[" + i + "].id missing");
+      claimId(s.id, "structures[" + i + "]");
       if (typeof s.type !== "string") push("structures[" + i + "].type missing");
       ["rim", "startElev", "crown"].forEach((f) => {
         if (s[f] != null && typeof s[f] !== "number") push("structures[" + i + "]." + f + " must be a number");
@@ -431,12 +439,23 @@
     else obj.pipes.forEach((p, i) => {
       if (!p || typeof p !== "object") { push("pipes[" + i + "] not an object"); return; }
       if (typeof p.id !== "string" || !p.id) push("pipes[" + i + "].id missing");
+      claimId(p.id, "pipes[" + i + "]");
       if (typeof p.fromId !== "string") push("pipes[" + i + "].fromId missing");
       if (typeof p.toId !== "string") push("pipes[" + i + "].toId missing");
       ["slope", "length"].forEach((f) => {
         if (typeof p[f] !== "number" || p[f] < 0) push("pipes[" + i + "]." + f + " must be non-negative number");
       });
       if (typeof p.n !== "number" || p.n <= 0) push("pipes[" + i + "].n must be positive number");
+      if (p.shape !== "circular" && p.shape !== "elliptical") {
+        push("pipes[" + i + "].shape must be 'circular' or 'elliptical'");
+      } else if (p.shape === "circular") {
+        if (typeof p.size !== "number" || !(p.size > 0)) push("pipes[" + i + "].size must be a positive number (circular)");
+      } else if (typeof p.size !== "string" || !TABLE_4_6.some((r) => r.span_rise === p.size)) {
+        push("pipes[" + i + "].size must be a Table 4-6 span x rise (elliptical)");
+      }
+      if (p.designQ != null && (typeof p.designQ !== "number" || !isFinite(p.designQ))) {
+        push("pipes[" + i + "].designQ must be a finite number");
+      }
     });
 
     if (!obj.outfall || typeof obj.outfall !== "object") push("outfall missing");
