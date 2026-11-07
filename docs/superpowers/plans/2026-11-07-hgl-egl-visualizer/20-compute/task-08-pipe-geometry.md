@@ -131,10 +131,9 @@ let threw = false;
 try { pipeArea("rectangular", 12); } catch (e) { threw = true; }
 console.assert(threw, "unknown shape should throw");
 
-// Unknown elliptical size throws
-threw = false;
-try { pipeAreaElliptical("99x99"); } catch (e) { threw = true; }
-console.assert(threw, "unknown elliptical size should throw");
+// Elliptical size resolves by nearest Table 4-6 match (main-app parity)
+console.assert(pipeAreaElliptical("99x99") === TABLE_4_6.find((r) => r.span_rise === "98x63").ell_area_sf, "nearest elliptical match");
+console.assert(pipeAreaElliptical("38X24") === 6.3, "uppercase elliptical size normalizes");
 
 console.log("task-08 pipe geometry: OK");
 ```
