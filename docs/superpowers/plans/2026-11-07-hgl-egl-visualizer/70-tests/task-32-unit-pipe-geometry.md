@@ -64,15 +64,15 @@ test("pipeArea throws on unknown shape", () => {
   assert.throws(() => fn("pipeArea")("square", 12));
 });
 
-test("pipeAreaElliptical throws on unknown size", () => {
+test("pipeAreaElliptical throws on unparseable size", () => {
   const { fn } = loadVisualizer();
-  assert.throws(() => fn("pipeAreaElliptical")("99x99"));
+  // "99x99" does NOT throw: normalizeSize snaps any parseable span×rise to the
+  // nearest Table 4-6 row. The throw path fires only for unparseable input.
+  assert.throws(() => fn("pipeAreaElliptical")("bogus"));
 });
 
 test("TABLE_4_6 has 24 rows covering 15..144 in", () => {
-  const { fn } = loadVisualizer();
-  const t = fn("TABLE_4_6") || null;
-  // TABLE_4_6 is a const; we fetch via window
+  // TABLE_4_6 is a const; the bootstrap assigns window.TABLE_4_6 explicitly.
   const { window } = loadVisualizer();
   const tbl = window.TABLE_4_6;
   assert.strictEqual(tbl.length, 24);
