@@ -197,6 +197,8 @@
   async function importFromXlsxFile(file) {
     if (typeof XLSX === "undefined") throw new Error("SheetJS not loaded — did you open the BUILT file?");
 
+    const num = (v, fallback) => { const n = Number(v); return isFinite(n) ? n : fallback; };
+
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array" });
 
@@ -206,48 +208,61 @@
       return XLSX.utils.sheet_to_json(s, { defval: null });
     };
 
+    if (!wb.Sheets["Junction Structure"] || !wb.Sheets["Pipe Sizing"]) {
+      throw new Error("Not a storm-drain export: expected 'Junction Structure' and 'Pipe Sizing' sheets");
+    }
+
+    const structureIdOf = (r) => r["Structure ID"] || r.structureId || r["structureId"] || "";
+
     const daRows   = sh("Drainage Area");
     const strRows  = sh("Junction Structure");
     const pipeRows = sh("Pipe Sizing");
     const outRows  = sh("Outlet Structures");
 
     // Build captured-Q lookup: drainage-area row has structureId + computed Q
-    const capturedByStructureId = {};
+    const capturedByStructureId = Object.create(null);
     for (const r of daRows) {
-      const sid = r["Structure ID"] || r.structureId || r["structureId"];
-      const q = Number(r["Q (cfs)"] || r.Q || 0);
-      if (sid) capturedByStructureId[sid] = (capturedByStructureId[sid] || 0) + (isFinite(q) ? q : 0);
+      const sid = structureIdOf(r);
+      const q = num(r["Q (cfs)"] ?? r.Q, 0);
+      if (sid) capturedByStructureId[sid] = (capturedByStructureId[sid] || 0) + q;
     }
 
     const structures = strRows.map((r, i) => ({
-      id:           String(r["Structure ID"] || r.structureId || ("S-" + (i+1))),
-      label:        String(r["Label"] || r.label || r["Structure ID"] || ""),
+      id:           String(structureIdOf(r) || ("S-" + (i+1))),
+      label:        String(r["Label"] || r.label || structureIdOf(r) || ""),
       type:         String(r["Type"] || r.type || "manhole").toLowerCase(),
-      x:            Number(r["X"] || r.x || 0),
-      y:            Number(r["Y"] || r.y || 0),
-      rim:          r["Rim"] != null ? Number(r["Rim"]) : null,
-      startElev:    r["Start Elev"] != null ? Number(r["Start Elev"]) : null,
-      crown:        r["Crown"] != null ? Number(r["Crown"]) : null,
+      x:            num(r["X"] ?? r.x, 0),
+      y:            num(r["Y"] ?? r.y, 0),
+      rim:          r["Rim"] != null ? num(r["Rim"], null) : null,
+      startElev:    r["Start Elev"] != null ? num(r["Start Elev"], null) : null,
+      crown:        r["Crown"] != null ? num(r["Crown"], null) : null,
       forceElev:    r["Force Elev"] === true || r["Force Elev"] === "TRUE",
-      capturedQ:    capturedByStructureId[String(r["Structure ID"])] || 0,
-      totalQ:       Number(r["Total Q (cfs)"] || 0),
-      Hb:           Number(r["Hb (ft)"] || 0),
-      elevation:    Number(r["Upstream EGL (ft)"] || 0)
+      capturedQ:    capturedByStructureId[structureIdOf(r)] || 0,
+      totalQ:       num(r["Total Q (cfs)"], 0),
+      Hb:           num(r["Hb (ft)"], 0),
+      elevation:    num(r["Upstream EGL (ft)"], 0)
     }));
 
-    const pipes = pipeRows.map((r, i) => ({
-      id:         String(r["Pipe ID"] || r.id || ("P-" + (i+1))),
-      fromId:     String(r["From Structure"] || r.fromId),
-      toId:       String(r["To Structure"] || r.toId),
-      shape:      String(r["Shape"] || "circular").toLowerCase(),
-      size:       r["Size"] || 18,
-      n:          Number(r["Manning's n"] || r.n || 0.013),
-      slope:      Number(r["Slope (ft/ft)"] || r.slope || 0.005),
-      length:     Number(r["Length (ft)"] || r.length || 0),
-      angle:      Number(r["Angle (deg)"] || r.angle || 0),
-      designQ:    Number(r["Design Q (cfs)"] || 0),
-      Hf:         Number(r["Hf (ft)"] || 0)
-    }));
+    const pipes = pipeRows.map((r, i) => {
+      const fromId = r["From Structure"] != null && r["From Structure"] !== "" ? r["From Structure"] : r.fromId;
+      const toId   = r["To Structure"]   != null && r["To Structure"]   !== "" ? r["To Structure"]   : r.toId;
+      if (fromId == null || fromId === "" || toId == null || toId === "") {
+        throw new Error("Pipe row " + (i + 2) + " missing From/To Structure");
+      }
+      return {
+        id:         String(r["Pipe ID"] || r.id || ("P-" + (i+1))),
+        fromId:     String(fromId),
+        toId:       String(toId),
+        shape:      String(r["Shape"] || "circular").toLowerCase(),
+        size:       r["Size"] || 18,
+        n:          num(r["Manning's n"] ?? r.n, 0.013),
+        slope:      num(r["Slope (ft/ft)"] ?? r.slope, 0.005),
+        length:     num(r["Length (ft)"] ?? r.length, 0),
+        angle:      num(r["Angle (deg)"] ?? r.angle, 0),
+        designQ:    num(r["Design Q (cfs)"], 0),
+        Hf:         num(r["Hf (ft)"], 0)
+      };
+    });
 
     // Find outfall: pick the structure with type == "outfall" (first), else lowest elevation.
     let outfallSid = null, outfallTw = null;
@@ -263,7 +278,7 @@
     // Override tailwater from Outlet Structures sheet if the outfall is linked there
     for (const r of outRows) {
       const sid = String(r["Structure ID"] || r.structureId || "");
-      if (sid === outfallSid && r["TW Elevation"] != null) outfallTw = Number(r["TW Elevation"]);
+      if (sid === outfallSid && r["TW Elevation"] != null) outfallTw = num(r["TW Elevation"], outfallTw);
     }
 
     state.overrides = { byId: {} };
