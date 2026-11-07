@@ -114,6 +114,7 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
     // ledger render is wired in by group 60
     if (typeof renderLedger === "function") renderLedger();
     if (typeof renderOverrideBadge === "function") renderOverrideBadge();
+    if (typeof syncModeButton === "function") syncModeButton();  // task-23
   }
 ```
 

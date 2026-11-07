@@ -513,6 +513,11 @@
     const seenIds = Object.create(null);
     const claimId = (id, where) => {
       if (typeof id !== "string" || !id) return;
+      // Reserved names would poison override maps keyed by element id.
+      if (id === "__proto__" || id === "constructor" || id === "prototype") {
+        push("reserved id '" + id + "' (" + where + ")");
+        return;
+      }
       if (seenIds[id]) push("duplicate id '" + id + "' (" + where + ")");
       else seenIds[id] = true;
     };
@@ -1359,6 +1364,7 @@
     if (state.ui.mode !== "edit") return;
     if (!state.cursor || state.cursor.kind !== "structure") return;
     const sid = state.cursor.id;
+    if (!isSafeOverrideKey(sid)) return;
     const str = state.imported && state.imported.structures.find((s) => s.id === sid);
     if (!str) return;
 
@@ -1458,21 +1464,23 @@
     const original = originalEl ? originalEl[field] : null;
     const isOverridden = overrides.byId[elementId] && Object.prototype.hasOwnProperty.call(overrides.byId[elementId], field);
 
+    // text + inputmode rather than type=number: a number input reports "" for
+    // in-progress text like "0." so decimals cannot be typed reliably.
     const input = el("input", {
-      type: "number",
-      step: opts.step || "any",
+      type: "text",
+      inputmode: "decimal",
       value: currentVal != null ? currentVal : "",
       placeholder: original != null ? String(original) : "",
       style: "width:90px; font-family:ui-monospace,monospace; "
            + (isOverridden ? "font-weight:bold; color:#ffd60a;" : "color:#1a1a1a;"),
       "data-focus-key": "edit:" + elementId + ":" + field,
       oninput: (ev) => {
-        const v = ev.target.value;
-        if (v === "") { revertOverride(elementId, field); withFocusPreserved(renderAll); return; }
-        const n = Number(v);
-        if (!isFinite(n)) return; // keep partial/invalid text in the field; never store NaN
+        const raw = ev.target.value;
+        if (raw.trim() === "") { revertOverride(elementId, field); withFocusPreserved(renderAll); return; }
+        const n = Number(raw);
+        if (!isFinite(n)) return; // partial ("0.", "-", "1e") — keep the text, store nothing
         const cur = resolveField(elementId, field, imported, overrides);
-        if (cur === n) return;    // no semantic change; preserves in-progress text like "0."
+        if (cur === n) return;    // no semantic change yet; preserves "0.0" / "1.50"
         setOverride(elementId, field, n);
         withFocusPreserved(renderAll);
       }

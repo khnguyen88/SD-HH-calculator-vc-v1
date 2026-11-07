@@ -26,6 +26,11 @@ Validate that an imported JSON object matches schemaVersion 1. Reject malformed 
     const seenIds = Object.create(null);
     const claimId = (id, where) => {
       if (typeof id !== "string" || !id) return;
+      // Reserved names would poison override maps keyed by element id.
+      if (id === "__proto__" || id === "constructor" || id === "prototype") {
+        push("reserved id '" + id + "' (" + where + ")");
+        return;
+      }
       if (seenIds[id]) push("duplicate id '" + id + "' (" + where + ")");
       else seenIds[id] = true;
     };

@@ -24,21 +24,23 @@ In edit mode, the expanded ledger row shows editable inputs for its row kind. Ev
     const original = originalEl ? originalEl[field] : null;
     const isOverridden = overrides.byId[elementId] && Object.prototype.hasOwnProperty.call(overrides.byId[elementId], field);
 
+    // text + inputmode rather than type=number: a number input reports "" for
+    // in-progress text like "0." so decimals cannot be typed reliably.
     const input = el("input", {
-      type: "number",
-      step: opts.step || "any",
+      type: "text",
+      inputmode: "decimal",
       value: currentVal != null ? currentVal : "",
       placeholder: original != null ? String(original) : "",
       style: "width:90px; font-family:ui-monospace,monospace; "
            + (isOverridden ? "font-weight:bold; color:#ffd60a;" : "color:#1a1a1a;"),
       "data-focus-key": "edit:" + elementId + ":" + field,
       oninput: (ev) => {
-        const v = ev.target.value;
-        if (v === "") { revertOverride(elementId, field); withFocusPreserved(renderAll); return; }
-        const n = Number(v);
-        if (!isFinite(n)) return; // keep partial/invalid text in the field; never store NaN
+        const raw = ev.target.value;
+        if (raw.trim() === "") { revertOverride(elementId, field); withFocusPreserved(renderAll); return; }
+        const n = Number(raw);
+        if (!isFinite(n)) return; // partial ("0.", "-", "1e") — keep the text, store nothing
         const cur = resolveField(elementId, field, imported, overrides);
-        if (cur === n) return;    // no semantic change; preserves in-progress text like "0."
+        if (cur === n) return;    // no semantic change yet; preserves "0.0" / "1.50"
         setOverride(elementId, field, n);
         withFocusPreserved(renderAll);
       }
@@ -109,7 +111,7 @@ console.assert(state.ui.mode === "explore", "E to explore");
 
 // editableNumber builds a bound input
 const inp = editableNumber("P1", "slope", state.imported, state.overrides);
-console.assert(inp.tagName === "INPUT" && inp.type === "number", "input built");
+console.assert(inp.tagName === "INPUT" && inp.getAttribute("inputmode") === "decimal", "input built");
 console.assert(inp.value === "0.005", "imported value shown");
 console.assert(inp.dataset.focusKey === "edit:P1:slope", "focus key set");
 
@@ -117,6 +119,14 @@ console.assert(inp.dataset.focusKey === "edit:P1:slope", "focus key set");
 inp.value = "0.009";
 inp.dispatchEvent(new Event("input", { bubbles: true }));
 console.assert(state.overrides.byId.P1.slope === 0.009, "override recorded on input");
+
+// Decimal entry: in-progress text parses without clobbering the field.
+inp.value = "0.";
+inp.dispatchEvent(new Event("input", { bubbles: true }));
+console.assert(state.overrides.byId.P1.slope === 0, "trailing-dot commits its numeric value");
+inp.value = "0.0085";
+inp.dispatchEvent(new Event("input", { bubbles: true }));
+console.assert(state.overrides.byId.P1.slope === 0.0085, "decimal override recorded");
 
 // Clearing the input reverts
 inp.value = "";

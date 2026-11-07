@@ -21,6 +21,7 @@ In edit mode, holding Shift and pressing an arrow key nudges the selected struct
     if (state.ui.mode !== "edit") return;
     if (!state.cursor || state.cursor.kind !== "structure") return;
     const sid = state.cursor.id;
+    if (!isSafeOverrideKey(sid)) return;
     const str = state.imported && state.imported.structures.find((s) => s.id === sid);
     if (!str) return;
 
