@@ -90,20 +90,25 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
     document.body.appendChild(panel);
   }
 
-  // Esc closes the panel
+  // Esc closes the panel. Capture phase + stopImmediatePropagation so the walk
+  // handlers (registered earlier, bubble phase) don't also run resetWalk.
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && document.getElementById("overridePanel")) {
       ev.preventDefault();
+      ev.stopImmediatePropagation();
       closeOverridePanel();
     }
-  });
+  }, true);
+```
 
-  // Hook into renderAll indirectly: call renderOverrideBadge after state changes.
-  // The simplest wiring is to call it from renderAll. We monkey-patch here instead of
-  // editing the bootstrap because renderAll is already defined.
-  const _origRenderAll_task25 = typeof renderAll === "function" ? renderAll : null;
-  if (_origRenderAll_task25) {
-    renderAll = function () { _origRenderAll_task25(); renderOverrideBadge(); };
+**Also modify the bootstrap `renderAll`** to refresh the badge after each render (no monkey-patching):
+
+```js
+  function renderAll() {
+    renderActiveView();
+    // ledger render is wired in by group 60
+    if (typeof renderLedger === "function") renderLedger();
+    if (typeof renderOverrideBadge === "function") renderOverrideBadge();
   }
 ```
 

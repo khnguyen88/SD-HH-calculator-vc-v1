@@ -65,6 +65,7 @@ In edit mode, the expanded ledger row shows editable inputs for its row kind. Ev
     if (isTypingTarget(ev)) return;
     if (ev.shiftKey) return;
     if (isBranchPopupOpen()) return;
+    if (document.getElementById("overridePanel")) return;
     if (ev.key === "e" || ev.key === "E") {
       ev.preventDefault();
       setMode(state.ui.mode === "edit" ? "explore" : "edit");

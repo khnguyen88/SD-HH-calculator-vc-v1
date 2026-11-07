@@ -61,7 +61,7 @@ Replace with:
   // V hotkey (also 'v' lowercase).
   document.addEventListener("keydown", (ev) => {
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
-    if (isBranchPopupOpen()) return;  // modal popup owns the keyboard while open
+    if (isBranchPopupOpen() || document.getElementById("overridePanel")) return;  // a modal owns the keyboard
     const t = ev.target;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     if (ev.key === "v" || ev.key === "V") {
