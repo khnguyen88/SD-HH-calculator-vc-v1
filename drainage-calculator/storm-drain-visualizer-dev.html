@@ -53,7 +53,39 @@
 <!-- SHEETJS --><!-- build-visualizer.js replaces this with the inlined bundle -->
 <script>
   // ==== dom-helpers: begin ====
-  // (task-03 inserts el() and withFocusPreserved here)
+  function el(tag, attrs, children) {
+    const e = document.createElement(tag);
+    if (attrs) for (const k in attrs) {
+      const v = attrs[k];
+      if (k === "class") e.className = v;
+      else if (k === "html") e.innerHTML = v;
+      else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+      else if (v === null || v === undefined) { /* skip: do NOT setAttribute(k, null) */ }
+      else e.setAttribute(k, v);
+    }
+    if (children) (Array.isArray(children) ? children : [children]).forEach((c) => {
+      if (c == null) return;
+      e.appendChild((c instanceof Node) ? c : document.createTextNode(String(c)));
+    });
+    return e;
+  }
+
+  function withFocusPreserved(renderFn) {
+    const active = document.activeElement;
+    const key = active && active.dataset && active.dataset.focusKey;
+    const selStart = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
+    const selEnd   = active && typeof active.selectionEnd   === "number" ? active.selectionEnd   : null;
+    renderFn();
+    if (key) {
+      const match = document.querySelector('[data-focus-key="' + CSS.escape(key) + '"]');
+      if (match) {
+        match.focus();
+        if (match.setSelectionRange && selStart !== null) {
+          try { match.setSelectionRange(selStart, selEnd); } catch (e) { /* ignore */ }
+        }
+      }
+    }
+  }
   // ==== dom-helpers: end ====
 
   // ==== state: begin ====
