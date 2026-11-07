@@ -27,10 +27,14 @@ In edit mode, holding Shift and pressing an arrow key nudges the selected struct
     // Overrides are a separate layer; never mutate state.imported (task-23 depends on
     // imported staying the immutable source). renderIso resolves x/y overrides.
     const ov = state.overrides.byId[sid] = state.overrides.byId[sid] || {};
-    const curX = (typeof ov.x === "number") ? ov.x : (typeof str.x === "number" ? str.x : 0);
-    const curY = (typeof ov.y === "number") ? ov.y : (typeof str.y === "number" ? str.y : 0);
-    ov.x = curX + dx;
-    ov.y = curY + dy;
+    if (dx) {
+      const curX = (typeof ov.x === "number") ? ov.x : (typeof str.x === "number" ? str.x : 0);
+      ov.x = curX + dx;
+    }
+    if (dy) {
+      const curY = (typeof ov.y === "number") ? ov.y : (typeof str.y === "number" ? str.y : 0);
+      ov.y = curY + dy;
+    }
     renderAll();
   }
 
@@ -38,6 +42,10 @@ In edit mode, holding Shift and pressing an arrow key nudges the selected struct
     if (isTypingTarget(ev)) return;
     if (isBranchPopupOpen()) return;
     if (!ev.shiftKey) return;
+    // Only claim the gesture when it will actually nudge; otherwise let the
+    // browser handle Shift+Arrow (text selection) in explore mode.
+    if (state.ui.mode !== "edit") return;
+    if (!state.cursor || state.cursor.kind !== "structure") return;
     let dx = 0, dy = 0;
     if (ev.key === "ArrowUp") dy = -NUDGE_FT;
     else if (ev.key === "ArrowDown") dy = NUDGE_FT;

@@ -20,6 +20,31 @@ Settings toggle that flips `state.ui.freeRoam`. In free-roam mode, `↑/↓` mov
     renderAll();
   }
 
+  // Build the canonical outfall→elementId chain by walking downstream from elementId.
+  // The cursor may start mid-network in free-roam, but the ledger always needs an
+  // outfall-anchored path so HGL accumulates from the tailwater boundary.
+  function pathFromOutfall(elementId, imported) {
+    if (!imported || !elementId) return [];
+    const outfallSid = imported.outfall && imported.outfall.structureId;
+    const seen = new Set();
+    const down = [elementId];
+    let cur = elementId;
+    while (cur && cur !== outfallSid && !seen.has(cur)) {
+      seen.add(cur);
+      const pipe = imported.pipes.find((p) => p.id === cur);
+      if (pipe) {
+        cur = pipe.toId;
+      } else {
+        const outlet = imported.pipes.find((p) => p.fromId === cur);
+        cur = outlet ? outlet.id : null;
+      }
+      if (cur) down.push(cur);
+    }
+    const path = down.reverse();
+    if (outfallSid && path[0] !== outfallSid) path.unshift(outfallSid);
+    return path;
+  }
+
   // In free-roam, clicking an iso element starts a new walk there.
   function installIsoClickHandler() {
     const svg = document.getElementById("viewSvg");
@@ -30,7 +55,8 @@ Settings toggle that flips `state.ui.freeRoam`. In free-roam mode, `↑/↓` mov
       if (!target) return;
       const kind = target.getAttribute("data-kind");
       const id = target.getAttribute("data-id");
-      state.cursor = { kind, id, pathStack: [id] };
+      const pathStack = pathFromOutfall(id, state.imported);
+      state.cursor = { kind, id, pathStack: pathStack.length ? pathStack : [id] };
       renderAll();
     });
   }
@@ -39,6 +65,7 @@ Settings toggle that flips `state.ui.freeRoam`. In free-roam mode, `↑/↓` mov
   // ←/→ at a multi-inflow junction. Default mode opens the branch popup; free-roam
   // must never fire the popup (spec §5.2), so it cycles the remembered branch directly.
   document.addEventListener("keydown", (ev) => {
+    if (ev.shiftKey) return;  // Shift+Arrow is the task-22 nudge gesture
     if (isTypingTarget(ev)) return;
     if (isBranchPopupOpen()) return;
     if (!state.imported || !state.cursor || state.cursor.kind !== "structure") return;
@@ -102,16 +129,22 @@ const stA = document.querySelector('#viewSvg [data-kind="structure"][data-id="A"
 console.assert(stA !== null, "iso element for A exists (renderIso must have run)");
 if (stA) {
   stA.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  console.assert(state.cursor.id === "A" && state.cursor.pathStack.length === 1, "click starts new walk at A");
+  console.assert(state.cursor.id === "A", "click starts new walk at A");
+  console.assert(state.cursor.pathStack[0] === "OUT", "click path is outfall-anchored");
+  console.assert(state.cursor.pathStack[state.cursor.pathStack.length - 1] === "A", "click path ends at A");
 }
+
+// Free-roam down-arrow from the clicked structure walks toward the outfall
+document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+console.assert(state.cursor.id === "P1", "ArrowDown from A moves toward outfall onto P1");
 
 console.log("task-21 free-roam: OK");
 ```
 
 ## Done when
 
-- `toggleFreeRoam`, `installIsoClickHandler`, `←/→` handler defined.
-- Click on an iso element in free-roam starts a new walk there.
+- `toggleFreeRoam`, `pathFromOutfall`, `installIsoClickHandler`, `←/→` handler defined.
+- Click on an iso element in free-roam starts a new walk there, with an outfall-anchored `pathStack`; `↓` walks toward the outfall.
 - `←/→` in free-roam cycles the remembered branch at a junction and never opens the popup.
 - In default mode, `←/→` at a multi-inflow junction opens the branch popup.
 - Smoke test prints `OK`.

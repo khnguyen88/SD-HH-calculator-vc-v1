@@ -59,6 +59,7 @@ Modal popup when the cursor's upstream has >1 pipes. Keyboard-first (`↑/↓` c
     render();
 
     const keyHandler = (ev) => {
+      if (!document.getElementById("branchPopup")) { closeBranchPopup(); return; }
       if (ev.key === "ArrowUp") {
         ev.preventDefault(); ev.stopImmediatePropagation();
         selectedIndex = (selectedIndex - 1 + options.length) % options.length;

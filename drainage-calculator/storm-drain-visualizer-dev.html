@@ -1246,6 +1246,7 @@
     render();
 
     const keyHandler = (ev) => {
+      if (!document.getElementById("branchPopup")) { closeBranchPopup(); return; }
       if (ev.key === "ArrowUp") {
         ev.preventDefault(); ev.stopImmediatePropagation();
         selectedIndex = (selectedIndex - 1 + options.length) % options.length;
@@ -1281,6 +1282,31 @@
     renderAll();
   }
 
+  // Build the canonical outfall→elementId chain by walking downstream from elementId.
+  // The cursor may start mid-network in free-roam, but the ledger always needs an
+  // outfall-anchored path so HGL accumulates from the tailwater boundary.
+  function pathFromOutfall(elementId, imported) {
+    if (!imported || !elementId) return [];
+    const outfallSid = imported.outfall && imported.outfall.structureId;
+    const seen = new Set();
+    const down = [elementId];
+    let cur = elementId;
+    while (cur && cur !== outfallSid && !seen.has(cur)) {
+      seen.add(cur);
+      const pipe = imported.pipes.find((p) => p.id === cur);
+      if (pipe) {
+        cur = pipe.toId;
+      } else {
+        const outlet = imported.pipes.find((p) => p.fromId === cur);
+        cur = outlet ? outlet.id : null;
+      }
+      if (cur) down.push(cur);
+    }
+    const path = down.reverse();
+    if (outfallSid && path[0] !== outfallSid) path.unshift(outfallSid);
+    return path;
+  }
+
   // In free-roam, clicking an iso element starts a new walk there.
   function installIsoClickHandler() {
     const svg = document.getElementById("viewSvg");
@@ -1291,7 +1317,8 @@
       if (!target) return;
       const kind = target.getAttribute("data-kind");
       const id = target.getAttribute("data-id");
-      state.cursor = { kind, id, pathStack: [id] };
+      const pathStack = pathFromOutfall(id, state.imported);
+      state.cursor = { kind, id, pathStack: pathStack.length ? pathStack : [id] };
       renderAll();
     });
   }
@@ -1300,6 +1327,7 @@
   // ←/→ at a multi-inflow junction. Default mode opens the branch popup; free-roam
   // must never fire the popup (spec §5.2), so it cycles the remembered branch directly.
   document.addEventListener("keydown", (ev) => {
+    if (ev.shiftKey) return;  // Shift+Arrow is the task-22 nudge gesture
     if (isTypingTarget(ev)) return;
     if (isBranchPopupOpen()) return;
     if (!state.imported || !state.cursor || state.cursor.kind !== "structure") return;
@@ -1334,10 +1362,14 @@
     // Overrides are a separate layer; never mutate state.imported (task-23 depends on
     // imported staying the immutable source). renderIso resolves x/y overrides.
     const ov = state.overrides.byId[sid] = state.overrides.byId[sid] || {};
-    const curX = (typeof ov.x === "number") ? ov.x : (typeof str.x === "number" ? str.x : 0);
-    const curY = (typeof ov.y === "number") ? ov.y : (typeof str.y === "number" ? str.y : 0);
-    ov.x = curX + dx;
-    ov.y = curY + dy;
+    if (dx) {
+      const curX = (typeof ov.x === "number") ? ov.x : (typeof str.x === "number" ? str.x : 0);
+      ov.x = curX + dx;
+    }
+    if (dy) {
+      const curY = (typeof ov.y === "number") ? ov.y : (typeof str.y === "number" ? str.y : 0);
+      ov.y = curY + dy;
+    }
     renderAll();
   }
 
@@ -1345,6 +1377,10 @@
     if (isTypingTarget(ev)) return;
     if (isBranchPopupOpen()) return;
     if (!ev.shiftKey) return;
+    // Only claim the gesture when it will actually nudge; otherwise let the
+    // browser handle Shift+Arrow (text selection) in explore mode.
+    if (state.ui.mode !== "edit") return;
+    if (!state.cursor || state.cursor.kind !== "structure") return;
     let dx = 0, dy = 0;
     if (ev.key === "ArrowUp") dy = -NUDGE_FT;
     else if (ev.key === "ArrowDown") dy = NUDGE_FT;
@@ -1374,6 +1410,7 @@
   // V hotkey (also 'v' lowercase). Ignore while typing in form controls.
   document.addEventListener("keydown", (ev) => {
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
+    if (isBranchPopupOpen()) return;  // modal popup owns the keyboard while open
     const t = ev.target;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     if (ev.key === "v" || ev.key === "V") {
