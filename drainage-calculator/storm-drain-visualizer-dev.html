@@ -1731,9 +1731,10 @@
       host.appendChild(el("div", { style: "color:#666;" }, "No data imported."));
       return;
     }
+    const outfallId = state.imported.outfall && state.imported.outfall.structureId;
     const path = (state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
       ? state.cursor.pathStack
-      : [state.imported.outfall.structureId];
+      : (outfallId ? [outfallId] : []);
     const rows = buildLedger(path, state, state.imported.kbTable, state.ui.hglMethod);
     const annotated = annotateLedgerHgl(rows, state, state.ui.hglMethod);
 
@@ -1741,10 +1742,12 @@
     host.appendChild(el("div", { style: "font-weight:700; margin-bottom:8px;" },
       "Energy ledger (" + (state.ui.freeRoam ? "free-roam" : "upstream walk") + ") — HGL method: " + state.ui.hglMethod));
 
-    // One row per ledger entry
+    // One row per ledger entry. The synthetic end row reuses the last element's
+    // id, so it must never be treated as the cursor target (that would expand
+    // both the real row and the summary).
     const cursorId = state.cursor && state.cursor.id;
     for (const row of annotated) {
-      const isCurrent = row.id === cursorId;
+      const isCurrent = row.kind !== "end" && row.id === cursorId;
       const collapsed = el("div", {
         style: "padding:3px 6px; font-family:ui-monospace,monospace; cursor:pointer; "
              + (isCurrent ? "background:#ffeaa7;" : ""),
