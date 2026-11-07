@@ -65,7 +65,8 @@ contradicted spec §4.2 and the bburg reference and has been replaced.
 
       if (row.kind === "hf") {
         const d = row.detail;
-        const V = (d.A > 0) ? (d.designQ / d.A) : 0;
+        const q = (typeof d.designQ === "number" && isFinite(d.designQ)) ? d.designQ : 0;
+        const V = (d.A > 0) ? (q / d.A) : 0;
         const pipe = imp.pipes.find((p) => p.id === row.id);
         const step = hglWalkStep(row.before, V,
           pipe ? crownOf(pipe.toId) : null,

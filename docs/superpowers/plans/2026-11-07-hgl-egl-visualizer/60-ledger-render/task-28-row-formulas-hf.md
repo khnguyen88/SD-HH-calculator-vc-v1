@@ -48,7 +48,7 @@ Render the full Manning friction loss derivation for a `+Hf` ledger row: A, R, S
       ])),
       csSection("friction slope", csFormula(
         "Sf = (Q·n / (1.486·A·R^(2/3)))²",
-        "(" + fmtNum(d.designQ, 2) + "·" + fmtNum(d.n, 3) + " / (1.486·" + fmtNum(d.A, 3) + "·" + fmtNum(d.R, 3) + "^(2/3)))²",
+        "(" + fmtNum(q, 2) + "·" + fmtNum(d.n, 3) + " / (1.486·" + fmtNum(d.A, 3) + "·" + fmtNum(d.R, 3) + "^(2/3)))²",
         fmtNum(d.Sf, 6),
         "ft/ft"
       )),
@@ -91,6 +91,20 @@ state.ui.mode = "edit";
 renderLedger();
 const inputs = host.querySelectorAll("input[inputmode='decimal']");
 console.assert(inputs.length >= 4, "expected ≥4 numeric inputs (n, slope, length, size) in edit mode, got " + inputs.length);
+
+// Elliptical pipe: size is a Table 4-6 select, not a free numeric input.
+state.imported.pipes[0].shape = "elliptical";
+state.imported.pipes[0].size = "30x19";
+renderLedger();
+console.assert(host.querySelectorAll("select").length >= 1, "elliptical size uses a select");
+console.assert(host.textContent.includes("30x19"), "elliptical size shown");
+
+// Missing designQ must not print "undefined" or throw.
+state.imported.pipes[0].shape = "circular";
+state.imported.pipes[0].size = 18;
+delete state.imported.pipes[0].designQ;
+renderLedger();
+console.assert(!host.textContent.includes("undefined"), "missing designQ renders numerically");
 
 console.log("task-28 hf row: OK");
 ```
