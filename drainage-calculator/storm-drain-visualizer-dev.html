@@ -405,13 +405,19 @@
           Qcfs:     resolveField(p.id, "designQ", imp, ovr) || 0,
           pipeId:   p.id
         }));
-        // Outflow pipe: the pipe whose fromId == this structure's id (take the first).
-        const outPipe = imp.pipes.find((p) => p.fromId === id);
+        // Outflow pipe: prefer the structure's declared Outgoing Pipe ID; fall back
+        // to the first pipe leaving this structure (JSON imports lack outPipeId).
+        const declaredOutId = resolveField(id, "outPipeId", imp, ovr);
+        const outPipe = (declaredOutId && imp.pipes.find((p) => p.id === declaredOutId))
+                     || imp.pipes.find((p) => p.fromId === id);
         const Aout = outPipe
           ? pipeArea(resolveField(outPipe.id, "shape", imp, ovr),
                      resolveField(outPipe.id, "size", imp, ovr))
           : 0;
-        const Qtotal = outPipe ? (resolveField(outPipe.id, "designQ", imp, ovr) || 0) : 0;
+        const outDesignQ = outPipe ? (resolveField(outPipe.id, "designQ", imp, ovr) || 0) : 0;
+        const declaredTotal = resolveField(id, "totalQ", imp, ovr);
+        const Qtotal = (typeof declaredTotal === "number" && isFinite(declaredTotal) && declaredTotal > 0)
+          ? declaredTotal : outDesignQ;
         const res = structureLoss(inflows, Qtotal, Aout, structureType, kbTable);
         const before = EGL;
         const delta = res.error ? 0 : res.Hb;
