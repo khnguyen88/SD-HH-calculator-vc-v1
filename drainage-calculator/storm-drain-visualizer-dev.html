@@ -430,7 +430,74 @@
     return rows;
   }
 
-  // (task-13 inserts here)
+  // --- HGL derivation (task-13) ---
+
+  // One pipe step per bburg reference_calcs.hgl_walk_step and spec §4.2:
+  //   both methods: HGL_dn = max(EGL_dn - V^2/(2g), Crown_dn)
+  //   hec22:        HGL_up = HGL_dn + Hf
+  //   legacy:       HGL_up = max(HGL_dn + Hf, Crown_up)
+  // Returns { hglDn, hglUp, clamped } — clamped means a crown floor fired.
+  function hglWalkStep(EGL_dn, V_fps, crownDn, crownUp, Hf, method) {
+    const hglDnRaw = EGL_dn - velocityHead(V_fps);
+    const hglDn = (crownDn == null) ? hglDnRaw : Math.max(hglDnRaw, crownDn);
+    const hglUpRaw = hglDn + Hf;
+    const hglUp = (method === "legacy-both-crown" && crownUp != null)
+      ? Math.max(hglUpRaw, crownUp) : hglUpRaw;
+    return { hglDn, hglUp, clamped: Math.abs(hglUp - (hglDnRaw + Hf)) > 1e-12 };
+  }
+
+  // Annotate each ledger row with HGL. Does not mutate rows.
+  //   start row:      HGL = max(TW, outfall crown) — downstream boundary floor.
+  //   +Hf row:        hglWalkStep using EGL at the downstream node.
+  //   +Hb row:        HGL carries the previous value plus the structure loss.
+  function annotateLedgerHgl(rows, resolvedState, method) {
+    const imp = resolvedState.imported;
+    const ovr = resolvedState.overrides;
+    const legacy = method === "legacy-both-crown";
+    const crownOf = (id) => {
+      const crown = resolveField(id, "crown", imp, ovr);
+      return (typeof crown === "number" && isFinite(crown)) ? crown : null;
+    };
+
+    const out = [];
+    let hgl = null;
+    for (const row of rows) {
+      if (row.kind === "start") {
+        const crown = crownOf(row.id);
+        hgl = (crown == null) ? row.after : Math.max(row.after, crown);
+        out.push(Object.assign({}, row, { hgl, hglClamped: hgl !== row.after }));
+        continue;
+      }
+
+      if (row.kind === "hf") {
+        const d = row.detail;
+        const V = (d.A > 0) ? (d.designQ / d.A) : 0;
+        const pipe = imp.pipes.find((p) => p.id === row.id);
+        const step = hglWalkStep(row.before, V,
+          pipe ? crownOf(pipe.toId) : null,
+          pipe ? crownOf(pipe.fromId) : null,
+          row.delta, method);
+        hgl = step.hglUp;
+        out.push(Object.assign({}, row, { hgl, hglClamped: step.clamped }));
+        continue;
+      }
+
+      if (row.kind === "hb") {
+        const rawUp = (hgl == null ? row.before : hgl) + row.delta;
+        const crown = crownOf(row.id);
+        const up = (legacy && crown != null) ? Math.max(rawUp, crown) : rawUp;
+        hgl = up;
+        out.push(Object.assign({}, row, { hgl, hglClamped: up !== rawUp }));
+        continue;
+      }
+
+      out.push(Object.assign({}, row, {
+        hgl: hgl == null ? row.after : hgl,
+        hglClamped: false
+      }));
+    }
+    return out;
+  }
   // ==== compute: end ====
 
   // ==== import: begin ====
