@@ -1032,7 +1032,32 @@
     }
   }
 
-  // (task-17 inserts here)
+  // --- Active view dispatcher + V hotkey (task-17) ---
+
+  function renderActiveView() {
+    const svg = document.getElementById("viewSvg");
+    if (!svg) return;
+    if (state.ui.view === "iso") {
+      renderIso(svg, state);
+    } else {
+      // Build ledger from current path (or empty) and annotate for the active HGL method.
+      const path = (state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
+        ? state.cursor.pathStack
+        : (state.imported && state.imported.outfall && state.imported.outfall.structureId
+            ? [state.imported.outfall.structureId] : []);
+      const rows = buildLedger(path, state, state.imported ? state.imported.kbTable : null, state.ui.hglMethod);
+      const annotated = annotateLedgerHgl(rows, state, state.ui.hglMethod);
+      renderProfile(svg, state, annotated);
+    }
+    // Update toolbar indicator
+    const label = document.getElementById("viewToggle");
+    if (label) label.textContent = state.ui.view === "iso" ? "[ISO | profile]" : "[iso | PROFILE]";
+  }
+
+  function toggleView() {
+    state.ui.view = state.ui.view === "iso" ? "profile" : "iso";
+    renderActiveView();
+  }
   // ==== views: end ====
 
   // ==== navigation: begin ====
@@ -1049,8 +1074,24 @@
 
   // ==== bootstrap: begin ====
   function renderAll() {
-    // (fleshed out as views/ledger/navigation tasks land)
+    renderActiveView();
+    // ledger render is wired in by group 60
+    if (typeof renderLedger === "function") renderLedger();
   }
+
+  // V hotkey (also 'v' lowercase). Ignore while typing in form controls.
+  document.addEventListener("keydown", (ev) => {
+    const t = ev.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (ev.key === "v" || ev.key === "V") {
+      ev.preventDefault();
+      toggleView();
+    }
+  });
+
+  // Toolbar click
+  const toggleLabel = document.getElementById("viewToggle");
+  if (toggleLabel) toggleLabel.addEventListener("click", () => toggleView());
   document.getElementById("fileInput").addEventListener("change", async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
     document.getElementById("fileName").textContent = f.name;
