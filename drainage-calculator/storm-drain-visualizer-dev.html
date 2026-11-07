@@ -1821,6 +1821,69 @@
     ]);
   }
 
+  // --- Hb row expanded render (task-29) ---
+
+  function renderHbRow(row) {
+    const d = row.detail;
+    const res = d.result;
+    const isEdit = state.ui.mode === "edit";
+    const typeSelect = isEdit
+      ? editableSelect(row.id, "type", state.imported, state.overrides, ["inlet", "manhole", "bend", "junction", "splitter", "outfall"])
+      : el("span", { style: "font-family:ui-monospace,monospace;" }, d.structureType);
+
+    const header = el("div", null, [
+      csSection("structure", el("table", { style: "font-family:ui-monospace,monospace; font-size:12px;" }, [
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Type"), el("td", null, typeSelect)]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Total Q (cfs)"), el("td", null, fmtNum(d.Qtotal, 2))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Outflow pipe A_out (sf)"), el("td", null, fmtNum(d.Aout, 3))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Vout (ft/s)"),
+          el("td", null, fmtNum(d.Aout > 0 ? d.Qtotal / d.Aout : 0, 3))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "V²/(2g) (ft)"),
+          el("td", null, fmtNum(velocityHead(d.Aout > 0 ? d.Qtotal / d.Aout : 0), 4))])
+      ]))
+    ]);
+
+    if (res && res.error === "too-many-inflows") {
+      return el("div", null, [
+        header,
+        csWarn(d.inflows.length + " inflows at structure " + row.id + "; controlling-angle method supports ≤2. No Hb computed.")
+      ]);
+    }
+
+    const n = d.inflows.length;
+    if (n === 0) {
+      return el("div", null, [
+        header,
+        csSection("zero inflows (headwater)", el("div", { style: "font-size:12px; color:#444;" },
+          "Nominal entrance condition: Kb evaluated at 0° for a " + d.structureType + ".")),
+        csFormula("Kb(0°, " + d.structureType + ")", fmtNum(res.kbUsed, 3), fmtNum(res.kbUsed, 3), ""),
+        csFormula("Hb = Kb · V²/(2g)",
+          fmtNum(res.kbUsed, 3) + " · " + fmtNum(velocityHead(d.Aout > 0 ? d.Qtotal / d.Aout : 0), 4),
+          fmtNum(res.Hb, 4), "ft"),
+        csResult("Hb", fmtNum(res.Hb, 4), "ft")
+      ]);
+    }
+    if (n === 1) {
+      const a = d.inflows[0];
+      return el("div", null, [
+        header,
+        csSection("one inflow", el("div", { style: "font-size:12px; color:#444;" },
+          "Pipe " + a.pipeId + " enters at " + fmtNum(a.angleDeg, 1) + "°; Kb read at that angle.")),
+        csFormula("Kb(" + fmtNum(a.angleDeg, 1) + "°, " + d.structureType + ")", null, fmtNum(res.kbUsed, 3), ""),
+        csFormula("Hb = Kb · V²/(2g)",
+          fmtNum(res.kbUsed, 3) + " · " + fmtNum(velocityHead(d.Aout > 0 ? d.Qtotal / d.Aout : 0), 4),
+          fmtNum(res.Hb, 4), "ft"),
+        csResult("Hb", fmtNum(res.Hb, 4), "ft")
+      ]);
+    }
+    // n === 2 — defer to task-30
+    if (typeof renderTwoInflowDetail === "function") {
+      return el("div", null, [header, renderTwoInflowDetail(row)]);
+    }
+    return el("div", null, [header,
+      csFormula("Hb (2-inflow controlling)", null, fmtNum(res.Hb, 4), "ft (detail in task-30)")]);
+  }
+
   // Default expanded renderer — replaced by task-28/29 per row kind.
   function renderExpandedRow(row) {
     if (typeof renderHfRow === "function" && row.kind === "hf")   return renderHfRow(row);
