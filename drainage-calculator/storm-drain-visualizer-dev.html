@@ -1268,6 +1268,52 @@
   function resetBranchChoices() {
     state.ui.branchChoices = { byStructureId: {} };
   }
+
+  // --- Free-roam mode (task-21) ---
+
+  function toggleFreeRoam() {
+    state.ui.freeRoam = !state.ui.freeRoam;
+    renderAll();
+  }
+
+  // In free-roam, clicking an iso element starts a new walk there.
+  function installIsoClickHandler() {
+    const svg = document.getElementById("viewSvg");
+    if (!svg) return;
+    svg.addEventListener("click", (ev) => {
+      if (!state.ui.freeRoam || state.ui.view !== "iso") return;
+      const target = ev.target.closest("[data-kind][data-id]");
+      if (!target) return;
+      const kind = target.getAttribute("data-kind");
+      const id = target.getAttribute("data-id");
+      state.cursor = { kind, id, pathStack: [id] };
+      renderAll();
+    });
+  }
+  installIsoClickHandler();
+
+  // ←/→ at a multi-inflow junction. Default mode opens the branch popup; free-roam
+  // must never fire the popup (spec §5.2), so it cycles the remembered branch directly.
+  document.addEventListener("keydown", (ev) => {
+    if (isTypingTarget(ev)) return;
+    if (isBranchPopupOpen()) return;
+    if (!state.imported || !state.cursor || state.cursor.kind !== "structure") return;
+    if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+    const opts = upstreamOptions(state.cursor, state.imported);
+    if (opts.length < 2) return;
+    ev.preventDefault();
+    const sid = state.cursor.id;
+    if (state.ui.freeRoam) {
+      const remembered = state.ui.branchChoices.byStructureId[sid];
+      const at = Math.max(0, opts.findIndex((o) => o.id === remembered));
+      const step = ev.key === "ArrowRight" ? 1 : -1;
+      const next = (at + step + opts.length) % opts.length;
+      state.ui.branchChoices.byStructureId[sid] = opts[next].id;
+      renderAll();
+    } else {
+      openBranchPopup(sid, opts);
+    }
+  });
   // ==== navigation: end ====
 
   // ==== edit-mode: begin ====
