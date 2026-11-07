@@ -290,7 +290,58 @@
     };
     state.ui.mode = "explore";
   }
-  // (task-07 inserts here)
+  // --- auto-layout (task-07) ---
+  function autoLayoutStructures(structures, pipes, outfallSid) {
+    // BFS hop-distance from the outfall backward along pipes (follow pipes upstream:
+    // for each structure S, find pipes where toId == S's id; those pipes' fromId
+    // structures are at hopDistance = S's hopDistance + 1).
+    const hop = {};
+    hop[outfallSid] = 0;
+    const queue = [outfallSid];
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const p of pipes) {
+        if (p.toId === cur && !(p.fromId in hop)) {
+          hop[p.fromId] = hop[cur] + 1;
+          queue.push(p.fromId);
+        }
+      }
+    }
+
+    // Any structure not reached (orphan) gets a large hop, placed below the main tree.
+    const maxHop = Math.max(0, ...Object.values(hop));
+    for (const s of structures) if (!(s.id in hop)) hop[s.id] = maxHop + 2;
+
+    // Group by hop level, assign x-indices in insertion order
+    const levels = {};
+    for (const s of structures) {
+      const h = hop[s.id];
+      (levels[h] = levels[h] || []).push(s);
+    }
+
+    for (const h in levels) {
+      const row = levels[h];
+      const count = row.length;
+      row.forEach((s, i) => {
+        s.x = (i - (count - 1) / 2) * 80;
+        s.y = -h * 100;
+      });
+    }
+  }
+
+  // Called by the bootstrap after any successful import.
+  function autoLayoutIfNeeded() {
+    if (!state.imported) return;
+    const needs = state.imported.structures.some((s) =>
+      !(typeof s.x === "number" && typeof s.y === "number" && (s.x !== 0 || s.y !== 0))
+    );
+    // A structure having (0,0) exactly is treated as "unset" only if ALL structures do.
+    const allZero = state.imported.structures.every((s) => (s.x === 0 || s.x == null) && (s.y === 0 || s.y == null));
+    if (needs && allZero) {
+      autoLayoutStructures(state.imported.structures, state.imported.pipes, state.imported.outfall.structureId);
+    }
+  }
+  // ==== import helpers end ====
   // ==== import: end ====
 
   // ==== views: begin ====
@@ -321,6 +372,7 @@
       if (name.endsWith(".json")) await importFromJsonFile(f);
       else if (name.endsWith(".xlsx")) await importFromXlsxFile(f);  // added by task-06
       else throw new Error("Unsupported file type: " + f.name);
+      autoLayoutIfNeeded();
       renderAll();
     } catch (err) {
       alert("Import failed: " + err.message);
