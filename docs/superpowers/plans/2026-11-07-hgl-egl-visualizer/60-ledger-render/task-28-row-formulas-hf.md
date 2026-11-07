@@ -18,20 +18,29 @@ Render the full Manning friction loss derivation for a `+Hf` ledger row: A, R, S
   function renderHfRow(row) {
     const d = row.detail;
     const isEdit = state.ui.mode === "edit";
+    const q = (typeof d.designQ === "number" && isFinite(d.designQ)) ? d.designQ : 0;
     const inp = (field, step) => isEdit
       ? editableNumber(row.id, field, state.imported, state.overrides, { step })
       : el("span", { style: "font-family:ui-monospace,monospace;" }, fmtNum(resolveField(row.id, field, state.imported, state.overrides), 3));
+    // Elliptical sizes are "SPANxRISE" keys from Table 4-6; a free numeric input
+    // would commit a value pipeAreaElliptical cannot resolve. Offer the table.
+    const sizeControl = () => {
+      if (!isEdit) return String(d.size);
+      if (d.shape === "elliptical") {
+        const sizes = TABLE_4_6.map((r) => r.span_rise).filter((v) => v != null);
+        return editableSelect(row.id, "size", state.imported, state.overrides, sizes);
+      }
+      return editableNumber(row.id, "size", state.imported, state.overrides, { step: 3 });
+    };
 
     return el("div", null, [
       csSection("inputs", el("table", { style: "font-family:ui-monospace,monospace; font-size:12px;" }, [
-        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Q (cfs)"), el("td", null, fmtNum(d.designQ, 2))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Q (cfs)"), el("td", null, fmtNum(q, 2))]),
         el("tr", null, [el("td", { style: "padding:2px 8px;" }, "n"), el("td", null, inp("n", "0.001"))]),
         el("tr", null, [el("td", { style: "padding:2px 8px;" }, "slope (ft/ft)"), el("td", null, inp("slope", "0.0001"))]),
         el("tr", null, [el("td", { style: "padding:2px 8px;" }, "length (ft)"), el("td", null, inp("length", "0.1"))]),
         el("tr", null, [el("td", { style: "padding:2px 8px;" }, "shape"), el("td", null, d.shape)]),
-        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "size"), el("td", null, isEdit
-          ? editableNumber(row.id, "size", state.imported, state.overrides, { step: 3 })
-          : String(d.size))])
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "size"), el("td", null, sizeControl())])
       ])),
       csSection("hydraulics", el("div", null, [
         csFormula("A", fmtNum(d.A, 4), fmtNum(d.A, 4), "ft²"),
@@ -77,10 +86,11 @@ console.assert(host.textContent.includes("1.486"), "symbolic form present");
 console.assert(host.textContent.includes("EGL_up"), "EGL_up line present");
 
 // Edit mode: inputs appear
+// (editableNumber renders a text input with inputmode=decimal — task-24 — so query that.)
 state.ui.mode = "edit";
 renderLedger();
-const inputs = host.querySelectorAll("input[type='number']");
-console.assert(inputs.length >= 3, "expected ≥3 numeric inputs (n, slope, length) in edit mode, got " + inputs.length);
+const inputs = host.querySelectorAll("input[inputmode='decimal']");
+console.assert(inputs.length >= 4, "expected ≥4 numeric inputs (n, slope, length, size) in edit mode, got " + inputs.length);
 
 console.log("task-28 hf row: OK");
 ```
