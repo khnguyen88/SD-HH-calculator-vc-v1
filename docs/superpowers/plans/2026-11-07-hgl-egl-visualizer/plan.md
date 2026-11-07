@@ -107,8 +107,11 @@ Each task MD contains, in order:
 The following items from the spec are **not covered by the 39 tasks above** and will be addressed in a follow-up plan:
 
 - **Splitter warning banner + primary-path rendering** (spec §9.2). The compute functions handle splitters correctly (`kbAt` maps "splitter" → "manhole" column), and `buildLedger` picks the first outgoing pipe at a structure (effectively "primary"), so the ledger math is reasonable. **What's missing:** a visible non-blocking banner when an imported network contains a splitter structure, and explicit identification of the "primary" vs "secondary" pipe via the `splitRole` field from main spec §2. Follow-up task: add `detectSplitters(imported)` call to the import pipeline and a `warnBanner()` helper in the top-bar.
+- **Missing Design Q warning.** A pipe without a finite `Design Q (cfs)` imports with `designQ` undefined; `frictionSlope()` returns 0 for non-finite inputs, so that pipe silently contributes zero friction loss. Follow-up: surface a non-blocking banner listing pipes with no design flow instead of drawing a flat EGL segment with no explanation.
 - **TR-55 segment overlay on profile** (spec Appendix B deferred).
 - **Multi-outfall auto-detection** (spec §9.2).
 - **Printable visualizer calc-sheets** (spec §9.2).
+- **Iso flow-direction arrows.** The iso view draws plain pipe lines; there are no `<marker>` arrowheads indicating flow direction toward the outfall.
+- **Selection glow.** The current element is distinguished only by a thicker stroke (iso/profile); no halo or glow effect is drawn.
 
 None of these are blocking for v1 — the 39-task plan produces a working visualizer that handles the core conveyance network. The splitter gap is the one most likely to produce confused users and should be prioritized in the follow-up.
