@@ -144,6 +144,11 @@
   }
 
   // --- json importer (task-05) ---
+  function isSafeOverrideKey(k) {
+    return typeof k === "string" && k !== "" &&
+           k !== "__proto__" && k !== "constructor" && k !== "prototype";
+  }
+
   async function importFromJsonFile(file) {
     const text = await file.text();
     let obj;
@@ -168,6 +173,9 @@
     // is a clean baseline; the newValue goes into state.overrides.
     state.overrides = { byId: {} };
     for (const ov of overrides) {
+      // Skip malformed or prototype-polluting entries
+      if (!ov || typeof ov !== "object") continue;
+      if (!isSafeOverrideKey(ov.elementId) || !isSafeOverrideKey(ov.field)) continue;
       // Find and mutate the imported element
       const el = imported.structures.find((s) => s.id === ov.elementId)
               || imported.pipes.find((p) => p.id === ov.elementId);
@@ -219,7 +227,7 @@
       renderAll();
     } catch (err) {
       alert("Import failed: " + err.message);
-      state.imported = null;
+      renderAll();
     }
   });
   renderAll();
