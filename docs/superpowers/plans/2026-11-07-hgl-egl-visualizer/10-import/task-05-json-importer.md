@@ -44,17 +44,23 @@ Read a user-selected `.json` file, validate it via task-04, and populate `state.
     // is a clean baseline; the newValue goes into state.overrides.
     state.overrides = { byId: {} };
     for (const ov of overrides) {
+      // Skip malformed or prototype-polluting entries
+      if (!ov || typeof ov !== "object") continue;
+      if (!isSafeOverrideKey(ov.elementId) || !isSafeOverrideKey(ov.field)) continue;
       // Find and mutate the imported element
       const el = imported.structures.find((s) => s.id === ov.elementId)
               || imported.pipes.find((p) => p.id === ov.elementId);
-      if (el) el[ov.field] = ov.originalValue;
+      // An override for an element absent from the payload is stale — drop it
+      // rather than surfacing a phantom row in the badge/panel.
+      if (!el) continue;
+      el[ov.field] = ov.originalValue;
       // Record in state.overrides
       state.overrides.byId[ov.elementId] = state.overrides.byId[ov.elementId] || {};
       state.overrides.byId[ov.elementId][ov.field] = ov.newValue;
     }
 
     state.imported = imported;
-    state.ui.mode = overrides.length > 0 ? "edit" : "explore";
+    state.ui.mode = listOverrides().length > 0 ? "edit" : "explore";
 
     // Apply hglMethod from config if provided
     if (imported.config && (imported.config.hglMethod === "hec22" || imported.config.hglMethod === "legacy-both-crown")) {

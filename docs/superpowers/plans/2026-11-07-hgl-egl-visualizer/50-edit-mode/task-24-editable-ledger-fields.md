@@ -34,8 +34,12 @@ In edit mode, the expanded ledger row shows editable inputs for its row kind. Ev
       "data-focus-key": "edit:" + elementId + ":" + field,
       oninput: (ev) => {
         const v = ev.target.value;
-        if (v === "") revertOverride(elementId, field);
-        else setOverride(elementId, field, Number(v));
+        if (v === "") { revertOverride(elementId, field); withFocusPreserved(renderAll); return; }
+        const n = Number(v);
+        if (!isFinite(n)) return; // keep partial/invalid text in the field; never store NaN
+        const cur = resolveField(elementId, field, imported, overrides);
+        if (cur === n) return;    // no semantic change; preserves in-progress text like "0."
+        setOverride(elementId, field, n);
         withFocusPreserved(renderAll);
       }
     });
@@ -44,17 +48,23 @@ In edit mode, the expanded ledger row shows editable inputs for its row kind. Ev
 
   function editableSelect(elementId, field, imported, overrides, options) {
     const currentVal = resolveField(elementId, field, imported, overrides);
+    const originalEl = (imported.structures.find((s) => s.id === elementId)
+                     || imported.pipes.find((p) => p.id === elementId));
+    const original = originalEl ? originalEl[field] : null;
     const isOverridden = overrides.byId[elementId] && Object.prototype.hasOwnProperty.call(overrides.byId[elementId], field);
     const sel = el("select", {
       style: "font-family:ui-monospace,monospace; " + (isOverridden ? "font-weight:bold; color:#ffd60a;" : ""),
       "data-focus-key": "edit:" + elementId + ":" + field,
       onchange: (ev) => {
-        setOverride(elementId, field, ev.target.value);
+        const v = ev.target.value;
+        // Picking the original value is a revert, not an override.
+        if (original != null && String(v) === String(original)) revertOverride(elementId, field);
+        else setOverride(elementId, field, v);
         withFocusPreserved(renderAll);
       }
     });
     for (const opt of options) {
-      const o = el("option", { value: opt, selected: (opt === currentVal) ? "selected" : null }, opt);
+      const o = el("option", { value: opt, selected: (String(opt) === String(currentVal)) ? "selected" : null }, opt);
       sel.appendChild(o);
     }
     return sel;

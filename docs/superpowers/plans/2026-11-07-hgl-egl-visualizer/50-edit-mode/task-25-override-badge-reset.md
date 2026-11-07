@@ -28,7 +28,6 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
     if (count === 0) {
       badge.style.display = "none";
     } else {
-      badge.style.display = "";
       badge.textContent = count + " fields overridden";
       badge.style.cssText = "background:#ffd60a; color:#1a1a1a; border:none; padding:4px 10px; border-radius:4px; font-weight:600;";
     }
@@ -65,7 +64,13 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
         const revertBtn = el("button", {
           type: "button",
           style: "padding:2px 8px;",
-          onclick: () => { revertOverride(o.elementId, o.field); renderAll(); openOverridePanel(); }
+          onclick: () => {
+            revertOverride(o.elementId, o.field);
+            renderAll();
+            // Nothing left to show — dismissing the panel is the honest state.
+            if (listOverrides().length === 0) closeOverridePanel();
+            else openOverridePanel();
+          }
         }, "Revert");
         const row = el("tr", { style: "border-bottom:1px solid #21262d;" }, [
           el("td", { style: "padding:4px;" }, o.elementId),
@@ -81,7 +86,7 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
 
     const footer = el("div", { style: "margin-top:12px; display:flex; gap:8px; justify-content:flex-end;" }, [
       el("button", { type: "button",
-        onclick: () => { resetAllOverrides(); renderAll(); openOverridePanel(); }
+        onclick: () => { resetAllOverrides(); renderAll(); closeOverridePanel(); }
       }, "Reset all"),
       el("button", { type: "button", onclick: closeOverridePanel }, "Close")
     ]);

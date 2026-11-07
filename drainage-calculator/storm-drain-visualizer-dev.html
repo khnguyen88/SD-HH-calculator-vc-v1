@@ -610,14 +610,17 @@
       // Find and mutate the imported element
       const el = imported.structures.find((s) => s.id === ov.elementId)
               || imported.pipes.find((p) => p.id === ov.elementId);
-      if (el) el[ov.field] = ov.originalValue;
+      // An override for an element absent from the payload is stale — drop it
+      // rather than surfacing a phantom row in the badge/panel.
+      if (!el) continue;
+      el[ov.field] = ov.originalValue;
       // Record in state.overrides
       state.overrides.byId[ov.elementId] = state.overrides.byId[ov.elementId] || {};
       state.overrides.byId[ov.elementId][ov.field] = ov.newValue;
     }
 
     state.imported = imported;
-    state.ui.mode = overrides.length > 0 ? "edit" : "explore";
+    state.ui.mode = listOverrides().length > 0 ? "edit" : "explore";
 
     // Apply hglMethod from config if provided
     if (imported.config && (imported.config.hglMethod === "hec22" || imported.config.hglMethod === "legacy-both-crown")) {
@@ -1396,11 +1399,13 @@
   // --- Overrides store (task-23) ---
 
   function setOverride(elementId, field, newValue) {
+    if (!isSafeOverrideKey(elementId) || !isSafeOverrideKey(field)) return;
     state.overrides.byId[elementId] = state.overrides.byId[elementId] || {};
     state.overrides.byId[elementId][field] = newValue;
   }
 
   function revertOverride(elementId, field) {
+    if (!isSafeOverrideKey(elementId) || !isSafeOverrideKey(field)) return;
     const ov = state.overrides.byId[elementId];
     if (!ov) return;
     delete ov[field];
@@ -1413,9 +1418,9 @@
 
   function listOverrides() {
     const out = [];
-    for (const elementId in state.overrides.byId) {
+    for (const elementId of Object.keys(state.overrides.byId)) {
       const fields = state.overrides.byId[elementId];
-      for (const field in fields) {
+      for (const field of Object.keys(fields)) {
         const el = state.imported
           ? (state.imported.structures.find((s) => s.id === elementId)
              || state.imported.pipes.find((p) => p.id === elementId))
@@ -1430,12 +1435,15 @@
     return out;
   }
 
+  function syncModeButton() {
+    const btn = document.getElementById("modeToggle");
+    if (btn) btn.textContent = state.ui.mode === "edit" ? "▸ edit" : "▸ explore";
+  }
+
   // Mode toggle (E hotkey + toolbar button are handled in task-24 for completeness).
   function setMode(mode) {
     if (mode !== "explore" && mode !== "edit") return;
     state.ui.mode = mode;
-    const btn = document.getElementById("modeToggle");
-    if (btn) btn.textContent = mode === "edit" ? "▸ edit" : "▸ explore";
     renderAll();
   }
 
@@ -1460,8 +1468,12 @@
       "data-focus-key": "edit:" + elementId + ":" + field,
       oninput: (ev) => {
         const v = ev.target.value;
-        if (v === "") revertOverride(elementId, field);
-        else setOverride(elementId, field, Number(v));
+        if (v === "") { revertOverride(elementId, field); withFocusPreserved(renderAll); return; }
+        const n = Number(v);
+        if (!isFinite(n)) return; // keep partial/invalid text in the field; never store NaN
+        const cur = resolveField(elementId, field, imported, overrides);
+        if (cur === n) return;    // no semantic change; preserves in-progress text like "0."
+        setOverride(elementId, field, n);
         withFocusPreserved(renderAll);
       }
     });
@@ -1470,17 +1482,23 @@
 
   function editableSelect(elementId, field, imported, overrides, options) {
     const currentVal = resolveField(elementId, field, imported, overrides);
+    const originalEl = (imported.structures.find((s) => s.id === elementId)
+                     || imported.pipes.find((p) => p.id === elementId));
+    const original = originalEl ? originalEl[field] : null;
     const isOverridden = overrides.byId[elementId] && Object.prototype.hasOwnProperty.call(overrides.byId[elementId], field);
     const sel = el("select", {
       style: "font-family:ui-monospace,monospace; " + (isOverridden ? "font-weight:bold; color:#ffd60a;" : ""),
       "data-focus-key": "edit:" + elementId + ":" + field,
       onchange: (ev) => {
-        setOverride(elementId, field, ev.target.value);
+        const v = ev.target.value;
+        // Picking the original value is a revert, not an override.
+        if (original != null && String(v) === String(original)) revertOverride(elementId, field);
+        else setOverride(elementId, field, v);
         withFocusPreserved(renderAll);
       }
     });
     for (const opt of options) {
-      const o = el("option", { value: opt, selected: (opt === currentVal) ? "selected" : null }, opt);
+      const o = el("option", { value: opt, selected: (String(opt) === String(currentVal)) ? "selected" : null }, opt);
       sel.appendChild(o);
     }
     return sel;
@@ -1517,7 +1535,6 @@
     if (count === 0) {
       badge.style.display = "none";
     } else {
-      badge.style.display = "";
       badge.textContent = count + " fields overridden";
       badge.style.cssText = "background:#ffd60a; color:#1a1a1a; border:none; padding:4px 10px; border-radius:4px; font-weight:600;";
     }
@@ -1554,7 +1571,13 @@
         const revertBtn = el("button", {
           type: "button",
           style: "padding:2px 8px;",
-          onclick: () => { revertOverride(o.elementId, o.field); renderAll(); openOverridePanel(); }
+          onclick: () => {
+            revertOverride(o.elementId, o.field);
+            renderAll();
+            // Nothing left to show — dismissing the panel is the honest state.
+            if (listOverrides().length === 0) closeOverridePanel();
+            else openOverridePanel();
+          }
         }, "Revert");
         const row = el("tr", { style: "border-bottom:1px solid #21262d;" }, [
           el("td", { style: "padding:4px;" }, o.elementId),
@@ -1570,7 +1593,7 @@
 
     const footer = el("div", { style: "margin-top:12px; display:flex; gap:8px; justify-content:flex-end;" }, [
       el("button", { type: "button",
-        onclick: () => { resetAllOverrides(); renderAll(); openOverridePanel(); }
+        onclick: () => { resetAllOverrides(); renderAll(); closeOverridePanel(); }
       }, "Reset all"),
       el("button", { type: "button", onclick: closeOverridePanel }, "Close")
     ]);
@@ -1662,6 +1685,7 @@
     // ledger render is wired in by group 60
     if (typeof renderLedger === "function") renderLedger();
     if (typeof renderOverrideBadge === "function") renderOverrideBadge();
+    if (typeof syncModeButton === "function") syncModeButton();
   }
 
   // V hotkey (also 'v' lowercase). Ignore while typing in form controls.

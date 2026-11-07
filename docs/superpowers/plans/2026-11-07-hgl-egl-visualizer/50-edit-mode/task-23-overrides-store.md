@@ -15,12 +15,19 @@ Centralize the overrides API used by task-24 (editable inputs) and task-25 (rese
 ```js
   // --- Overrides store (task-23) ---
 
+  // Reject prototype-polluting / malformed keys before they reach the store.
+  function isSafeOverrideKey(k) {
+    return typeof k === "string" && k !== "" && k !== "__proto__" && k !== "constructor" && k !== "prototype";
+  }
+
   function setOverride(elementId, field, newValue) {
+    if (!isSafeOverrideKey(elementId) || !isSafeOverrideKey(field)) return;
     state.overrides.byId[elementId] = state.overrides.byId[elementId] || {};
     state.overrides.byId[elementId][field] = newValue;
   }
 
   function revertOverride(elementId, field) {
+    if (!isSafeOverrideKey(elementId) || !isSafeOverrideKey(field)) return;
     const ov = state.overrides.byId[elementId];
     if (!ov) return;
     delete ov[field];
@@ -33,9 +40,9 @@ Centralize the overrides API used by task-24 (editable inputs) and task-25 (rese
 
   function listOverrides() {
     const out = [];
-    for (const elementId in state.overrides.byId) {
+    for (const elementId of Object.keys(state.overrides.byId)) {
       const fields = state.overrides.byId[elementId];
-      for (const field in fields) {
+      for (const field of Object.keys(fields)) {
         const el = state.imported
           ? (state.imported.structures.find((s) => s.id === elementId)
              || state.imported.pipes.find((p) => p.id === elementId))
@@ -50,15 +57,21 @@ Centralize the overrides API used by task-24 (editable inputs) and task-25 (rese
     return out;
   }
 
-  // Mode toggle (E hotkey + toolbar button are handled in task-24 for completeness).
+  // Toolbar label is a pure function of state.ui.mode; renderAll calls this so the
+  // label survives imports and programmatic mode changes, not just clicks.
+  function syncModeButton() {
+    const btn = document.getElementById("modeToggle");
+    if (btn) btn.textContent = state.ui.mode === "edit" ? "▸ edit" : "▸ explore";
+  }
+
   function setMode(mode) {
     if (mode !== "explore" && mode !== "edit") return;
     state.ui.mode = mode;
-    const btn = document.getElementById("modeToggle");
-    if (btn) btn.textContent = mode === "edit" ? "▸ edit" : "▸ explore";
     renderAll();
   }
 ```
+
+`renderAll` (bootstrap) must call `if (typeof syncModeButton === "function") syncModeButton();` after the other renderers so the label tracks every mode change.
 
 ## Acceptance test
 
