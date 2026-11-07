@@ -43,6 +43,13 @@ Document-level `keydown` handler for `↑/↓/Enter/Esc`. Default (upstream) mod
     const sid = state.cursor.id;
     const remembered = state.ui.branchChoices.byStructureId[sid];
     const chosen = remembered ? opts.find((o) => o.id === remembered) : null;
+    if (state.ui.freeRoam) {
+      // Free-roam never auto-fires the branch popup (spec §5.2, group 40); follow
+      // the remembered pick, or the first upstream pipe.
+      state.cursor = advanceCursor(state.cursor, chosen || opts[0]);
+      renderAll();
+      return;
+    }
     if (chosen) {
       state.cursor = advanceCursor(state.cursor, chosen);
       renderAll();
