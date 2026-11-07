@@ -915,29 +915,34 @@
   function profileStations(rows, imported, overrides) {
     const stations = [];
     let station = 0;
+    const elev = (str, field, fallback) => {
+      const v = str ? str[field] : null;
+      return (typeof v === "number" && isFinite(v)) ? v : fallback;
+    };
     for (const row of rows) {
       if (row.kind === "start") {
         const str = imported.structures.find((s) => s.id === row.id);
         stations.push({
           station: 0, kind: "structure", id: row.id,
-          invert: (str && str.startElev) || row.after - 3,
-          crown: (str && str.crown) || row.after,
-          rim: (str && str.rim) || row.after + 3,
+          invert: elev(str, "startElev", row.after - 3),
+          crown: elev(str, "crown", row.after),
+          rim: elev(str, "rim", row.after + 3),
           egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
         });
       } else if (row.kind === "hf") {
         const pipe = imported.pipes.find((p) => p.id === row.id);
-        const length = (overrides && overrides.byId[row.id] && overrides.byId[row.id].length != null)
+        const rawLength = (overrides && overrides.byId[row.id] && overrides.byId[row.id].length != null)
           ? overrides.byId[row.id].length
           : (pipe ? pipe.length : 0);
+        const length = Number(rawLength);
         // March station forward by this pipe's length (horizontally — profile ignores plan curvature)
-        station += length;
+        if (isFinite(length) && length > 0) station += length;
         // Crown and invert at the upstream end of this pipe come from the From structure.
         const fromStr = pipe ? imported.structures.find((s) => s.id === pipe.fromId) : null;
         stations.push({
           station, kind: "pipe", id: row.id,
-          invert: (fromStr && fromStr.startElev) || row.after - 3,
-          crown: (fromStr && fromStr.crown) || row.after,
+          invert: elev(fromStr, "startElev", row.after - 3),
+          crown: elev(fromStr, "crown", row.after),
           rim: null,
           egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
         });
@@ -945,9 +950,9 @@
         const str = imported.structures.find((s) => s.id === row.id);
         stations.push({
           station, kind: "structure", id: row.id,
-          invert: (str && str.startElev) || row.after - 3,
-          crown: (str && str.crown) || row.after,
-          rim: (str && str.rim) || row.after + 3,
+          invert: elev(str, "startElev", row.after - 3),
+          crown: elev(str, "crown", row.after),
+          rim: elev(str, "rim", row.after + 3),
           egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
         });
       }
@@ -966,7 +971,8 @@
     if (stations.length === 0) return;
 
     const xs = stations.map((p) => p.station);
-    const ys = stations.flatMap((p) => [p.invert, p.crown, p.egl, p.hgl, p.rim].filter((v) => typeof v === "number"));
+    const ys = stations.flatMap((p) => [p.invert, p.crown, p.egl, p.hgl, p.rim].filter((v) => typeof v === "number" && isFinite(v)));
+    if (ys.length === 0) ys.push(0);
     const xMin = Math.min(...xs), xMax = Math.max(...xs);
     const yMin = Math.min(...ys), yMax = Math.max(...ys);
     const pad = 20;
@@ -993,15 +999,16 @@
     for (const p of stations) {
       if (p.kind !== "structure") continue;
       const isSel = cursorId === p.id;
+      const top = (p.rim != null) ? p.rim : p.crown + 3;
       svg.appendChild(svgEl("line", {
         x1: sx(p.station), y1: sy(p.invert),
-        x2: sx(p.station), y2: sy(p.rim || p.crown + 3),
+        x2: sx(p.station), y2: sy(top),
         stroke: isSel ? "#ffd60a" : "#30363d",
         "stroke-width": isSel ? 3 : 2,
         "data-kind": "structure", "data-id": p.id
       }));
       svg.appendChild(svgEl("text", {
-        x: sx(p.station) + 4, y: sy(p.rim || p.crown + 3) - 4,
+        x: sx(p.station) + 4, y: sy(top) - 4,
         fill: "#c9d1d9", "font-size": 10, "font-family": "ui-monospace,monospace"
       }, p.id));
     }
@@ -1011,12 +1018,16 @@
       const idx = stations.findIndex((p) => p.id === s.cursor.id);
       if (idx > 0) {
         const left = stations[idx - 1].station, right = stations[idx].station;
-        svg.appendChild(svgEl("rect", {
-          x: sx(left), y: 0,
-          width: sx(right) - sx(left), height: H,
-          fill: "#ffd60a", "fill-opacity": 0.08,
-          "data-kind": "pipe", "data-id": s.cursor.id
-        }));
+        const width = sx(right) - sx(left);
+        if (width >= 0.5) {
+          svg.appendChild(svgEl("rect", {
+            x: sx(left), y: 0,
+            width: width, height: H,
+            fill: "#ffd60a", "fill-opacity": 0.08,
+            "pointer-events": "none",
+            "data-kind": "pipe", "data-id": s.cursor.id
+          }));
+        }
       }
     }
   }
