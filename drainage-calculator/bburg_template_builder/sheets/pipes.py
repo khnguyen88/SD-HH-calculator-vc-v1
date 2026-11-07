@@ -20,14 +20,6 @@ def build_pipes_sheet(wb: Workbook) -> None:
     for c, h in enumerate(HEADERS, start=1):
         ws.cell(row=1, column=c, value=h)
 
-    # Helper range on columns J:K for the Material -> Manning_n map.
-    ws.cell(row=1, column=10, value="Material")
-    ws.cell(row=1, column=11, value="Default_n")
-    for i, (mat, n) in enumerate(MATERIAL_MANNING.items()):
-        ws.cell(row=2 + i, column=10, value=mat)
-        ws.cell(row=2 + i, column=11, value=n)
-    _last_mat_row = 1 + len(MATERIAL_MANNING)
-
     for i, p in enumerate(BLADENSBURG_PIPES):
         row = 2 + i
         ws.cell(row=row, column=1, value=p["Pipe_ID"])
@@ -41,10 +33,18 @@ def build_pipes_sheet(wb: Workbook) -> None:
     data_rows = max(DEFAULT_ROW_COUNTS["Pipes"], len(BLADENSBURG_PIPES))
     for i in range(data_rows):
         row = 2 + i
+        # Manning_n - sourced from Config named ranges so changes propagate workbook-wide
         ws.cell(
             row=row, column=7,
             value=(f'=IF(F{row}="","",'
-                   f'XLOOKUP(F{row},$J$2:$J${_last_mat_row},$K$2:$K${_last_mat_row},0.013))')
+                   f'SWITCH(F{row},'
+                   f'"RCP",Manning_n_RCP,'
+                   f'"HDPE",Manning_n_HDPE,'
+                   f'"CMP",Manning_n_CMP,'
+                   f'"PVC",Manning_n_PVC,'
+                   f'"DIP",Manning_n_DIP,'
+                   f'"Other",Manning_n_Other,'
+                   f'Manning_n_RCP))')
         )
 
     last_row = 1 + data_rows
@@ -81,5 +81,3 @@ def build_pipes_sheet(wb: Workbook) -> None:
     ws.column_dimensions["C"].width = 14
     for col in ("D", "E", "F", "G", "H"):
         ws.column_dimensions[col].width = 11
-    ws.column_dimensions["J"].width = 10
-    ws.column_dimensions["K"].width = 10

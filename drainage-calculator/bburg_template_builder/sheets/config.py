@@ -7,7 +7,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 # (name, default_value, note). Values live on Config!$B$<row>, names on $A$<row>.
 CONFIG_ROWS: tuple[tuple[str, object, str], ...] = (
     ("County_Selected",    "Prince George's",                 "Dropdown: NOAA14[County]"),
-    ("Storm_Primary",      "10yr",                             "Dropdown: 1yr/2yr/5yr/10yr/25yr/50yr/100yr/500yr"),
+    ("Storm_Primary",      "10yr",                             "Dropdown: 10yr or 25yr (storms with Pipe Capacity sheets)"),
     ("HGL_Method",         "HEC-22 EGL (d/s crown floor)",    "HEC-22 (default) or Legacy both-end crown floor"),
     ("Project_Name",       "",                                 ""),
     ("Project_Number",     "",                                 ""),
@@ -16,12 +16,17 @@ CONFIG_ROWS: tuple[tuple[str, object, str], ...] = (
     ("Date_Computed",      "",                                 ""),
     ("Manning_n_RCP",      0.013,                              "Manning's n for RCP (default)"),
     ("Manning_n_HDPE",     0.012,                              "Manning's n for HDPE (default)"),
+    ("Manning_n_CMP",      0.024,                              "Manning's n for CMP"),
+    ("Manning_n_PVC",      0.011,                              "Manning's n for PVC"),
+    ("Manning_n_DIP",      0.013,                              "Manning's n for DIP"),
+    ("Manning_n_Other",    0.013,                              "Manning's n for Other pipe material (user override)"),
     ("Gravity_g",          32.2,                               "ft/s^2"),
     ("Rim_Freeboard",      1.0,                                "ft (HGL check: HGL < Rim - freeboard)"),
     ("Crown_Freeboard",    1.0,                                "ft (HGL check: HGL < Crown + freeboard)"),
 )
 
 STORM_LIST = ("1yr", "2yr", "5yr", "10yr", "25yr", "50yr", "100yr", "500yr")
+STORM_PRIMARY_LIST = ("10yr", "25yr")
 HGL_METHOD_LIST = ("HEC-22 EGL (d/s crown floor)", "Legacy both-end crown floor")
 
 
@@ -55,7 +60,7 @@ def build_config_sheet(wb: Workbook) -> None:
     ws.add_data_validation(dv_county)
 
     dv_storm = DataValidation(type="list",
-                              formula1=f'"{",".join(STORM_LIST)}"',
+                              formula1=f'"{",".join(STORM_PRIMARY_LIST)}"',
                               allow_blank=False)
     dv_storm.add("B3")
     ws.add_data_validation(dv_storm)

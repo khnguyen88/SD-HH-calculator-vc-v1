@@ -7,6 +7,9 @@
 ## Quick start
 
 1. Open `docs/bburg-p-c-template.xlsx` in Excel 365.
+
+> **Excel version:** Tested on Excel 365 Desktop for Windows. INDIRECT-based data-validation dropdowns may not render in Excel Online or Excel for Mac — use Desktop for full functionality.
+
 2. Go to `Config` and set:
    - `County_Selected` — pick from the dropdown (Montgomery, Prince George's, DC, or any other MD county you've populated in `NOAA14`).
    - `Storm_Primary` — the design storm (`2yr`, `10yr`, `25yr`, `100yr`, ...).
@@ -21,11 +24,15 @@
 5. Fill in `Pipes`:
    - `From_Structure` / `To_Structure` dropdowns reference `Structures[Structure_ID]`.
    - `Material` dropdown auto-defaults `Manning_n`; override values are fine.
-6. Go to `HGL`:
+6. Fill in `10 Yr Pipe Capacity` and `25 Yr Pipe Capacity`:
+   - For each pipe in your network, type the `From_Structure` and `To_Structure` IDs.
+   - Columns D/E (Area, C) and K (Intensity) auto-fill from `DA_Catchments` and `IDF_Lookup`.
+   - Column L (Q) is the design flow the HGL sheet will consume.
+7. Go to `HGL`:
    - Set `TW_Elev_Start` (cell C3) to the tailwater elevation at the most-downstream pipe.
    - Type `Pipe_ID`s in column A in **downstream-first** order (row 10 = most d/s pipe; last row = most u/s pipe).
    - Every other column auto-computes.
-7. Check the `Crown_check` and `Rim_check` columns for FAIL flags.
+8. Check the `Crown_check` and `Rim_check` columns for FAIL flags.
 
 ## Sheet reference
 

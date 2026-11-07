@@ -11,6 +11,8 @@ Legacy layout (row 11 is header, data starts row 14):
 from openpyxl import Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 
+from bburg_template_builder.seed_data import BLADENSBURG_PIPES
+
 
 HEADERS_ROW_8_BASE = [
     "", "", "Contributing Area", "", "", "", "",
@@ -48,6 +50,12 @@ def _build_single_pipe_capacity(ws, storm: str, storm_label: str) -> None:
         ws.cell(row=11, column=c, value=h)
     for c, h in enumerate(HEADERS_ROW_12, start=1):
         ws.cell(row=12, column=c, value=h)
+
+    # Seed From/To from Bladensburg so the sheet opens with a working example.
+    for i, p in enumerate(BLADENSBURG_PIPES):
+        r = 14 + i
+        ws.cell(row=r, column=1, value=p["From_Structure"])
+        ws.cell(row=r, column=2, value=p["To_Structure"])
 
     last_row = 50
     for r in range(14, last_row + 1):

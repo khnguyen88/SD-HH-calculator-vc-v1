@@ -35,7 +35,7 @@ def build_hgl_sheet(wb: Workbook) -> None:
     # Top-of-sheet inputs
     ws["A1"] = "HGL SHEET - Hydraulic Grade Line Walker"
     ws["A3"] = "TW_Elev_Start (ft):"
-    ws["C3"] = 60.0
+    ws["C3"] = 62.0
     wb.defined_names["TW_Elev_Start"] = DefinedName(name="TW_Elev_Start", attr_text="HGL!$C$3")
     ws["A4"] = "Storm_Selected:"
     ws["C4"] = "=Storm_Primary"
@@ -46,6 +46,13 @@ def build_hgl_sheet(wb: Workbook) -> None:
     # Column headers (row 8)
     for c, name in enumerate(COLUMNS, start=1):
         ws.cell(row=8, column=c, value=name)
+
+    # Seed Pipe_IDs from Bladensburg so the walker opens with a working example.
+    # Walk order is downstream-first: pipes closest to outfall at the top.
+    from bburg_template_builder.seed_data import BLADENSBURG_PIPES
+    # Reverse so d/s pipes (toward OUTFALL) come first
+    for i, p in enumerate(reversed(BLADENSBURG_PIPES)):
+        ws.cell(row=10 + i, column=1, value=p["Pipe_ID"])
 
     first_data_row = 10
     last_data_row = 60

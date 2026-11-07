@@ -6,7 +6,9 @@ from bburg_template_builder.sheets.config import build_config_sheet
 EXPECTED_NAMED_RANGES = {
     "County_Selected", "Storm_Primary", "HGL_Method",
     "Project_Name", "Project_Number", "Designer", "Checker", "Date_Computed",
-    "Manning_n_RCP", "Manning_n_HDPE", "Gravity_g", "Rim_Freeboard", "Crown_Freeboard",
+    "Manning_n_RCP", "Manning_n_HDPE",
+    "Manning_n_CMP", "Manning_n_PVC", "Manning_n_DIP", "Manning_n_Other",
+    "Gravity_g", "Rim_Freeboard", "Crown_Freeboard",
 }
 
 

@@ -31,4 +31,6 @@ def test_manning_n_is_formula_defaulted_from_material(empty_wb):
     ws = empty_wb["Pipes"]
     first_blank_row = 2 + len(BLADENSBURG_PIPES)
     val = ws.cell(row=first_blank_row, column=7).value
-    assert str(val).startswith("=") and ("XLOOKUP" in str(val) or "VLOOKUP" in str(val))
+    assert str(val).startswith("=") and "SWITCH" in str(val)
+    # Must reference at least one Manning_n_* named range from Config
+    assert "Manning_n_RCP" in str(val) or "Manning_n_HDPE" in str(val)
