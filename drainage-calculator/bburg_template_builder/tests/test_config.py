@@ -24,12 +24,12 @@ def test_all_named_ranges_defined(empty_wb):
     assert not missing, f"Missing named ranges: {missing}"
 
 
-def test_county_default_is_prince_georges(empty_wb):
+def test_county_default_is_montgomery(empty_wb):
     build_config_sheet(empty_wb)
     dn = empty_wb.defined_names["County_Selected"]
     sheet, coord = _parse_name_ref(dn)
     cell = empty_wb[sheet][coord]
-    assert cell.value == "Prince George's"
+    assert cell.value == "Montgomery"
 
 
 def test_hgl_method_default_is_hec22(empty_wb):

@@ -39,13 +39,16 @@ def test_bladensburg_seed_at_top(empty_wb):
         assert ws.cell(row=row, column=6).value == seed["Area_SF"]
 
 
-def test_c_values_are_xlookup_formulas(empty_wb):
+def test_c_values_are_literal_for_seeded_rows_and_formula_beyond(empty_wb):
     build_da_catchments_sheet(empty_wb)
     ws = empty_wb["DA_Catchments"]
-    c_2_10_formula = ws.cell(row=2, column=7).value
-    c_25_formula = ws.cell(row=2, column=8).value
+    first_blank = 2 + len(BLADENSBURG_DA_CATCHMENTS)
+    c_2_10_formula = ws.cell(row=first_blank, column=7).value
+    c_25_formula = ws.cell(row=first_blank, column=8).value
     assert "Landuse_Lookup" in str(c_2_10_formula)
     assert "Landuse_Lookup" in str(c_25_formula)
+    # Legacy-seeded rows carry their composite C directly.
+    assert ws.cell(row=2, column=7).value == BLADENSBURG_DA_CATCHMENTS[0]["C_2_10"]
 
 
 def test_soil_dropdown_present(empty_wb):

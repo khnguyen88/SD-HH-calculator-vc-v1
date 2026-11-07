@@ -66,6 +66,20 @@ def test_no_hard_coded_rationals_refs_anywhere(built_wb):
                     )
 
 
+def test_future_functions_are_xlfn_prefixed(built_wb):
+    """Excel 365 shows #NAME? for bare post-2007 function names stored in OOXML."""
+    import re
+    bare = re.compile(r"(?<![\w.])(XLOOKUP|XMATCH|IFS|SWITCH|FILTER|MAXIFS|MINIFS)\(")
+    for sheet_name in built_wb.sheetnames:
+        ws = built_wb[sheet_name]
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    assert not bare.search(cell.value), (
+                        f"{sheet_name} {cell.coordinate}: unprefixed function: {cell.value}"
+                    )
+
+
 def test_no_ref_errors_anywhere(built_wb):
     """Guard: no #REF!/#NAME? literals baked into the builder output."""
     for sheet_name in built_wb.sheetnames:

@@ -33,19 +33,29 @@ def build_da_catchments_sheet(wb: Workbook) -> None:
         ws.cell(row=row, column=4, value=seed["Slope"])
         ws.cell(row=row, column=5, value=seed["Landuse"])
         ws.cell(row=row, column=6, value=seed["Area_SF"])
+        # Legacy projects carry composite C directly; a literal overrides the lookup.
+        if seed.get("C_2_10") is not None:
+            ws.cell(row=row, column=7, value=seed["C_2_10"])
+        if seed.get("C_25") is not None:
+            ws.cell(row=row, column=8, value=seed["C_25"])
 
     data_rows = max(DEFAULT_ROW_COUNTS["DA_Catchments"], len(BLADENSBURG_DA_CATCHMENTS))
 
     for i in range(data_rows):
         row = 2 + i
-        ws.cell(
-            row=row, column=7,
-            value=f'=IF(E{row}="","",XLOOKUP(E{row},Landuse_Lookup[Landuse],Landuse_Lookup[C_2-10],""))'
-        )
-        ws.cell(
-            row=row, column=8,
-            value=f'=IF(E{row}="","",XLOOKUP(E{row},Landuse_Lookup[Landuse],Landuse_Lookup[C_25],""))'
-        )
+        # Numeric 0 (not "") keeps SUMPRODUCT from choking on text; the number format hides 0.
+        if ws.cell(row=row, column=7).value is None:
+            ws.cell(
+                row=row, column=7,
+                value=f'=IF(E{row}="",0,XLOOKUP(E{row},Landuse_Lookup[Landuse],Landuse_Lookup[C_2-10],0))'
+            )
+        if ws.cell(row=row, column=8).value is None:
+            ws.cell(
+                row=row, column=8,
+                value=f'=IF(E{row}="",0,XLOOKUP(E{row},Landuse_Lookup[Landuse],Landuse_Lookup[C_25],0))'
+            )
+        ws.cell(row=row, column=7).number_format = "0.000;-0.000;"
+        ws.cell(row=row, column=8).number_format = "0.000;-0.000;"
 
     last_row = 1 + data_rows
     table = Table(displayName="DA_Catchments", ref=f"A1:I{last_row}")

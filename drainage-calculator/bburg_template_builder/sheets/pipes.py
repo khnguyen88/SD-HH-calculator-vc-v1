@@ -9,7 +9,7 @@ from bburg_template_builder.seed_data import (
 
 
 HEADERS = ["Pipe_ID", "From_Structure", "To_Structure", "Length_ft",
-           "Size_in", "Material", "Manning_n", "Slope_ftft"]
+           "Size_in", "Material", "Manning_n", "Slope_ftft", "Design_Q_cfs"]
 
 MATERIAL_LIST = tuple(MATERIAL_MANNING.keys())
 PIPE_SIZE_LIST = tuple(str(int(p[0])) for p in PIPE_PROPERTIES)
@@ -29,6 +29,7 @@ def build_pipes_sheet(wb: Workbook) -> None:
         ws.cell(row=row, column=5, value=p["Size_in"])
         ws.cell(row=row, column=6, value=p["Material"])
         ws.cell(row=row, column=8, value=p["Slope_ftft"])
+        ws.cell(row=row, column=9, value=p.get("Design_Q_cfs"))
 
     data_rows = max(DEFAULT_ROW_COUNTS["Pipes"], len(BLADENSBURG_PIPES))
     for i in range(data_rows):
@@ -48,7 +49,7 @@ def build_pipes_sheet(wb: Workbook) -> None:
         )
 
     last_row = 1 + data_rows
-    table = Table(displayName="Pipes", ref=f"A1:H{last_row}")
+    table = Table(displayName="Pipes", ref=f"A1:I{last_row}")
     table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
     ws.add_table(table)
 
@@ -81,3 +82,4 @@ def build_pipes_sheet(wb: Workbook) -> None:
     ws.column_dimensions["C"].width = 14
     for col in ("D", "E", "F", "G", "H"):
         ws.column_dimensions[col].width = 11
+    ws.column_dimensions["I"].width = 13

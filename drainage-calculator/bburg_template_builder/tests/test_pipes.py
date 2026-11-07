@@ -12,7 +12,7 @@ def test_headers(empty_wb):
     build_pipes_sheet(empty_wb)
     ws = empty_wb["Pipes"]
     expected = ["Pipe_ID", "From_Structure", "To_Structure", "Length_ft",
-                "Size_in", "Material", "Manning_n", "Slope_ftft"]
+                "Size_in", "Material", "Manning_n", "Slope_ftft", "Design_Q_cfs"]
     actual = [ws.cell(row=1, column=c).value for c in range(1, len(expected) + 1)]
     assert actual == expected
 

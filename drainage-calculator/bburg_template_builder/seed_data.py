@@ -223,20 +223,59 @@ DEFAULT_ROW_COUNTS: Final[dict[str, int]] = {
 }
 
 # --- Bladensburg SD-1 example data (ships pre-populated so the template opens with a working example) ---
+# Values transcribed from docs/bburg-p-c-legacy.xlsx (10-yr MoCo design):
+#   DA_Catchments  <- 'Inlet Spacing_10-yr' cols D (area, ac) and E (composite C)
+#   Structures     <- '10 Yr Pipe Capacity' P/Q (inverts), R (rim of FROM structure);
+#                     bend angles from ' 10 Yr MoCo HGL' T (0, 9, 4 deg)
+#   Pipes          <- '10 Yr Pipe Capacity' rows 14-27 (S length, T slope, M size, L design Q)
+# The legacy workbook has no 25-yr composite C, so C_25 mirrors C_2-10.
 BLADENSBURG_DA_CATCHMENTS: Final[tuple[dict, ...]] = (
-    {"Inlet_ID": "EX-I-1", "DA_ID": "DA-1a", "Soil": "D", "Slope": "2-7%", "Landuse": "Impervious",  "Area_SF": 2209.54},
-    {"Inlet_ID": "EX-I-1", "DA_ID": "DA-1b", "Soil": "D", "Slope": "2-7%", "Landuse": "Open Space",  "Area_SF":  184.74},
-    {"Inlet_ID": "EX-I-2", "DA_ID": "DA-2a", "Soil": "D", "Slope": "2-7%", "Landuse": "Impervious",  "Area_SF": 45469.71},
-    {"Inlet_ID": "EX-I-2", "DA_ID": "DA-2b", "Soil": "D", "Slope": "2-7%", "Landuse": "Open Space",  "Area_SF": 42247.93},
+    {"Inlet_ID": "EX-I-1", "DA_ID": "DA-EX-I-1", "Soil": "---", "Slope": "---", "Landuse": "---", "Area_SF":  2394.28, "C_2_10": 0.849075, "C_25": 0.849075},
+    {"Inlet_ID": "EX-I-2", "DA_ID": "DA-EX-I-2", "Soil": "---", "Slope": "---", "Landuse": "---", "Area_SF": 87717.64, "C_2_10": 0.582121, "C_25": 0.582121},
+    {"Inlet_ID": "I-1",    "DA_ID": "DA-I-1",    "Soil": "---", "Slope": "---", "Landuse": "---", "Area_SF":  8098.19, "C_2_10": 0.768553, "C_25": 0.768553},
+    {"Inlet_ID": "I-2",    "DA_ID": "DA-I-2",    "Soil": "---", "Slope": "---", "Landuse": "---", "Area_SF":  9336.52, "C_2_10": 0.840410, "C_25": 0.840410},
+    {"Inlet_ID": "I-3",    "DA_ID": "DA-I-3",    "Soil": "---", "Slope": "---", "Landuse": "---", "Area_SF": 14440.27, "C_2_10": 0.558810, "C_25": 0.558810},
+    {"Inlet_ID": "I-4",    "DA_ID": "DA-I-4",    "Soil": "---", "Slope": "---", "Landuse": "---", "Area_SF":  3359.35, "C_2_10": 0.869775, "C_25": 0.869775},
+    {"Inlet_ID": "I-5",    "DA_ID": "DA-I-5",    "Soil": "---", "Slope": "---", "Landuse": "---", "Area_SF": 28993.14, "C_2_10": 0.654185, "C_25": 0.654185},
+    {"Inlet_ID": "I-6",    "DA_ID": "DA-I-6",    "Soil": "---", "Slope": "---", "Landuse": "---", "Area_SF": 11222.62, "C_2_10": 0.608173, "C_25": 0.608173},
+    {"Inlet_ID": "I-7",    "DA_ID": "DA-I-7",    "Soil": "---", "Slope": "---", "Landuse": "---", "Area_SF": 107173.37, "C_2_10": 0.577885, "C_25": 0.577885},
 )
 
 BLADENSBURG_STRUCTURES: Final[tuple[dict, ...]] = (
-    {"Structure_ID": "EX-I-1",  "Type": "inlet",   "Description": "Existing inlet 1",  "Rim_Elev": 70.00, "Inv_In_Elev": 65.00, "Inv_Out_Elev": 64.90, "Angle_deg": 0},
-    {"Structure_ID": "EX-I-2",  "Type": "inlet",   "Description": "Existing inlet 2",  "Rim_Elev": 69.00, "Inv_In_Elev": 64.00, "Inv_Out_Elev": 63.90, "Angle_deg": 0},
-    {"Structure_ID": "OUTFALL", "Type": "outfall", "Description": "Free outfall",      "Rim_Elev": 65.00, "Inv_In_Elev": 60.00, "Inv_Out_Elev": 60.00, "Angle_deg": 0},
+    {"Structure_ID": "I-3",       "Type": "inlet",   "Description": "Inlet I-3",             "Rim_Elev": 313.12, "Inv_In_Elev": 70.0000, "Inv_Out_Elev": 70.0000, "Angle_deg": 0},
+    {"Structure_ID": "MH-3",      "Type": "manhole", "Description": "Manhole MH-3",          "Rim_Elev": 300.00, "Inv_In_Elev": 69.7700, "Inv_Out_Elev": 69.6700, "Angle_deg": 0},
+    {"Structure_ID": "MH-2",      "Type": "manhole", "Description": "Manhole MH-2",          "Rim_Elev": 300.00, "Inv_In_Elev": 69.1100, "Inv_Out_Elev": 69.0100, "Angle_deg": 0},
+    {"Structure_ID": "I-1",       "Type": "inlet",   "Description": "Inlet I-1",             "Rim_Elev": 314.19, "Inv_In_Elev": 68.5100, "Inv_Out_Elev": 68.5100, "Angle_deg": 0},
+    {"Structure_ID": "I-2",       "Type": "inlet",   "Description": "Inlet I-2",             "Rim_Elev": 313.18, "Inv_In_Elev": 68.3000, "Inv_Out_Elev": 68.2000, "Angle_deg": 9},
+    {"Structure_ID": "EX-I-2",    "Type": "inlet",   "Description": "Existing inlet EX-I-2", "Rim_Elev": 313.18, "Inv_In_Elev": 67.4600, "Inv_Out_Elev": 67.4600, "Angle_deg": 0},
+    {"Structure_ID": "MH-1",      "Type": "manhole", "Description": "Manhole MH-1",          "Rim_Elev": 315.21, "Inv_In_Elev": 67.4000, "Inv_Out_Elev": 67.3000, "Angle_deg": 0},
+    {"Structure_ID": "EX-I-1",    "Type": "inlet",   "Description": "Existing inlet EX-I-1", "Rim_Elev": 312.48, "Inv_In_Elev": 67.1000, "Inv_Out_Elev": 67.0000, "Angle_deg": 0},
+    {"Structure_ID": "I-7",       "Type": "inlet",   "Description": "Inlet I-7",             "Rim_Elev": 312.08, "Inv_In_Elev": 67.1000, "Inv_Out_Elev": 67.1000, "Angle_deg": 0},
+    {"Structure_ID": "CULVERT-A", "Type": "outfall", "Description": "Outfall culvert A",     "Rim_Elev":  68.87, "Inv_In_Elev": 66.8700, "Inv_Out_Elev": 66.8700, "Angle_deg": 0},
+    {"Structure_ID": "I-6",       "Type": "inlet",   "Description": "Inlet I-6",             "Rim_Elev": 313.37, "Inv_In_Elev": 72.4100, "Inv_Out_Elev": 72.4100, "Angle_deg": 0},
+    {"Structure_ID": "I-5",       "Type": "inlet",   "Description": "Inlet I-5",             "Rim_Elev": 313.37, "Inv_In_Elev": 72.0900, "Inv_Out_Elev": 71.9900, "Angle_deg": 0},
+    {"Structure_ID": "I-4",       "Type": "inlet",   "Description": "Inlet I-4",             "Rim_Elev": 308.27, "Inv_In_Elev": 71.4100, "Inv_Out_Elev": 71.3677, "Angle_deg": 4},
+    {"Structure_ID": "CULVERT-B", "Type": "outfall", "Description": "Outfall culvert B",     "Rim_Elev":  72.54, "Inv_In_Elev": 71.0400, "Inv_Out_Elev": 71.0400, "Angle_deg": 0},
 )
 
 BLADENSBURG_PIPES: Final[tuple[dict, ...]] = (
-    {"Pipe_ID": "P-1", "From_Structure": "EX-I-1", "To_Structure": "EX-I-2",  "Length_ft": 100, "Size_in": 15, "Material": "RCP", "Slope_ftft": 0.009},
-    {"Pipe_ID": "P-2", "From_Structure": "EX-I-2", "To_Structure": "OUTFALL", "Length_ft":  80, "Size_in": 18, "Material": "RCP", "Slope_ftft": 0.049},
+    {"Pipe_ID": "p1",  "From_Structure": "I-3",       "To_Structure": "MH-3",      "Length_ft": 23.41, "Size_in": 12, "Material": "RCP", "Slope_ftft": 0.009824, "Design_Q_cfs": 0.989219, "Chain": "A"},
+    {"Pipe_ID": "p2",  "From_Structure": "MH-3",      "To_Structure": "MH-2",      "Length_ft": 56.27, "Size_in": 12, "Material": "RCP", "Slope_ftft": 0.009952, "Design_Q_cfs": 0.995147, "Chain": "A"},
+    {"Pipe_ID": "p3",  "From_Structure": "MH-2",      "To_Structure": "I-2",       "Length_ft": 71.21, "Size_in": 12, "Material": "RCP", "Slope_ftft": 0.009971, "Design_Q_cfs": 1.007003, "Chain": "A"},
+    {"Pipe_ID": "p4",  "From_Structure": "I-1",       "To_Structure": "I-2",       "Length_ft": 21.53, "Size_in": 12, "Material": "RCP", "Slope_ftft": 0.009754, "Design_Q_cfs": 0.953061, "Chain": "A"},
+    {"Pipe_ID": "p5",  "From_Structure": "I-2",       "To_Structure": "MH-1",      "Length_ft": 80.02, "Size_in": 15, "Material": "RCP", "Slope_ftft": 0.009998, "Design_Q_cfs": 3.395725, "Chain": "A"},
+    {"Pipe_ID": "p6",  "From_Structure": "EX-I-2",    "To_Structure": "MH-1",      "Length_ft":  5.92, "Size_in": 21, "Material": "RCP", "Slope_ftft": 0.010135, "Design_Q_cfs": 6.259696, "Chain": "A"},
+    {"Pipe_ID": "p7",  "From_Structure": "MH-1",      "To_Structure": "EX-I-1",    "Length_ft": 19.61, "Size_in": 24, "Material": "RCP", "Slope_ftft": 0.010199, "Design_Q_cfs": 8.973837, "Chain": "A"},
+    {"Pipe_ID": "p8",  "From_Structure": "EX-I-1",    "To_Structure": "CULVERT-A", "Length_ft": 14.36, "Size_in": 24, "Material": "RCP", "Slope_ftft": 0.010000, "Design_Q_cfs": 11.261105, "Chain": "A"},
+    {"Pipe_ID": "p9",  "From_Structure": "I-7",       "To_Structure": "CULVERT-A", "Length_ft": 23.2878, "Size_in": 24, "Material": "RCP", "Slope_ftft": 0.009876, "Design_Q_cfs": 7.592448, "Chain": "A"},
+    {"Pipe_ID": "p10", "From_Structure": "I-6",       "To_Structure": "I-5",       "Length_ft": 32.03, "Size_in": 12, "Material": "RCP", "Slope_ftft": 0.009991, "Design_Q_cfs": 0.836709, "Chain": "B"},
+    {"Pipe_ID": "p11", "From_Structure": "I-5",       "To_Structure": "I-4",       "Length_ft": 29.56, "Size_in": 18, "Material": "RCP", "Slope_ftft": 0.019621, "Design_Q_cfs": 3.860538, "Chain": "B"},
+    {"Pipe_ID": "p12", "From_Structure": "I-4",       "To_Structure": "CULVERT-B", "Length_ft": 32.31, "Size_in": 18, "Material": "RCP", "Slope_ftft": 0.010142, "Design_Q_cfs": 4.396757, "Chain": "B"},
+)
+
+# Downstream-first walk order for the HGL sheet: both CULVERT-A reaches first, then the
+# trunk back upstream, then the Chain B branch.
+BLADENSBURG_HGL_ORDER: Final[tuple[str, ...]] = (
+    "p8", "p9", "p7", "p6", "p5", "p4", "p3", "p2", "p1",
+    "p12", "p11", "p10",
 )

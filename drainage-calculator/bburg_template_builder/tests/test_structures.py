@@ -42,6 +42,8 @@ def test_type_dropdown_has_six_options(empty_wb):
 def test_bladensburg_outfall_seeded(empty_wb):
     build_structures_sheet(empty_wb)
     ws = empty_wb["Structures"]
-    outfalls = [ws.cell(row=r, column=1).value for r in range(2, 10)
+    outfalls = [ws.cell(row=r, column=1).value
+                for r in range(2, 2 + len(BLADENSBURG_STRUCTURES))
                 if ws.cell(row=r, column=2).value == "outfall"]
-    assert "OUTFALL" in outfalls
+    assert "CULVERT-A" in outfalls
+    assert "CULVERT-B" in outfalls

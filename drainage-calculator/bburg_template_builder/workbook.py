@@ -17,6 +17,7 @@ from bburg_template_builder.sheets.pipe_capacity import build_pipe_capacity_shee
 from bburg_template_builder.sheets.pipes import build_pipes_sheet
 from bburg_template_builder.sheets.rationals_mcdot import build_rationals_sheet
 from bburg_template_builder.sheets.structures import build_structures_sheet
+from bburg_template_builder.xlfn import prefix_future_functions
 
 
 def build_workbook() -> Workbook:
@@ -51,4 +52,6 @@ def build_workbook() -> Workbook:
     build_pipe_capacity_sheets(wb)
     build_hgl_sheet(wb)
     build_hgl_example_sheet(wb)
+
+    prefix_future_functions(wb)
     return wb

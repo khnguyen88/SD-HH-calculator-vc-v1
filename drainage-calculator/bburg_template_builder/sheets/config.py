@@ -6,7 +6,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 
 # (name, default_value, note). Values live on Config!$B$<row>, names on $A$<row>.
 CONFIG_ROWS: tuple[tuple[str, object, str], ...] = (
-    ("County_Selected",    "Prince George's",                 "Dropdown: NOAA14[County]"),
+    ("County_Selected",    "Montgomery",                      "Dropdown: NOAA14[County]"),
     ("Storm_Primary",      "10yr",                             "Dropdown: 10yr or 25yr (storms with Pipe Capacity sheets)"),
     ("HGL_Method",         "HEC-22 EGL (d/s crown floor)",    "HEC-22 (default) or Legacy both-end crown floor"),
     ("Project_Name",       "",                                 ""),
