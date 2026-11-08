@@ -94,7 +94,7 @@
     cursor: { kind: null, id: null, pathStack: [] },
     ui: { view: "iso", mode: "explore", hglMethod: "hec22",
           freeRoam: false, branchChoices: { byStructureId: {} },
-          expandedRowId: null }
+          expandedRowId: null, lastCursorId: null }
   };
   // ==== state: end ====
 
@@ -642,6 +642,8 @@
     // Any import invalidates the previous walk: reset the cursor and branch memory.
     state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
     state.ui.branchChoices = { byStructureId: {} };
+    state.ui.expandedRowId = null;
+    state.ui.lastCursorId = null;
   }
   // --- xlsx importer (task-06) ---
   async function importFromXlsxFile(file) {
@@ -776,6 +778,8 @@
     // Any import invalidates the previous walk: reset the cursor and branch memory.
     state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
     state.ui.branchChoices = { byStructureId: {} };
+    state.ui.expandedRowId = null;
+    state.ui.lastCursorId = null;
   }
   // --- auto-layout (task-07) ---
   function autoLayoutStructures(structures, pipes, outfallSid) {
@@ -1769,6 +1773,8 @@
   // ==== edit-mode: end ====
 
   // ==== ledger-render: begin ====
+  // Sentinel id that never matches a real row → effectively collapses every row.
+  const LEDGER_COLLAPSED = "(collapsed)";
   // --- Calc-sheet helpers (task-27) ---
 
   function csSection(label, children) {
@@ -1831,20 +1837,34 @@
     // id, so it must never be treated as the cursor target (that would expand
     // both the real row and the summary).
     const cursorId = state.cursor && state.cursor.id;
+    // Auto-follow: whenever the cursor moves, re-expand the (new) current row.
+    if (state.ui.lastCursorId !== cursorId) {
+      state.ui.expandedRowId = null;
+      state.ui.lastCursorId = cursorId;
+    }
     for (const row of annotated) {
       const isCurrent = row.kind !== "end" && row.id === cursorId;
       const isExpanded = state.ui.expandedRowId === null
         ? isCurrent
         : (row.kind !== "end" && row.id === state.ui.expandedRowId);
-      const collapsed = el("div", {
-        style: "padding:3px 6px; font-family:ui-monospace,monospace; cursor:pointer; "
+      const isEnd = row.kind === "end";
+      const rowAttrs = {
+        style: "padding:3px 6px; font-family:ui-monospace,monospace; "
+             + (isEnd ? "" : "cursor:pointer; ")
              + (isCurrent ? "background:#ffeaa7;" : ""),
-        onclick: () => {
-          // Click a row to expand it; click the already-expanded row to return to auto-follow.
-          state.ui.expandedRowId = (state.ui.expandedRowId === row.id) ? null : row.id;
+        "aria-expanded": isExpanded ? "true" : "false"
+      };
+      if (!isEnd) {
+        rowAttrs.onclick = () => {
+          // Click the row currently shown expanded to collapse it; any other row locks it open.
+          const shownExpanded = state.ui.expandedRowId === null
+            ? (row.kind !== "end" && row.id === cursorId)
+            : state.ui.expandedRowId === row.id;
+          state.ui.expandedRowId = shownExpanded ? LEDGER_COLLAPSED : row.id;
           renderLedger();
-        }
-      }, oneLineForRow(row));
+        };
+      }
+      const collapsed = el("div", rowAttrs, oneLineForRow(row));
       host.appendChild(collapsed);
       if (isExpanded) {
         const details = el("div", { style: "padding:4px 20px;" }, renderExpandedRow(row));
@@ -1854,10 +1874,8 @@
   }
 
   // --- Enter key expand/collapse (task-43) ---
-  // Sentinel id that never matches a real row → effectively collapses every row.
-  const LEDGER_COLLAPSED = "(collapsed)";
-
   document.addEventListener("keydown", (ev) => {
+    if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
     if (ev.key !== "Enter") return;
     if (typeof isTypingTarget === "function" && isTypingTarget(ev)) return;
     if (typeof isBranchPopupOpen === "function" && isBranchPopupOpen()) return;
