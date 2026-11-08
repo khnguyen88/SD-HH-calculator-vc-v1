@@ -2419,7 +2419,9 @@
     const area = el("div", { id: "printArea" });
     if (!state.imported) return area;
 
-    const startId = state.ui.walkStartId
+    const startId = (typeof resolveWalkStart === "function"
+      ? resolveWalkStart(state.imported, state.ui) : null)
+      || state.ui.walkStartId
       || (state.imported.outfall && state.imported.outfall.structureId) || "—";
     area.appendChild(el("div", { class: "print-header",
       style: "margin-bottom:12px; border-bottom:2px solid #000; padding-bottom:8px;" }, [
@@ -2470,18 +2472,30 @@
       return;
     }
 
+    // Remove any stale area from a previous invocation before building a new one.
+    const stale = document.getElementById("printArea");
+    if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+
     const area = buildPrintArea();
     document.body.appendChild(area);
     document.body.classList.add("print-mode");
 
+    // Register cleanup BEFORE printing so a synchronous afterprint is not missed.
+    // Idempotent, and scoped to THIS area (not a global id lookup).
+    let cleaned = false;
     const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
       document.body.classList.remove("print-mode");
-      const a = document.getElementById("printArea");
-      if (a && a.parentNode) a.parentNode.removeChild(a);
+      if (area.parentNode) area.parentNode.removeChild(area);
     };
-    if (typeof window.print === "function") window.print();
     window.addEventListener("afterprint", cleanup, { once: true });
     setTimeout(cleanup, 1500);   // fallback: some environments never fire afterprint
+    try {
+      if (typeof window.print === "function") window.print();
+    } catch (e) {
+      cleanup();
+    }
   }
 
   // Toolbar print button + a small non-blocking notice span.
