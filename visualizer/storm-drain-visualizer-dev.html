@@ -42,7 +42,7 @@
   <span style="flex:1"></span>
   <button id="modeToggle" type="button">▸ explore</button>
 </div>
-<div id="warningBanner" style="display:none; padding:6px 12px; background:#ffd60a; color:#1a1a1a; font-size:12px; font-family:var(--mono); border-bottom:1px solid #d4a800;"></div>
+<div id="warningBanner" role="status" style="display:none; padding:6px 12px; background:#ffd60a; color:#1a1a1a; font-size:12px; font-family:var(--mono); border-bottom:1px solid #d4a800;"></div>
 <div class="viewframe">
   <div class="tools">
     <span id="viewToggle" style="cursor:pointer">[ISO | profile]</span>
@@ -2203,11 +2203,14 @@
 
   // Details disclosure is UI-only; kept out of `state` (not persisted/exported).
   let warningDetailsOpen = false;
+  // Signature of the last full render; lets renderAll skip unchanged rebuilds.
+  let warningSignature = null;
 
   // Called by both importers: a new import clears dismissal and collapses details.
   function resetWarningUi() {
     state.ui.warningsDismissed = false;
     warningDetailsOpen = false;
+    warningSignature = null; // force a rebuild on the next render
   }
 
   function renderWarningBanner() {
@@ -2218,6 +2221,13 @@
     const splitterIds = (a && Array.isArray(a.splitterIds)) ? a.splitterIds : [];
     const missingQ = (a && Array.isArray(a.missingDesignQ)) ? a.missingDesignQ : [];
     const hasWarning = !!(a && !state.ui.warningsDismissed && (splitterIds.length || missingQ.length));
+
+    // Skip rebuilding when nothing that affects the banner changed (renderAll runs often).
+    const sig = hasWarning
+      ? JSON.stringify([splitterIds, missingQ, warningDetailsOpen, state.ui.warningsDismissed])
+      : "hidden";
+    if (sig === warningSignature) return;
+    warningSignature = sig;
 
     host.innerHTML = "";
     if (!hasWarning) { host.style.display = "none"; return; }
@@ -2242,10 +2252,23 @@
 
     // --- controls ---
     const detailsBtn = el("button", {
+      id: "warningBannerDetailsBtn",
       type: "button",
       style: "background:transparent; border:none; cursor:pointer; font-weight:600; font-family:inherit; font-size:12px;",
       "aria-expanded": warningDetailsOpen ? "true" : "false",
-      onclick: () => { warningDetailsOpen = !warningDetailsOpen; renderWarningBanner(); }
+      "aria-controls": "warningBannerDetails",
+      onclick: () => {
+        // Mutate in place (no rebuild) so keyboard focus is preserved.
+        warningDetailsOpen = !warningDetailsOpen;
+        const d = document.getElementById("warningBannerDetails");
+        if (d) d.style.display = warningDetailsOpen ? "block" : "none";
+        const btn = document.getElementById("warningBannerDetailsBtn");
+        if (btn) {
+          btn.textContent = warningDetailsOpen ? "details ▴" : "details ▾";
+          btn.setAttribute("aria-expanded", warningDetailsOpen ? "true" : "false");
+        }
+        warningSignature = null; // details visibility changed; allow a later rebuild
+      }
     }, warningDetailsOpen ? "details ▴" : "details ▾");
 
     const dismissBtn = el("button", {
@@ -2261,19 +2284,20 @@
     host.appendChild(el("div", { style: "display:flex; gap:8px; align-items:baseline;" },
       [summary, controls]));
 
-    // --- expanded details ---
-    if (warningDetailsOpen) {
-      const details = el("div", { style: "margin-top:4px; font-size:11px; line-height:1.5;" });
-      for (const sid of splitterIds) {
-        const outs = pipes.filter((p) => p.fromId === sid).map((p) => p.id);
-        details.appendChild(el("div", null,
-          "Splitter " + sid + " downstream pipes: " + (outs.length ? outs.join(", ") : "(none)")));
-      }
-      for (const pid of missingQ) {
-        details.appendChild(el("div", null, "Pipe " + pid + ": no Design Q (friction 0.000 ft)"));
-      }
-      host.appendChild(details);
+    // --- details (always built; visibility toggled in place) ---
+    const details = el("div", {
+      id: "warningBannerDetails",
+      style: "margin-top:4px; font-size:11px; line-height:1.5; display:" + (warningDetailsOpen ? "block" : "none") + ";"
+    });
+    for (const sid of splitterIds) {
+      const outs = pipes.filter((p) => p.fromId === sid).map((p) => p.id);
+      details.appendChild(el("div", null,
+        "Splitter " + sid + " downstream pipes: " + (outs.length ? outs.join(", ") : "(none)")));
     }
+    for (const pid of missingQ) {
+      details.appendChild(el("div", null, "Pipe " + pid + ": no Design Q (friction 0.000 ft)"));
+    }
+    host.appendChild(details);
   }
   // ==== warning-banner: end ====
 
