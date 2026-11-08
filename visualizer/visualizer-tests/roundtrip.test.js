@@ -20,7 +20,13 @@ const SEED = {
     }
   ],
   kbTable: null,
-  outfall: { structureId: "OUT", tailwaterElev: 100 }
+  outfall: { structureId: "OUT", tailwaterElev: 100 },
+  drainageAreas: [
+    { id: "DA-1", structureId: "A", areaAc: 1.5, C: 0.9, tc: 12 }
+  ],
+  tr55Segments: [
+    { drainageAreaId: "DA-1", order: 1, type: "sheet", n: 0.24, L: 50, s: 0.01, P2: 3.2, surface: "lawn", area: 2000, wp: 40 }
+  ]
 };
 
 // jsdom 24 does not implement Blob/File.prototype.text(); browsers do, and the
@@ -79,9 +85,16 @@ test("roundtrip: tweaked export round-trips an override", async () => {
     0.006,
     "override merged into pipe field"
   );
+  // Normalize across the jsdom realm boundary so deepStrictEqual (which
+  // compares prototypes) sees plain objects.
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  assert.deepStrictEqual(plain(tweaked.drainageAreas), SEED.drainageAreas);
+  assert.deepStrictEqual(plain(tweaked.tr55Segments), SEED.tr55Segments);
 
   // Re-import the tweaked payload: override restored, baseline clean.
   await bootWithJson(window, tweaked);
+  assert.deepStrictEqual(plain(window.state.imported.drainageAreas), SEED.drainageAreas);
+  assert.deepStrictEqual(plain(window.state.imported.tr55Segments), SEED.tr55Segments);
   assert.strictEqual(window.state.ui.mode, "edit", "edit mode restored");
   assert.strictEqual(window.state.overrides.byId.P1.slope, 0.006, "override restored");
   assert.strictEqual(

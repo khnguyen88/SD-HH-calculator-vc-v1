@@ -595,7 +595,6 @@
 
   async function importFromJsonFile(file) {
     const text = await file.text();
-    state.ui.fileName = (file && file.name) || "";
     let obj;
     try { obj = JSON.parse(text); }
     catch (e) { throw new Error("JSON parse error: " + e.message); }
@@ -611,6 +610,7 @@
         const copy = Object.assign({}, p);
         copy.shape = normalizeShape(copy.shape);
         copy.size = normalizeSize(copy.shape, copy.size);
+        copy.splitRole = String(copy.splitRole || "").toLowerCase();
         return copy;
       }),
       outfall: Object.assign({}, obj.outfall),
@@ -640,6 +640,7 @@
       state.overrides.byId[ov.elementId][ov.field] = ov.newValue;
     }
 
+    state.ui.fileName = (file && file.name) || "";
     state.imported = imported;
     state.ui.mode = listOverrides().length > 0 ? "edit" : "explore";
 
@@ -667,7 +668,6 @@
     const pick = (...vals) => { for (const v of vals) if (v != null && v !== "") return v; return null; };
 
     const buf = await file.arrayBuffer();
-    state.ui.fileName = (file && file.name) || "";
     const wb = XLSX.read(buf, { type: "array" });
 
     const sh = (name) => {
@@ -801,6 +801,7 @@
       wp:     pickNum(r["Wetted Perimeter Pw (ft)"])
     }));
 
+    state.ui.fileName = (file && file.name) || "";
     state.overrides = { byId: {} };
     state.imported = {
       structures, pipes,
@@ -919,6 +920,7 @@
     const tr55Segments  = Array.isArray(imported.tr55Segments) ? imported.tr55Segments : [];
     const segsByDa = Object.create(null);
     for (const seg of tr55Segments) {
+      if (!seg || typeof seg !== "object") continue;
       const key = seg.drainageAreaId;
       (segsByDa[key] = segsByDa[key] || []).push(seg);
     }
@@ -927,6 +929,7 @@
     }
     const tr55ByStructureId = Object.create(null);
     for (const da of drainageAreas) {
+      if (!da || typeof da !== "object") continue;
       const sid = da.structureId;
       if (!sid) continue;
       (tr55ByStructureId[sid] = tr55ByStructureId[sid] || []).push({
@@ -1845,6 +1848,8 @@
       structures, pipes,
       outfall: Object.assign({}, state.imported.outfall),
       kbTable: state.imported.kbTable || null,
+      drainageAreas: (state.imported.drainageAreas || []).map((o) => Object.assign({}, o)),
+      tr55Segments:  (state.imported.tr55Segments || []).map((o) => Object.assign({}, o)),
       _overrides: ovs
     };
   }
