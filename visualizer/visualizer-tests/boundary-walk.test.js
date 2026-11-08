@@ -1,5 +1,5 @@
 /*
- * Hardening tests for the v81.3 walk-start feature:
+ * Hardening tests for the v81.3 walk-start feature (bounds hardened in v81.9):
  *  - boundary-EGL precedence per design §3.4 (outfall / fixed / crown / rim / zero),
  *    including a walk start whose structure record is missing but names the outfall;
  *  - resolveWalkStart fallback when ui.walkStartId is invalid or absent;
@@ -118,6 +118,24 @@ test("resolveWalkStart: valid id wins; invalid id falls back to outfall; none �
     "no outfall and invalid id → null");
 });
 
+test("json import: structure type is lowercased so outfall detection survives uppercase payloads", async () => {
+  const { window } = loadVisualizer();
+  await boot(window, {
+    schemaVersion: 1, sourceApp: "test",
+    structures: [
+      { id: "OUT", type: "Outfall" },
+      { id: "A",   type: "MANHOLE" }
+    ],
+    pipes: [{ id: "P1", fromId: "A", toId: "OUT", shape: "circular", size: 18,
+              n: 0.013, slope: 0.005, length: 100, angle: 0, designQ: 5 }],
+    outfall: { structureId: "OUT", tailwaterElev: 100 }
+  });
+  const types = Array.from(window.state.imported.structures, (s) => s.type);
+  assert.deepStrictEqual(types, ["outfall", "manhole"], "types normalized to lowercase");
+  assert.deepStrictEqual(Array.from(window.state.analysis.outfallIds), ["OUT"],
+    "analyzeImported still detects the outfall");
+});
+
 // --- walk-from select drives the ledger start -------------------------------
 
 test("walk-from select: choosing a structure changes the ledger start boundary", async () => {
@@ -150,6 +168,38 @@ test("walk-from select: choosing a structure changes the ledger start boundary",
                                   window.state.imported.kbTable, window.state.ui.hglMethod);
   assert.strictEqual(rows[0].after, 101, "start EGL is A's crown");
   assert.strictEqual(rows[0].detail.boundaryReason, "crown boundary", "boundary follows the chosen start");
+});
+
+test("walk-from select: rebuilds optgroups when a start's group changes", async () => {
+  const { window, document } = loadVisualizer();
+  await boot(window, {
+    schemaVersion: 1, sourceApp: "test",
+    structures: [
+      { id: "OUT", type: "outfall", x: 0, y:    0, rim: 103, startElev: 100, crown: 99 },
+      { id: "A",   type: "manhole", x: 0, y: -100, rim: 108, startElev: 102, crown: 101 }
+    ],
+    pipes: [{ id: "P1", fromId: "A", toId: "OUT", shape: "circular", size: 18,
+              n: 0.013, slope: 0.005, length: 120, angle: 0, designQ: 8.5 }],
+    outfall: { structureId: "OUT", tailwaterElev: 100 }
+  });
+  window.renderAll();
+
+  let sel = document.getElementById("walkFromSelect");
+  assert.deepStrictEqual(
+    Array.from(sel.querySelectorAll("optgroup")).map((g) => g.label),
+    ["Outfalls", "Structures"], "initial grouping");
+
+  // Move A into the outfall group in the analysis, then re-render the select.
+  window.state.analysis.walkStarts.find((w) => w.id === "A").group = "outfall";
+  window.renderWalkFromSelect();
+
+  sel = document.getElementById("walkFromSelect");
+  assert.deepStrictEqual(
+    Array.from(sel.querySelectorAll("optgroup")).map((g) => g.label),
+    ["Outfalls"], "Structures group disappears once empty");
+  assert.deepStrictEqual(
+    Array.from(sel.querySelectorAll("optgroup[label='Outfalls'] option")).map((o) => o.value),
+    ["OUT", "A"], "A now listed under Outfalls");
 });
 
 // --- profile TR-55 band gating ----------------------------------------------
