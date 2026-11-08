@@ -42,6 +42,7 @@
   <span style="flex:1"></span>
   <button id="modeToggle" type="button">▸ explore</button>
 </div>
+<div id="warningBanner" style="display:none; padding:6px 12px; background:#ffd60a; color:#1a1a1a; font-size:12px; font-family:var(--mono); border-bottom:1px solid #d4a800;"></div>
 <div class="viewframe">
   <div class="tools">
     <span id="viewToggle" style="cursor:pointer">[ISO | profile]</span>
@@ -96,7 +97,7 @@
     ui: { view: "iso", mode: "explore", hglMethod: "hec22",
           freeRoam: false, branchChoices: { byStructureId: {} },
           expandedRowId: null, lastCursorId: null,
-          fileName: "", walkStartId: null }
+          fileName: "", walkStartId: null, warningsDismissed: false }
   };
   // ==== state: end ====
 
@@ -652,6 +653,7 @@
     // Any import invalidates the previous walk: reset the cursor and branch memory.
     state.analysis = analyzeImported(state.imported);
     state.ui.walkStartId = state.analysis ? state.analysis.defaultWalkStart : null;
+    resetWarningUi();
     state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
     state.ui.branchChoices = { byStructureId: {} };
     state.ui.expandedRowId = null;
@@ -815,6 +817,7 @@
     // Any import invalidates the previous walk: reset the cursor and branch memory.
     state.analysis = analyzeImported(state.imported);
     state.ui.walkStartId = state.analysis ? state.analysis.defaultWalkStart : null;
+    resetWarningUi();
     state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
     state.ui.branchChoices = { byStructureId: {} };
     state.ui.expandedRowId = null;
@@ -2194,12 +2197,93 @@
   }
   // ==== ledger-render: end ====
 
+  // ==== warning-banner: begin ====
+  // v81.2 (design §4.1, §4.4) — unified amber banner below the topbar.
+  // Renders splitter detection and missing-Design-Q warnings from state.analysis.
+
+  // Details disclosure is UI-only; kept out of `state` (not persisted/exported).
+  let warningDetailsOpen = false;
+
+  // Called by both importers: a new import clears dismissal and collapses details.
+  function resetWarningUi() {
+    state.ui.warningsDismissed = false;
+    warningDetailsOpen = false;
+  }
+
+  function renderWarningBanner() {
+    const host = document.getElementById("warningBanner");
+    if (!host) return;
+
+    const a = state.analysis;
+    const splitterIds = (a && Array.isArray(a.splitterIds)) ? a.splitterIds : [];
+    const missingQ = (a && Array.isArray(a.missingDesignQ)) ? a.missingDesignQ : [];
+    const hasWarning = !!(a && !state.ui.warningsDismissed && (splitterIds.length || missingQ.length));
+
+    host.innerHTML = "";
+    if (!hasWarning) { host.style.display = "none"; return; }
+    host.style.display = "block";
+
+    const pipes = (state.imported && Array.isArray(state.imported.pipes)) ? state.imported.pipes : [];
+
+    // --- summary rows ---
+    const summary = el("div", { style: "flex:1; display:flex; flex-direction:column; gap:2px;" });
+    for (const sid of splitterIds) {
+      const primaryId = a.primaryPipeByStructureId ? a.primaryPipeByStructureId[sid] : null;
+      const p = pipes.find((x) => x.id === primaryId);
+      const hasPrimaryRole = p && String(p.splitRole || "").toLowerCase() === "primary";
+      summary.appendChild(el("div", null,
+        "Flow splitter " + sid + " — following primary path only"
+        + (hasPrimaryRole ? "" : " (no primary role; using first outgoing pipe)")));
+    }
+    if (missingQ.length > 0) {
+      summary.appendChild(el("div", null,
+        "No Design Q: " + missingQ.join(", ") + " — friction shown as 0.000 ft"));
+    }
+
+    // --- controls ---
+    const detailsBtn = el("button", {
+      type: "button",
+      style: "background:transparent; border:none; cursor:pointer; font-weight:600; font-family:inherit; font-size:12px;",
+      "aria-expanded": warningDetailsOpen ? "true" : "false",
+      onclick: () => { warningDetailsOpen = !warningDetailsOpen; renderWarningBanner(); }
+    }, warningDetailsOpen ? "details ▴" : "details ▾");
+
+    const dismissBtn = el("button", {
+      type: "button",
+      style: "background:transparent; border:none; cursor:pointer; font-size:14px; font-family:inherit;",
+      "aria-label": "Dismiss",
+      onclick: () => { state.ui.warningsDismissed = true; renderWarningBanner(); }
+    }, "×");
+
+    const controls = el("span", { style: "margin-left:auto; display:flex; gap:6px; align-items:baseline;" },
+      [detailsBtn, dismissBtn]);
+
+    host.appendChild(el("div", { style: "display:flex; gap:8px; align-items:baseline;" },
+      [summary, controls]));
+
+    // --- expanded details ---
+    if (warningDetailsOpen) {
+      const details = el("div", { style: "margin-top:4px; font-size:11px; line-height:1.5;" });
+      for (const sid of splitterIds) {
+        const outs = pipes.filter((p) => p.fromId === sid).map((p) => p.id);
+        details.appendChild(el("div", null,
+          "Splitter " + sid + " downstream pipes: " + (outs.length ? outs.join(", ") : "(none)")));
+      }
+      for (const pid of missingQ) {
+        details.appendChild(el("div", null, "Pipe " + pid + ": no Design Q (friction 0.000 ft)"));
+      }
+      host.appendChild(details);
+    }
+  }
+  // ==== warning-banner: end ====
+
   // ==== bootstrap: begin ====
   function renderAll() {
     renderActiveView();
     // ledger render is wired in by group 60
     if (typeof renderLedger === "function") renderLedger();
     if (typeof renderOverrideBadge === "function") renderOverrideBadge();
+    if (typeof renderWarningBanner === "function") renderWarningBanner();
     if (typeof syncModeButton === "function") syncModeButton();
     if (typeof syncHglSelect === "function") syncHglSelect();
   }
