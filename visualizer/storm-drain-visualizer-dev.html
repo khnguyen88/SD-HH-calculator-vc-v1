@@ -440,10 +440,15 @@
           Qcfs:     resolveField(p.id, "designQ", imp, ovr) || 0,
           pipeId:   p.id
         }));
-        // Outflow pipe: prefer the structure's declared Outgoing Pipe ID; fall back
-        // to the first pipe leaving this structure (JSON imports lack outPipeId).
+        // Outflow pipe precedence: for a splitter, the analysis-selected primary
+        // outgoing pipe wins; else the declared Outgoing Pipe ID; else the first
+        // pipe leaving this structure (JSON imports lack outPipeId).
+        const primaryOutId = (resolvedState.analysis
+                              && resolvedState.analysis.primaryPipeByStructureId)
+          ? resolvedState.analysis.primaryPipeByStructureId[id] : null;
         const declaredOutId = resolveField(id, "outPipeId", imp, ovr);
-        const outPipe = (declaredOutId && imp.pipes.find((p) => p.id === declaredOutId))
+        const outPipe = (primaryOutId && imp.pipes.find((p) => p.id === primaryOutId))
+                     || (declaredOutId && imp.pipes.find((p) => p.id === declaredOutId))
                      || imp.pipes.find((p) => p.fromId === id);
         const Aout = outPipe
           ? pipeArea(resolveField(outPipe.id, "shape", imp, ovr),
