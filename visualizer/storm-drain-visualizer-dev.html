@@ -31,10 +31,25 @@
   .ledger { height: 45%; overflow: auto; padding: 10px 14px; background: #f5f3eb;
             color: #1a1a1a; font-family: var(--mono); border-top: 2px solid #30363d; }
   .num { font-family: var(--mono); }
+  .app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #printArea { display: none; }
+  @media print {
+    body { display: block; background: #fff; }
+    .app { display: none !important; }
+    #printArea { display: block !important; background: #fff; color: #000; }
+    #printArea .calc-sheet {
+      page-break-after: always;
+      border-bottom: 1px solid #ccc;
+      margin-bottom: 10px;
+      padding: 8px 0;
+    }
+    #printArea .calc-sheet:last-child { page-break-after: auto; border-bottom: none; }
+  }
   /* ==== css: end ==== */
 </style>
 </head>
 <body>
+<div class="app">
 <div class="topbar">
   <h1>Storm Drain HGL/EGL Visualizer</h1>
   <input type="file" id="fileInput" accept=".xlsx,.json">
@@ -52,6 +67,7 @@
   <svg id="viewSvg" preserveAspectRatio="xMidYMid meet"></svg>
 </div>
 <div class="ledger" id="ledger"></div>
+</div>
 <!-- SHEETJS --><!-- build-visualizer.js replaces this with the inlined bundle -->
 <script>
   // ==== dom-helpers: begin ====
@@ -2392,6 +2408,96 @@
     ]);
   }
   // ==== ledger-render: end ====
+
+  // ==== print: begin ====
+  // --- Print the current walked path (v81.7, design §4.8) ---
+
+  // Build a detached #printArea for the current annotated ledger path: a header
+  // block plus one .calc-sheet per ledger row, reusing the ledger detail renderers
+  // (which are built on csSection / csFormula).
+  function buildPrintArea() {
+    const area = el("div", { id: "printArea" });
+    if (!state.imported) return area;
+
+    const startId = state.ui.walkStartId
+      || (state.imported.outfall && state.imported.outfall.structureId) || "—";
+    area.appendChild(el("div", { class: "print-header",
+      style: "margin-bottom:12px; border-bottom:2px solid #000; padding-bottom:8px;" }, [
+      el("div", { style: "font-size:16px; font-weight:700; margin-bottom:4px;" },
+        "Storm Drain HGL/EGL Visualizer — Energy Ledger"),
+      el("div", { style: "font-size:12px;" },
+        "File: " + (state.ui.fileName || "(none)")
+        + "   ·   HGL method: " + state.ui.hglMethod
+        + "   ·   Walk start: " + startId
+        + "   ·   " + new Date().toLocaleDateString())
+    ]));
+
+    const path = (state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
+      ? state.cursor.pathStack
+      : (state.imported.outfall && state.imported.outfall.structureId
+          ? [state.imported.outfall.structureId] : []);
+    if (!path.length) return area;
+
+    const rows = buildLedger(path, state, state.imported.kbTable, state.ui.hglMethod);
+    const annotated = annotateLedgerHgl(rows, state, state.ui.hglMethod);
+
+    // Render details statically even if the app is in edit mode (no form controls).
+    const prevMode = state.ui.mode;
+    state.ui.mode = "explore";
+    try {
+      for (const row of annotated) {
+        area.appendChild(el("div", { class: "calc-sheet", "data-kind": "print-sheet", "data-id": String(row.id) }, [
+          el("div", { style: "font-weight:700; font-size:13px; margin-bottom:6px; font-family:ui-monospace,monospace;" },
+            oneLineForRow(row)),
+          renderExpandedRow(row)
+        ]));
+      }
+    } finally {
+      state.ui.mode = prevMode;
+    }
+    return area;
+  }
+
+  // Build the print area, enter print mode, and open the browser print dialog.
+  function printLedger() {
+    const notice = document.getElementById("printNotice");
+    if (!state.imported) {
+      if (notice) {
+        notice.textContent = "Load a network before printing.";
+        notice.style.display = "inline";
+        setTimeout(() => { notice.style.display = "none"; }, 2500);
+      }
+      return;
+    }
+
+    const area = buildPrintArea();
+    document.body.appendChild(area);
+    document.body.classList.add("print-mode");
+
+    const cleanup = () => {
+      document.body.classList.remove("print-mode");
+      const a = document.getElementById("printArea");
+      if (a && a.parentNode) a.parentNode.removeChild(a);
+    };
+    if (typeof window.print === "function") window.print();
+    window.addEventListener("afterprint", cleanup, { once: true });
+    setTimeout(cleanup, 1500);   // fallback: some environments never fire afterprint
+  }
+
+  // Toolbar print button + a small non-blocking notice span.
+  (function wirePrintButton() {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+    const notice = el("span", { id: "printNotice",
+      style: "display:none; font-size:12px; color:#ffd60a;" }, "");
+    const btn = el("button", { id: "printBtn", type: "button",
+      style: "background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:4px; padding:2px 8px; font-size:12px; cursor:pointer;" },
+      "Print");
+    btn.addEventListener("click", () => printLedger());
+    topbar.appendChild(notice);
+    topbar.appendChild(btn);
+  })();
+  // ==== print: end ====
 
   // ==== warning-banner: begin ====
   // v81.2 (design §4.1, §4.4) — unified amber banner below the topbar.
