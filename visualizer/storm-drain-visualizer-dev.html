@@ -46,6 +46,7 @@
 <div class="viewframe">
   <div class="tools">
     <span id="viewToggle" style="cursor:pointer">[ISO | profile]</span>
+    <span id="tr55Toggle" style="margin-left: 16px; cursor:pointer; display:none;">[TR-55 | off]</span>
     <span style="margin-left: 16px">cursor: <span id="cursorLabel" class="num">(none)</span></span>
   </div>
   <svg id="viewSvg" preserveAspectRatio="xMidYMid meet"></svg>
@@ -97,7 +98,8 @@
     ui: { view: "iso", mode: "explore", hglMethod: "hec22",
           freeRoam: false, branchChoices: { byStructureId: {} },
           expandedRowId: null, lastCursorId: null,
-          fileName: "", walkStartId: null, warningsDismissed: false }
+          fileName: "", walkStartId: null, warningsDismissed: false,
+          showTr55: false }
   };
   // ==== state: end ====
 
@@ -690,6 +692,7 @@
     // Any import invalidates the previous walk: reset the cursor and branch memory.
     state.analysis = analyzeImported(state.imported);
     state.ui.walkStartId = state.analysis ? state.analysis.defaultWalkStart : null;
+    state.ui.showTr55 = !!(state.analysis && Object.keys(state.analysis.tr55ByStructureId).length > 0);
     resetWarningUi();
     state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
     state.ui.branchChoices = { byStructureId: {} };
@@ -854,6 +857,7 @@
     // Any import invalidates the previous walk: reset the cursor and branch memory.
     state.analysis = analyzeImported(state.imported);
     state.ui.walkStartId = state.analysis ? state.analysis.defaultWalkStart : null;
+    state.ui.showTr55 = !!(state.analysis && Object.keys(state.analysis.tr55ByStructureId).length > 0);
     resetWarningUi();
     state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
     state.ui.branchChoices = { byStructureId: {} };
@@ -1187,9 +1191,18 @@
     const xMin = Math.min(...xs), xMax = Math.max(...xs);
     const yMin = Math.min(...ys), yMax = Math.max(...ys);
     const pad = 20;
-    const W = 800, H = 300;
+
+    // TR-55 callout band (design §4.5): reserve vertical space above the plot so
+    // cards sit above the rims without clipping. Band is empty when toggled off.
+    const tr55Map = (s.analysis && s.analysis.tr55ByStructureId) || {};
+    const hasCards = !!(s.ui && s.ui.showTr55) && Object.keys(tr55Map).length > 0;
+    const cardBand = hasCards ? 96 : 0;
+
+    const W = 800, H = 300 + cardBand;
+    const yTopSvg = pad + cardBand;
+    const yBotSvg = H - pad;
     const sx = (x) => pad + (x - xMin) / Math.max(1e-9, xMax - xMin) * (W - 2 * pad);
-    const sy = (y) => H - pad - (y - yMin) / Math.max(1e-9, yMax - yMin) * (H - 2 * pad);
+    const sy = (y) => yBotSvg - (y - yMin) / Math.max(1e-9, yMax - yMin) * (yBotSvg - yTopSvg);
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
 
     const poly = (color, dashed, picker) => {
@@ -1241,6 +1254,90 @@
         }
       }
     }
+
+    renderTr55Cards(svg, s, stations, sx, sy, tr55Map, cardBand, W);
+  }
+
+  // --- TR-55 callout cards (v81.5, design §4.5) ---
+
+  // Compact numeric formatting for TR-55 text (trim noise, no trailing zeros).
+  function tr55Num(v) {
+    if (typeof v !== "number" || !isFinite(v)) return "—";
+    return String(Math.round(v * 10000) / 10000);
+  }
+
+  // One text line for a TR-55 segment, per the design §4.5 formats.
+  function tr55SegmentLine(seg) {
+    const type = String(seg.type || "").toLowerCase();
+    if (type === "channel") {
+      return "channel · A " + tr55Num(seg.area) + " · L " + tr55Num(seg.L) + " · s " + tr55Num(seg.s);
+    }
+    if (type === "shallow") {
+      return "shallow · " + (seg.surface || "—") + " · L " + tr55Num(seg.L) + " · s " + tr55Num(seg.s);
+    }
+    return "sheet · n " + tr55Num(seg.n) + " · L " + tr55Num(seg.L) + " · s " + tr55Num(seg.s);
+  }
+
+  // Draw TR-55 callout cards above the profile rims (design §4.5). No-op when the
+  // card band is off. Cards are dark monospace panels with a leader line to the rim;
+  // horizontally-overlapping cards stack upward rather than shrinking.
+  function renderTr55Cards(svg, s, stations, sx, sy, tr55Map, cardBand, W) {
+    if (cardBand <= 0) return;
+    const FS = 9, LH = 11, PADX = 6, PADY = 4;
+    const PANEL_FILL = "#161b22", PANEL_STROKE = "#30363d";
+    const TEXT = "#c9d1d9", ACCENT = "#58a6ff";
+
+    const cards = [];
+    for (const st of stations) {
+      if (st.kind !== "structure") continue;
+      const blocks = tr55Map[st.id];
+      if (!Array.isArray(blocks) || blocks.length === 0) continue;
+      const lines = [];
+      for (const b of blocks) {
+        lines.push({ text: st.id + " · " + (b.daId || "DA"), accent: true });
+        for (const seg of (b.segments || [])) lines.push({ text: tr55SegmentLine(seg) });
+        if (typeof b.tc === "number" && isFinite(b.tc)) lines.push({ text: "Tc = " + tr55Num(b.tc) + " min" });
+      }
+      let maxLen = 0;
+      for (const ln of lines) maxLen = Math.max(maxLen, ln.text.length);
+      const w = Math.max(90, Math.min(220, maxLen * 5.4 + 2 * PADX));
+      const h = lines.length * LH + 2 * PADY;
+      cards.push({ st, lines, w, h, x: sx(st.station), rimY: sy(st.rim != null ? st.rim : st.crown + 3) });
+    }
+    if (cards.length === 0) return;
+
+    cards.sort((a, b) => a.x - b.x);
+    let prev = null;
+    const baseBottom = cardBand - 4;
+    for (const c of cards) {
+      const left = Math.max(2, Math.min(W - c.w - 2, c.x - c.w / 2));
+      c.left = left;
+      c.bottom = (prev && left < prev.left + prev.w + 4) ? (prev.top - 4) : baseBottom;
+      c.top = c.bottom - c.h;
+      if (c.top < 2) { c.top = 2; c.bottom = c.top + c.h; }
+      prev = c;
+    }
+
+    for (const c of cards) {
+      const g = svgEl("g", { "data-kind": "tr55-card", "data-id": c.st.id });
+      g.appendChild(svgEl("line", {
+        x1: c.left + c.w / 2, y1: c.bottom, x2: sx(c.st.station), y2: c.rimY,
+        stroke: PANEL_STROKE, "stroke-width": 1
+      }));
+      g.appendChild(svgEl("rect", {
+        x: c.left, y: c.top, width: c.w, height: c.h,
+        fill: PANEL_FILL, stroke: PANEL_STROKE, "stroke-width": 1, rx: 2
+      }));
+      let ly = c.top + PADY + FS;
+      for (const ln of c.lines) {
+        g.appendChild(svgEl("text", {
+          x: c.left + PADX, y: ly, fill: ln.accent ? ACCENT : TEXT,
+          "font-size": FS, "font-family": "ui-monospace,monospace"
+        }, ln.text));
+        ly += LH;
+      }
+      svg.appendChild(g);
+    }
   }
 
   // --- Active view dispatcher + V hotkey (task-17) ---
@@ -1268,6 +1365,23 @@
   function toggleView() {
     state.ui.view = state.ui.view === "iso" ? "profile" : "iso";
     renderActiveView();
+  }
+
+  // --- TR-55 toggle (v81.5) ---
+  function hasTr55Data() {
+    return !!(state.analysis && Object.keys(state.analysis.tr55ByStructureId).length > 0);
+  }
+  function syncTr55Toggle() {
+    const t = document.getElementById("tr55Toggle");
+    if (!t) return;
+    if (!hasTr55Data()) { t.style.display = "none"; return; }
+    t.style.display = "";
+    t.textContent = state.ui.showTr55 ? "[TR-55 | on]" : "[TR-55 | off]";
+  }
+  function toggleTr55() {
+    state.ui.showTr55 = !state.ui.showTr55;
+    renderActiveView();
+    syncTr55Toggle();
   }
 
   // --- HGL method select (task-40) ---
@@ -2424,6 +2538,7 @@
     if (typeof syncModeButton === "function") syncModeButton();
     if (typeof syncHglSelect === "function") syncHglSelect();
     if (typeof renderWalkFromSelect === "function") renderWalkFromSelect();
+    if (typeof syncTr55Toggle === "function") syncTr55Toggle();
   }
 
   // V hotkey (also 'v' lowercase). Ignore while typing in form controls.
@@ -2441,6 +2556,8 @@
   // Toolbar click
   const toggleLabel = document.getElementById("viewToggle");
   if (toggleLabel) toggleLabel.addEventListener("click", () => toggleView());
+  const tr55Label = document.getElementById("tr55Toggle");
+  if (tr55Label) tr55Label.addEventListener("click", () => toggleTr55());
   document.getElementById("fileInput").addEventListener("change", async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
     document.getElementById("fileName").textContent = f.name;
