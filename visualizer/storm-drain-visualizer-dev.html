@@ -90,11 +90,13 @@
   // ==== state: begin ====
   const state = {
     imported: null,   // { structures, pipes, outfall, config, kbTable } | null
+    analysis: null,
     overrides: { byId: {} },
     cursor: { kind: null, id: null, pathStack: [] },
     ui: { view: "iso", mode: "explore", hglMethod: "hec22",
           freeRoam: false, branchChoices: { byStructureId: {} },
-          expandedRowId: null, lastCursorId: null }
+          expandedRowId: null, lastCursorId: null,
+          fileName: "", walkStartId: null }
   };
   // ==== state: end ====
 
@@ -570,7 +572,11 @@
       if (p.designQ != null && (typeof p.designQ !== "number" || !isFinite(p.designQ))) {
         push("pipes[" + i + "].designQ must be a finite number");
       }
+      if (p.splitRole != null && typeof p.splitRole !== "string") push("pipes[" + i + "].splitRole must be a string");
     });
+
+    if (obj.drainageAreas != null && !Array.isArray(obj.drainageAreas)) push("drainageAreas must be an array");
+    if (obj.tr55Segments != null && !Array.isArray(obj.tr55Segments)) push("tr55Segments must be an array");
 
     if (!obj.outfall || typeof obj.outfall !== "object") push("outfall missing");
     else {
@@ -589,6 +595,7 @@
 
   async function importFromJsonFile(file) {
     const text = await file.text();
+    state.ui.fileName = (file && file.name) || "";
     let obj;
     try { obj = JSON.parse(text); }
     catch (e) { throw new Error("JSON parse error: " + e.message); }
@@ -608,7 +615,9 @@
       }),
       outfall: Object.assign({}, obj.outfall),
       config: Object.assign({}, obj.config || {}),
-      kbTable: Array.isArray(obj.kbTable) ? obj.kbTable.slice() : null
+      kbTable: Array.isArray(obj.kbTable) ? obj.kbTable.slice() : null,
+      drainageAreas: Array.isArray(obj.drainageAreas) ? obj.drainageAreas.map((o) => Object.assign({}, o)) : [],
+      tr55Segments:  Array.isArray(obj.tr55Segments)  ? obj.tr55Segments.map((o) => Object.assign({}, o))  : []
     };
 
     // If this is a tweaked export, imported fields currently hold the TWEAKED values.
@@ -640,6 +649,8 @@
     }
 
     // Any import invalidates the previous walk: reset the cursor and branch memory.
+    state.analysis = analyzeImported(state.imported);
+    state.ui.walkStartId = state.analysis ? state.analysis.defaultWalkStart : null;
     state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
     state.ui.branchChoices = { byStructureId: {} };
     state.ui.expandedRowId = null;
@@ -656,6 +667,7 @@
     const pick = (...vals) => { for (const v of vals) if (v != null && v !== "") return v; return null; };
 
     const buf = await file.arrayBuffer();
+    state.ui.fileName = (file && file.name) || "";
     const wb = XLSX.read(buf, { type: "array" });
 
     const sh = (name) => {
@@ -671,6 +683,7 @@
     const structureIdOf = (r) => r["Structure ID"] || r["Structure"] || r.structureId || r["structureId"] || "";
 
     const daRows   = sh("Drainage Area");
+    const tr55Rows = sh("TR-55 Segments");
     const strRows  = sh("Junction Structure");
     const pipeRows = sh("Pipe Sizing");
     const outRows  = sh("Outlet Structures");
@@ -738,7 +751,8 @@
         slope:      num(pick(r["Slope (ft-ft)"], r["Slope (ft/ft)"], r.slope), 0.005),
         length:     num(r["Length (ft)"] ?? r.length, 0),
         angle:      num(r["Angle (deg)"] ?? r.angle, 0),
-        designQ:    num(r["Design Q (cfs)"], 0),
+        designQ:    pickNum(r["Design Q (cfs)"], r.designQ),
+        splitRole:  String(pick(r["Split Role"], r.splitRole) || "").toLowerCase(),
         Hf:         num(r["Hf (ft)"], 0)
       };
     });
@@ -766,16 +780,40 @@
       }
     }
 
+    const drainageAreas = daRows.map((r) => ({
+      id:          String(pick(r["ID"], r.id) || ""),
+      structureId: String(structureIdOf(r) || ""),
+      areaAc:      pickNum(r["Area A (ac)"], r["Area (ac)"]),
+      C:           pickNum(r["C"]),
+      tc:          pickNum(r["Tc (min)"], r["Tc"])
+    }));
+
+    const tr55Segments = tr55Rows.map((r) => ({
+      drainageAreaId: String(r["Drainage Area"] || r["DA ID"] || ""),
+      order:  pickNum(r["Order"]),
+      type:   String(r["Type"] || "").toLowerCase(),
+      n:      pickNum(r["n"]),
+      L:      pickNum(r["L (ft)"]),
+      s:      pickNum(r["s (ft/ft)"]),
+      P2:     pickNum(r["P2 (in)"]),
+      surface: pick(r["Surface"]) || "",
+      area:   pickNum(r["Area a (sf)"]),
+      wp:     pickNum(r["Wetted Perimeter Pw (ft)"])
+    }));
+
     state.overrides = { byId: {} };
     state.imported = {
       structures, pipes,
       outfall: { structureId: outfallSid, tailwaterElev: outfallTw != null ? outfallTw : 100 },
       config: { stormLabel: "", units: "us-customary", hglMethod: state.ui.hglMethod },
-      kbTable: null
+      kbTable: null,
+      drainageAreas, tr55Segments
     };
     state.ui.mode = "explore";
 
     // Any import invalidates the previous walk: reset the cursor and branch memory.
+    state.analysis = analyzeImported(state.imported);
+    state.ui.walkStartId = state.analysis ? state.analysis.defaultWalkStart : null;
     state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
     state.ui.branchChoices = { byStructureId: {} };
     state.ui.expandedRowId = null;
@@ -833,6 +871,77 @@
     }
   }
   // ==== import helpers end ====
+
+  // --- post-import analysis pass (v81.1, design §3.3) ---
+
+  // Derive read-only network facts once per import. Pure: takes `imported`, no DOM/state reads.
+  function analyzeImported(imported) {
+    if (!imported) return null;
+    const structures = Array.isArray(imported.structures) ? imported.structures : [];
+    const pipes      = Array.isArray(imported.pipes) ? imported.pipes : [];
+
+    const outfallIds = structures.filter((s) => s.type === "outfall").map((s) => s.id);
+
+    // Default walk start: first outfall in import order; else lowest finite startElev, then rim, then first.
+    let defaultWalkStart = null;
+    if (outfallIds.length > 0) {
+      defaultWalkStart = outfallIds[0];
+    } else if (structures.length > 0) {
+      const metric = (s) => (typeof s.startElev === "number" && isFinite(s.startElev)) ? s.startElev
+                         : (typeof s.rim === "number" && isFinite(s.rim)) ? s.rim : Infinity;
+      let best = structures[0];
+      let bestM = metric(best);
+      for (const s of structures) { const m = metric(s); if (m < bestM) { best = s; bestM = m; } }
+      defaultWalkStart = best.id;
+    }
+
+    // Splitters: structures with more than one outgoing pipe.
+    const outCount = Object.create(null);
+    for (const p of pipes) outCount[p.fromId] = (outCount[p.fromId] || 0) + 1;
+    const splitterIds = structures.filter((s) => (outCount[s.id] || 0) > 1).map((s) => s.id);
+
+    // Primary outgoing pipe per splitter: splitRole "primary" else first outgoing pipe.
+    const primaryPipeByStructureId = Object.create(null);
+    for (const sid of splitterIds) {
+      const outgoing = pipes.filter((p) => p.fromId === sid);
+      const primary = outgoing.find((p) => String(p.splitRole || "").toLowerCase() === "primary");
+      const chosen = primary || outgoing[0] || null;
+      primaryPipeByStructureId[sid] = chosen ? chosen.id : null;
+    }
+
+    // Pipes with no finite design flow (null/undefined/non-finite). Numeric 0 is NOT missing.
+    const missingDesignQ = pipes
+      .filter((p) => !(typeof p.designQ === "number" && isFinite(p.designQ)))
+      .map((p) => p.id);
+
+    // TR-55: join segments -> drainage areas by DA id, attach to the DA's linked structure.
+    const drainageAreas = Array.isArray(imported.drainageAreas) ? imported.drainageAreas : [];
+    const tr55Segments  = Array.isArray(imported.tr55Segments) ? imported.tr55Segments : [];
+    const segsByDa = Object.create(null);
+    for (const seg of tr55Segments) {
+      const key = seg.drainageAreaId;
+      (segsByDa[key] = segsByDa[key] || []).push(seg);
+    }
+    for (const k in segsByDa) {
+      segsByDa[k].sort((a, b) => ((a.order == null ? 0 : a.order) - (b.order == null ? 0 : b.order)));
+    }
+    const tr55ByStructureId = Object.create(null);
+    for (const da of drainageAreas) {
+      const sid = da.structureId;
+      if (!sid) continue;
+      (tr55ByStructureId[sid] = tr55ByStructureId[sid] || []).push({
+        daId: da.id, tc: da.tc, segments: segsByDa[da.id] || []
+      });
+    }
+
+    // Walk-from candidates: outfalls first, then every other structure (both in import order).
+    const walkStarts = [];
+    for (const s of structures) if (s.type === "outfall") walkStarts.push({ id: s.id, label: s.label || s.id, type: s.type, group: "outfall" });
+    for (const s of structures) if (s.type !== "outfall") walkStarts.push({ id: s.id, label: s.label || s.id, type: s.type, group: "structure" });
+
+    return { outfallIds, defaultWalkStart, splitterIds, primaryPipeByStructureId, missingDesignQ, tr55ByStructureId, walkStarts };
+  }
+
   // ==== import: end ====
 
   // ==== views: begin ====
