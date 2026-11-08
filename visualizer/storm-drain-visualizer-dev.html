@@ -357,8 +357,17 @@
     return el ? el[field] : undefined;
   }
 
+  // Resolve the effective walk-start structure id: ui.walkStartId when it names a
+  // real structure, else the imported outfall. Returns null when neither is valid.
+  function resolveWalkStart(imported, ui) {
+    const structures = (imported && Array.isArray(imported.structures)) ? imported.structures : [];
+    const want = ui && ui.walkStartId;
+    if (want && structures.some((s) => s.id === want)) return want;
+    return (imported && imported.outfall && imported.outfall.structureId) || null;
+  }
+
   // Build an ordered list of ledger rows.
-  //   path: array of elementIds in walk order, starting with the outfall structureId.
+  //   path: array of elementIds in walk order, starting with the walk-start structure id.
   //   resolvedState: { imported, overrides } — pass state directly.
   //   kbTable: typically state.imported.kbTable (null → seed).
   //   hglMethod: "hec22" | "legacy-both-crown".
@@ -371,15 +380,13 @@
     // Start row (v81.3 / design §3.4): resolve the walk start from ui.walkStartId,
     // falling back to the imported outfall when the UI field is absent. The boundary
     // EGL depends on the start structure.
-    const ui = resolvedState.ui || {};
     const structures = Array.isArray(imp.structures) ? imp.structures : [];
-    const startId = (ui.walkStartId && structures.some((s) => s.id === ui.walkStartId))
-      ? ui.walkStartId
-      : (imp.outfall && imp.outfall.structureId);
+    const startId = resolveWalkStart(imp, resolvedState.ui);
     const startStr = structures.find((s) => s.id === startId) || null;
+    const startType = startStr ? (resolveField(startId, "type", imp, ovr) || startStr.type) : null;
     let boundaryEGL;
     let boundaryReason;
-    if (startStr && startStr.type === "outfall") {
+    if (startStr && startType === "outfall") {
       boundaryEGL = (imp.outfall && typeof imp.outfall.tailwaterElev === "number") ? imp.outfall.tailwaterElev : 0;
       boundaryReason = "tailwater";
     } else if (startStr && startStr.forceElev && startStr.startElev != null) {
@@ -401,8 +408,8 @@
                 detail: { boundaryEGL, boundaryReason } });
 
     // Walk pairs: each (structure -> pipe) adds an Hb row; each pipe adds an Hf row.
-    // We expect the path to alternate: [outfallSid, pipeId, structureId, pipeId, structureId, ...].
-    // The first Hb at the outfall structure is nominal (0 inflows, tailwater is set).
+    // We expect the path to alternate: [startSid, pipeId, structureId, pipeId, structureId, ...].
+    // The first Hb at the start structure is nominal (0 inflows, boundary is set).
     for (let i = 1; i < path.length; i++) {
       const id = path[i];
       const pipe = imp.pipes.find((p) => p.id === id);
@@ -481,7 +488,7 @@
   }
 
   // Annotate each ledger row with HGL. Does not mutate rows.
-  //   start row:      HGL = max(TW, outfall crown) — downstream boundary floor.
+  //   start row:      HGL = max(boundary EGL, crown) — downstream boundary floor.
   //   +Hf row:        hglWalkStep using EGL at the downstream node.
   //   +Hb row:        HGL carries the previous value plus the structure loss.
   function annotateLedgerHgl(rows, resolvedState, method) {
@@ -1326,8 +1333,7 @@
   function initialCursor(imported) {
     if (!imported || !imported.outfall) return { kind: null, id: null, pathStack: [] };
     // Honor the chosen walk start (v81.3); fall back to the imported outfall.
-    let sid = (state.ui && state.ui.walkStartId) || null;
-    if (!sid || !(imported.structures || []).some((s) => s.id === sid)) sid = imported.outfall.structureId;
+    const sid = resolveWalkStart(imported, state.ui) || imported.outfall.structureId;
     return { kind: "structure", id: sid, pathStack: [sid] };
   }
 
@@ -1526,9 +1532,8 @@
   // outfall-anchored path so HGL accumulates from the tailwater boundary.
   function pathFromOutfall(elementId, imported) {
     if (!imported || !elementId) return [];
-    // Anchor at the current walk start (v81.3), falling back to the imported outfall.
-    const anchorSid = (state.ui && state.ui.walkStartId)
-      || (imported.outfall && imported.outfall.structureId);
+    // Anchor at the current walk start (v81.3), validated against the network.
+    const anchorSid = resolveWalkStart(imported, state.ui);
     const seen = new Set();
     const down = [elementId];
     let cur = elementId;
@@ -1543,9 +1548,11 @@
       }
       if (cur) down.push(cur);
     }
-    const path = down.reverse();
-    if (anchorSid && path[0] !== anchorSid) path.unshift(anchorSid);
-    return path;
+    // When the anchor is reached, it is already the last element of `down`, so the
+    // reversed path starts at it. If it was never reached, the clicked element lies
+    // outside the walked subnetwork — return [] (caller falls back to the bare id).
+    if (!anchorSid || down.indexOf(anchorSid) === -1) return [];
+    return down.reverse();
   }
 
   // In free-roam, clicking an iso element starts a new walk there.
@@ -2390,8 +2397,13 @@
 
     const want = state.ui.walkStartId;
     const has = (v) => Array.from(sel.options).some((o) => o.value === v);
-    if (want != null && has(want)) sel.value = want;
-    else if (sel.options.length > 0) sel.value = sel.options[0].value;
+    if (want != null && has(want)) {
+      sel.value = want;
+    } else if (sel.options.length > 0) {
+      sel.value = sel.options[0].value;
+      // Keep UI state consistent when the current id is absent from the options.
+      if (state.ui.walkStartId !== sel.value) state.ui.walkStartId = sel.value;
+    }
 
     wrap.style.display = starts.length ? "inline-flex" : "none";
   }
