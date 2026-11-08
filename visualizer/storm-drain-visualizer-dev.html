@@ -1112,6 +1112,41 @@
     state.ui.view = state.ui.view === "iso" ? "profile" : "iso";
     renderActiveView();
   }
+
+  // --- HGL method select (task-40) ---
+
+  // Keep the topbar HGL-method <select> in sync with state.ui.hglMethod.
+  function syncHglSelect() {
+    const sel = document.getElementById("hglMethodSelect");
+    if (!sel) return;
+    const v = state.ui.hglMethod === "legacy-both-crown" ? "legacy-both-crown" : "hec22";
+    if (sel.value !== v) sel.value = v;
+  }
+
+  // Inject the HGL-method label + select into the topbar, just before the mode toggle.
+  (function () {
+    const topbar = document.querySelector(".topbar");
+    const modeToggle = document.getElementById("modeToggle");
+    if (!topbar || !modeToggle) return;
+    const label = el("span", {
+      style: "font-size:12px;color:var(--fg-dim);font-family:var(--mono);"
+    }, "HGL method:");
+    const select = el("select", {
+      id: "hglMethodSelect",
+      style: "font-family:var(--mono);font-size:12px;background:var(--bg-elev);" +
+             "color:var(--fg);border:1px solid #30363d;border-radius:3px;padding:2px 4px;",
+      onchange: (ev) => {
+        state.ui.hglMethod = ev.target.value;
+        withFocusPreserved(renderAll);
+      }
+    }, [
+      el("option", { value: "hec22" }, "HEC-22 EGL"),
+      el("option", { value: "legacy-both-crown" }, "Legacy both-crown")
+    ]);
+    topbar.insertBefore(label, modeToggle);
+    topbar.insertBefore(select, modeToggle);
+    syncHglSelect();
+  })();
   // ==== views: end ====
 
   // ==== navigation: begin ====
@@ -1996,6 +2031,7 @@
     if (typeof renderLedger === "function") renderLedger();
     if (typeof renderOverrideBadge === "function") renderOverrideBadge();
     if (typeof syncModeButton === "function") syncModeButton();
+    if (typeof syncHglSelect === "function") syncHglSelect();
   }
 
   // V hotkey (also 'v' lowercase). Ignore while typing in form controls.
