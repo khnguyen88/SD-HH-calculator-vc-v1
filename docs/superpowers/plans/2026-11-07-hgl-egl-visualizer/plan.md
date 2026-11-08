@@ -77,6 +77,28 @@ Each group has a `group.md` with the group-level acceptance criteria. Each `task
 - [ ] [`task-36-import-roundtrip.md`](70-tests/task-36-import-roundtrip.md) · depends on 31, 26
 - [ ] [`task-37-dom-event-tests.md`](70-tests/task-37-dom-event-tests.md) · depends on 31, 20
 
+### [`80-gaps/`](80-gaps/group.md) — Focused gap fixes & tests
+
+- [ ] [`task-40-hgl-method-dropdown.md`](80-gaps/task-40-hgl-method-dropdown.md) · HGL method `<select>` (spec §4.2)
+- [ ] [`task-41-kb-unit-tests.md`](80-gaps/task-41-kb-unit-tests.md) · `kbAt` node tests (spec §8.1)
+- [ ] [`task-42-svg-integrity-tests.md`](80-gaps/task-42-svg-integrity-tests.md) · SVG cross-view/depth-sort tests (spec §8.5)
+- [ ] [`task-43-enter-expand-collapse.md`](80-gaps/task-43-enter-expand-collapse.md) · Enter expand/collapse (spec §4.3, §5.1)
+- [ ] [`task-44-splitter-banner.md`](80-gaps/task-44-splitter-banner.md) · splitter detection + banner (spec §9.2)
+
+### `81-v1-gaps/` — v1 gap features (design: `specs/2026-11-08-visualizer-v1-gaps-design.md`)
+
+No per-task MDs; implementer prompts carry the design §3–§4 text verbatim.
+
+- [ ] 81.1 analysis pass + import additions (§3.1–§3.3)
+- [ ] 81.2 unified warning banner — splitter + missing Design Q (§4.1, §4.4)
+- [ ] 81.3 walk-from switcher (§4.2)
+- [ ] 81.4 splitter primary path in ledger (§4.3)
+- [ ] 81.5 TR-55 callout cards + toggle (§4.5)
+- [ ] 81.6 iso flow arrows + selection glow (§4.6–§4.7)
+- [ ] 81.7 print current path calc-sheets (§4.8)
+- [ ] 81.8 feature tests — analysis/xlsx/gap-ui (§6)
+- [ ] 81.9 final build + verify (§7)
+
 ### [`90-deploy/`](90-deploy/group.md) — Build verification & GitHub Pages
 
 - [ ] [`task-38-build-and-verify.md`](90-deploy/task-38-build-and-verify.md) · depends on all above
@@ -102,16 +124,26 @@ Each task MD contains, in order:
 
 ---
 
-## Known gaps and follow-up work
+## Gap closure — groups 80 & 81 (in scope)
 
-The following items from the spec are **not covered by the 39 tasks above** and will be addressed in a follow-up plan:
+The v1 gap audit found the seven items below. **All are in scope** and are
+executed, after group 70, as two groups:
 
-- **Splitter warning banner + primary-path rendering** (spec §9.2). The compute functions handle splitters correctly (`kbAt` maps "splitter" → "manhole" column), and `buildLedger` picks the first outgoing pipe at a structure (effectively "primary"), so the ledger math is reasonable. **What's missing:** a visible non-blocking banner when an imported network contains a splitter structure, and explicit identification of the "primary" vs "secondary" pipe via the `splitRole` field from main spec §2. Follow-up task: add `detectSplitters(imported)` call to the import pipeline and a `warnBanner()` helper in the top-bar.
-- **Missing Design Q warning.** A pipe without a finite `Design Q (cfs)` imports with `designQ` undefined; `frictionSlope()` returns 0 for non-finite inputs, so that pipe silently contributes zero friction loss. Follow-up: surface a non-blocking banner listing pipes with no design flow instead of drawing a flat EGL segment with no explanation.
-- **TR-55 segment overlay on profile** (spec Appendix B deferred).
-- **Multi-outfall auto-detection** (spec §9.2).
-- **Printable visualizer calc-sheets** (spec §9.2).
-- **Iso flow-direction arrows.** The iso view draws plain pipe lines; there are no `<marker>` arrowheads indicating flow direction toward the outfall.
-- **Selection glow.** The current element is distinguished only by a thicker stroke (iso/profile); no halo or glow effect is drawn.
+**Group 80 (task MDs in `80-gaps/`)** — focused fixes and tests:
+HGL method dropdown (task-40), `kbAt` tests (task-41), SVG integrity tests
+(task-42), Enter expand/collapse (task-43), splitter banner (task-44).
 
-None of these are blocking for v1 — the 39-task plan produces a working visualizer that handles the core conveyance network. The splitter gap is the one most likely to produce confused users and should be prioritized in the follow-up.
+**Group 81 (design: `specs/2026-11-08-visualizer-v1-gaps-design.md`)** —
+the seven verified v1 gaps:
+
+1. **Splitter detection + warning banner** (§9.2, §4.1) — primary path only.
+2. **Missing Design Q warning** (§4.4) — banner explains the flat segment.
+3. **Multi-outfall detection + "Walk from…" switcher** (§4.2).
+4. **TR-55 segment callout cards on profile** (§4.5).
+5. **Printable current-path calc-sheets** (§4.8).
+6. **Iso flow-direction arrows** (§4.6).
+7. **Selection glow** (§4.7).
+
+Groups 80 and 81 overlap only on the splitter banner; task-44's simple banner
+is superseded by the richer group-81 banner that also covers missing Design Q.
+Tasks in 81 are ordered by dependency (analysis first).
