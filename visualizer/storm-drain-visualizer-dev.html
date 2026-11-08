@@ -1095,26 +1095,54 @@
     const posById = Object.create(null);
     for (const p of pts) posById[p.id] = projectIso(p.x, p.y, p.z, 2.0);
 
-    // Draw pipes first, then structures on top; depth-sort structures by (x+y)
+    // Draw pipes first, then flow arrows, then structures on top; depth-sort
+    // structures by (x+y).
     const cursorId = s.cursor && s.cursor.id;
+    const arrowEls = [];
     for (const pipe of s.imported.pipes) {
       const a = posById[pipe.fromId], c = posById[pipe.toId];
       if (!a || !c) continue;
       const isSel = cursorId === pipe.id;
       const stroke = isSel ? "#ffd60a" : "#8b949e";
-      svg.appendChild(svgEl("line", {
+      const lineAttrs = {
         x1: a.sx, y1: a.sy, x2: c.sx, y2: c.sy,
         stroke: stroke,
         "stroke-width": pipeStrokeWidth(pipe.size),
         "data-kind": "pipe",
         "data-id": pipe.id
-      }));
+      };
+      if (isSel) lineAttrs.style = "filter:drop-shadow(0 0 4px #ffd60a)";
+      svg.appendChild(svgEl("line", lineAttrs));
+
+      // Flow-direction arrow at the projected midpoint (design §4.6); skip
+      // degenerate pipes whose endpoints coincide on screen.
+      const dx = c.sx - a.sx, dy = c.sy - a.sy;
+      const len = Math.hypot(dx, dy);
+      if (len > 1e-6) {
+        const ux = dx / len, uy = dy / len;
+        const mx = (a.sx + c.sx) / 2, my = (a.sy + c.sy) / 2;
+        const tipX = mx + ux * 3,  tipY = my + uy * 3;
+        const baseX = mx - ux * 3, baseY = my - uy * 3;
+        const nx = -uy, ny = ux;
+        arrowEls.push(svgEl("polygon", {
+          points: tipX + "," + tipY + " "
+                + (baseX + nx * 2) + "," + (baseY + ny * 2) + " "
+                + (baseX - nx * 2) + "," + (baseY - ny * 2),
+          fill: stroke,
+          "data-kind": "flow-arrow",
+          "data-id": pipe.id
+        }));
+      }
     }
+    for (const arrow of arrowEls) svg.appendChild(arrow);
+
     const sortedStructs = pts.slice().sort((p, q) => (p.x + p.y) - (q.x + q.y));
     for (const p of sortedStructs) {
       const pos = posById[p.id];
-      const g = svgEl("g", { "data-kind": "structure", "data-id": p.id });
       const isSel = cursorId === p.id;
+      const gAttrs = { "data-kind": "structure", "data-id": p.id };
+      if (isSel) gAttrs.style = "filter:drop-shadow(0 0 4px #ffd60a)";
+      const g = svgEl("g", gAttrs);
       g.appendChild(structureSymbol(p.type, pos.sx, pos.sy, 14, isSel));
       g.appendChild(svgEl("text", {
         x: pos.sx + 10, y: pos.sy - 10,
