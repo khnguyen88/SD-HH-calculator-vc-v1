@@ -1192,10 +1192,12 @@
     const yMin = Math.min(...ys), yMax = Math.max(...ys);
     const pad = 20;
 
-    // TR-55 callout band (design §4.5): reserve vertical space above the plot so
-    // cards sit above the rims without clipping. Band is empty when toggled off.
+    // TR-55 callout band (design §4.5): reserve vertical space above the plot only
+    // when this walk has a structure with TR-55 cards, so the band is never wasted.
     const tr55Map = (s.analysis && s.analysis.tr55ByStructureId) || {};
-    const hasCards = !!(s.ui && s.ui.showTr55) && Object.keys(tr55Map).length > 0;
+    const hasCards = !!(s.ui && s.ui.showTr55)
+      && stations.some((p) => p.kind === "structure"
+                              && Array.isArray(tr55Map[p.id]) && tr55Map[p.id].length > 0);
     const cardBand = hasCards ? 96 : 0;
 
     const W = 800, H = 300 + cardBand;
