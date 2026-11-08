@@ -368,12 +368,37 @@
     const imp = resolvedState.imported;
     const ovr = resolvedState.overrides;
 
-    // Start row
-    const tw = imp.outfall.tailwaterElev;
-    let EGL = tw;
-    rows.push({ kind: "start", id: imp.outfall.structureId, label: imp.outfall.structureId,
+    // Start row (v81.3 / design §3.4): resolve the walk start from ui.walkStartId,
+    // falling back to the imported outfall when the UI field is absent. The boundary
+    // EGL depends on the start structure.
+    const ui = resolvedState.ui || {};
+    const structures = Array.isArray(imp.structures) ? imp.structures : [];
+    const startId = (ui.walkStartId && structures.some((s) => s.id === ui.walkStartId))
+      ? ui.walkStartId
+      : (imp.outfall && imp.outfall.structureId);
+    const startStr = structures.find((s) => s.id === startId) || null;
+    let boundaryEGL;
+    let boundaryReason;
+    if (startStr && startStr.type === "outfall") {
+      boundaryEGL = (imp.outfall && typeof imp.outfall.tailwaterElev === "number") ? imp.outfall.tailwaterElev : 0;
+      boundaryReason = "tailwater";
+    } else if (startStr && startStr.forceElev && startStr.startElev != null) {
+      boundaryEGL = startStr.startElev;
+      boundaryReason = "fixed elevation";
+    } else if (startStr && startStr.crown != null) {
+      boundaryEGL = startStr.crown;
+      boundaryReason = "crown boundary";
+    } else if (startStr && startStr.rim != null) {
+      boundaryEGL = startStr.rim;
+      boundaryReason = "rim boundary";
+    } else {
+      boundaryEGL = 0;
+      boundaryReason = "zero boundary";
+    }
+    let EGL = boundaryEGL;
+    rows.push({ kind: "start", id: startId, label: startId,
                 before: null, delta: null, after: EGL,
-                detail: { tailwaterElev: tw } });
+                detail: { boundaryEGL, boundaryReason } });
 
     // Walk pairs: each (structure -> pipe) adds an Hb row; each pipe adds an Hf row.
     // We expect the path to alternate: [outfallSid, pipeId, structureId, pipeId, structureId, ...].
@@ -433,8 +458,8 @@
     // End row
     const endId = path[path.length - 1];
     rows.push({ kind: "end", id: endId, label: endId,
-                before: tw, delta: EGL - tw, after: EGL,
-                detail: { totalRise: EGL - tw } });
+                before: boundaryEGL, delta: EGL - boundaryEGL, after: EGL,
+                detail: { totalRise: EGL - boundaryEGL } });
 
     return rows;
   }
@@ -1300,7 +1325,9 @@
 
   function initialCursor(imported) {
     if (!imported || !imported.outfall) return { kind: null, id: null, pathStack: [] };
-    const sid = imported.outfall.structureId;
+    // Honor the chosen walk start (v81.3); fall back to the imported outfall.
+    let sid = (state.ui && state.ui.walkStartId) || null;
+    if (!sid || !(imported.structures || []).some((s) => s.id === sid)) sid = imported.outfall.structureId;
     return { kind: "structure", id: sid, pathStack: [sid] };
   }
 
@@ -1499,11 +1526,13 @@
   // outfall-anchored path so HGL accumulates from the tailwater boundary.
   function pathFromOutfall(elementId, imported) {
     if (!imported || !elementId) return [];
-    const outfallSid = imported.outfall && imported.outfall.structureId;
+    // Anchor at the current walk start (v81.3), falling back to the imported outfall.
+    const anchorSid = (state.ui && state.ui.walkStartId)
+      || (imported.outfall && imported.outfall.structureId);
     const seen = new Set();
     const down = [elementId];
     let cur = elementId;
-    while (cur && cur !== outfallSid && !seen.has(cur)) {
+    while (cur && cur !== anchorSid && !seen.has(cur)) {
       seen.add(cur);
       const pipe = imported.pipes.find((p) => p.id === cur);
       if (pipe) {
@@ -1515,7 +1544,7 @@
       if (cur) down.push(cur);
     }
     const path = down.reverse();
-    if (outfallSid && path[0] !== outfallSid) path.unshift(outfallSid);
+    if (anchorSid && path[0] !== anchorSid) path.unshift(anchorSid);
     return path;
   }
 
@@ -2014,7 +2043,10 @@
   function oneLineForRow(row) {
     const arrow = " → ";
     const after = fmtNum(row.after, 2);
-    if (row.kind === "start")  return "Start: " + row.label + "   EGL = " + after + " ft (tailwater)";
+    if (row.kind === "start") {
+      const reason = (row.detail && row.detail.boundaryReason) || "tailwater";
+      return "Start: " + row.label + "   EGL = " + after + " ft (" + reason + ")";
+    }
     if (row.kind === "hf")     return "+Hf " + row.label + "   +" + fmtNum(row.delta, 3) + arrow + after;
     if (row.kind === "hb")     return "+Hb " + row.label + "   +" + fmtNum(row.delta, 3) + arrow + after;
     if (row.kind === "end")    return "End: " + row.label + "   total rise = " + fmtNum(row.detail.totalRise, 3) + " ft";
@@ -2137,7 +2169,15 @@
   function renderExpandedRow(row) {
     if (typeof renderHfRow === "function" && row.kind === "hf")   return renderHfRow(row);
     if (typeof renderHbRow === "function" && row.kind === "hb")   return renderHbRow(row);
-    if (row.kind === "start") return csResult("Tailwater elevation", fmtNum(row.detail.tailwaterElev, 2), "ft");
+    if (row.kind === "start") {
+      const reason = row.detail.boundaryReason || "tailwater";
+      const label = reason === "fixed elevation" ? "Fixed start elevation"
+                  : reason === "crown boundary" ? "Crown boundary elevation"
+                  : reason === "rim boundary" ? "Rim boundary elevation"
+                  : reason === "zero boundary" ? "Boundary elevation"
+                  : "Tailwater elevation";
+      return csResult(label, fmtNum(row.detail.boundaryEGL, 2), "ft");
+    }
     if (row.kind === "end")   return csResult("Total rise over walked path", fmtNum(row.detail.totalRise, 3), "ft");
     return el("div", null, "(no detail)");
   }
@@ -2301,6 +2341,62 @@
   }
   // ==== warning-banner: end ====
 
+  // ==== walk-from: begin ====
+  // v81.3 (design §4.2) — "Walk from" switcher, grouped outfalls-first.
+
+  let walkFromSig = null;
+
+  function renderWalkFromSelect() {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+
+    let wrap = document.getElementById("walkFromWrap");
+    let sel = document.getElementById("walkFromSelect");
+    if (!wrap) {
+      sel = el("select", {
+        id: "walkFromSelect",
+        style: "font-family:var(--mono);font-size:12px;background:var(--bg-elev);" +
+               "color:var(--fg);border:1px solid #30363d;border-radius:3px;padding:2px 4px;",
+        onchange: (ev) => {
+          const id = ev.target.value;
+          state.ui.walkStartId = id;
+          state.cursor = { kind: "structure", id: id, pathStack: [id] };
+          state.ui.branchChoices = { byStructureId: {} };
+          withFocusPreserved(renderAll);
+        }
+      });
+      wrap = el("span", { id: "walkFromWrap", style: "display:none; align-items:baseline; gap:4px; margin-left:8px;" }, [
+        el("label", {
+          for: "walkFromSelect",
+          style: "font-size:12px;color:var(--fg-dim);font-family:var(--mono);white-space:nowrap;"
+        }, "Walk from:"),
+        sel
+      ]);
+      topbar.appendChild(wrap);
+    }
+
+    const starts = (state.analysis && Array.isArray(state.analysis.walkStarts)) ? state.analysis.walkStarts : [];
+    const sig = JSON.stringify(starts.map((s) => s.id + ":" + (s.label || "")));
+    if (sig !== walkFromSig) {
+      walkFromSig = sig;
+      sel.innerHTML = "";
+      const addGroup = (label, arr) => {
+        if (arr.length === 0) return;
+        sel.appendChild(el("optgroup", { label }, arr.map((s) => el("option", { value: s.id }, s.label || s.id))));
+      };
+      addGroup("Outfalls", starts.filter((s) => s.group === "outfall"));
+      addGroup("Structures", starts.filter((s) => s.group !== "outfall"));
+    }
+
+    const want = state.ui.walkStartId;
+    const has = (v) => Array.from(sel.options).some((o) => o.value === v);
+    if (want != null && has(want)) sel.value = want;
+    else if (sel.options.length > 0) sel.value = sel.options[0].value;
+
+    wrap.style.display = starts.length ? "inline-flex" : "none";
+  }
+  // ==== walk-from: end ====
+
   // ==== bootstrap: begin ====
   function renderAll() {
     renderActiveView();
@@ -2310,6 +2406,7 @@
     if (typeof renderWarningBanner === "function") renderWarningBanner();
     if (typeof syncModeButton === "function") syncModeButton();
     if (typeof syncHglSelect === "function") syncHglSelect();
+    if (typeof renderWalkFromSelect === "function") renderWalkFromSelect();
   }
 
   // V hotkey (also 'v' lowercase). Ignore while typing in form controls.
