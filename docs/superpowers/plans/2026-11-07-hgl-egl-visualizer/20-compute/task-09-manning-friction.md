@@ -10,7 +10,7 @@ Implement `frictionSlope` and `frictionLoss` per spec §7.2 and main spec §1.2.
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-08:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-08:
 
 ```js
   // --- Manning's friction (task-09) ---

@@ -49,5 +49,5 @@ Requires the dev dependencies in `visualizer-tests/package.json` (`jsdom` and
 After regenerating, run the drift tests from the worktree root:
 
 ```powershell
-node --test drainage-calculator/visualizer-tests/drift.test.js
+node --test visualizer/visualizer-tests/drift.test.js
 ```

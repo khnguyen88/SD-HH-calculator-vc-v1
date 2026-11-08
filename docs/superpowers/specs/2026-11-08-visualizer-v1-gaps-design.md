@@ -7,8 +7,8 @@
 
 ## 0. Non-negotiable constraints
 
-- Edit only `drainage-calculator/storm-drain-visualizer-dev.html`; rebuild with
-  `node drainage-calculator/build-visualizer.js`.
+- Edit only `visualizer/storm-drain-visualizer-dev.html`; rebuild with
+  `node visualizer/build-visualizer.js`.
 - The built file stays one self-contained offline HTML (SheetJS inlined, no CDN,
   no external `src`/`href`). The built file stays untracked.
 - No new runtime dependencies; browser-only vanilla JS + SVG.

@@ -10,7 +10,7 @@ Test `frictionSlope` and `frictionLoss` against hand-calculated references. Impl
 
 ## Exact changes
 
-**Create** `drainage-calculator/visualizer-tests/friction.test.js`:
+**Create** `visualizer/visualizer-tests/friction.test.js`:
 
 ```js
 const test = require("node:test");
@@ -75,7 +75,7 @@ test("Sf scales as (Q·n)² approximately", () => {
 ## Acceptance test
 
 ```powershell
-node --test drainage-calculator/visualizer-tests/friction.test.js
+node --test visualizer/visualizer-tests/friction.test.js
 ```
 
 Expected: `pass 7 / fail 0`.

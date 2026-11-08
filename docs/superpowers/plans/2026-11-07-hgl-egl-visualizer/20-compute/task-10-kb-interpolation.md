@@ -10,7 +10,7 @@ Define the Kb seed table (identical to main app §1.6) and `kbAt(angleDeg, struc
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-09:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-09:
 
 ```js
   // --- Kb lookup (task-10) ---

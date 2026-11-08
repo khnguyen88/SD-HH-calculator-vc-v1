@@ -10,7 +10,7 @@ Test `structureLoss` across all inflow counts, with specific focus on the main-s
 
 ## Exact changes
 
-**Create** `drainage-calculator/visualizer-tests/structure-loss.test.js`:
+**Create** `visualizer/visualizer-tests/structure-loss.test.js`:
 
 ```js
 const test = require("node:test");
@@ -113,7 +113,7 @@ test("kbAt: null/empty table falls back to seed", () => {
 ## Acceptance test
 
 ```powershell
-node --test drainage-calculator/visualizer-tests/structure-loss.test.js
+node --test visualizer/visualizer-tests/structure-loss.test.js
 ```
 
 Expected: `pass 10 / fail 0`.

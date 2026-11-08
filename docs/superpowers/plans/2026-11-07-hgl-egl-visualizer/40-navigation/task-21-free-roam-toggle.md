@@ -10,7 +10,7 @@ Settings toggle that flips `state.ui.freeRoam`. In free-roam mode, `↑/↓` mov
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-20:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-20:
 
 ```js
   // --- Free-roam mode (task-21) ---

@@ -10,7 +10,7 @@ Implement `outletVelocity`, `velocityHead`, and `structureLoss` per spec §7.3 a
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-10:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-10:
 
 ```js
   // --- Structure loss (task-11) ---

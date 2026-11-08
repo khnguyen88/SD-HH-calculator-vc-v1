@@ -10,7 +10,7 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `edit-mode` sentinel block after task-24:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `edit-mode` sentinel block after task-24:
 
 ```js
   // --- Override badge + reset panel (task-25) ---

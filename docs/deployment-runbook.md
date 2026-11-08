@@ -92,14 +92,14 @@ git checkout main
 
 Build and deploy mirror the main app's flow.
 
-1. Edit `drainage-calculator/storm-drain-visualizer-dev.html`.
-2. Run `node drainage-calculator/build-visualizer.js` to produce
-   `drainage-calculator/storm-drain-visualizer.html` (self-contained, SheetJS inlined).
-3. Run `npm --prefix drainage-calculator/visualizer-tests test` — confirm `fail 0`.
+1. Edit `visualizer/storm-drain-visualizer-dev.html`.
+2. Run `node visualizer/build-visualizer.js` to produce
+   `visualizer/storm-drain-visualizer.html` (self-contained, SheetJS inlined).
+3. Run `npm --prefix visualizer/visualizer-tests test` — confirm `fail 0`.
 4. Commit the dev file and runbook to `main`; push. The built `.html` is regenerated
    from the dev file and is not committed.
 5. To publish: create a temp worktree for `gh-pages`, copy
-   `drainage-calculator/storm-drain-visualizer.html` into it as `visualizer.html`,
+   `visualizer/storm-drain-visualizer.html` into it as `visualizer.html`,
    commit, push `gh-pages`, then remove the temp worktree.
 6. Live at: https://khnguyen88.github.io/SD-HH-calculator-vc-v1/visualizer.html
 

@@ -13,7 +13,7 @@ as `feat(visualizer): task-39 toolbar link in main app`.
 
 **NOT done:** the `gh-pages` worktree/publish steps and the remote `git push` below. Those touch
 shared, public state and require explicit owner authorization. The built visualizer is available
-locally at `drainage-calculator/storm-drain-visualizer.html` for the deploy step.
+locally at `visualizer/storm-drain-visualizer.html` for the deploy step.
 
 ## Preconditions
 
@@ -34,7 +34,7 @@ if (Test-Path $tempDir) { Remove-Item -Recurse -Force $tempDir }
 git worktree add $tempDir gh-pages
 
 # 2. Copy the built visualizer file into the worktree as visualizer.html
-Copy-Item "drainage-calculator/storm-drain-visualizer.html" "$tempDir/visualizer.html" -Force
+Copy-Item "visualizer/storm-drain-visualizer.html" "$tempDir/visualizer.html" -Force
 
 # 3. Commit from inside the worktree
 Set-Location $tempDir

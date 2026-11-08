@@ -21,7 +21,7 @@ contradicted spec §4.2 and the bburg reference and has been replaced.
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-12:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-12:
 
 ```js
   // --- HGL derivation (task-13) ---

@@ -11,7 +11,7 @@ Parse the main app's `.xlsx` export (per main spec §B) into the same in-memory 
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-05 code:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-05 code:
 
 ```js
   // --- xlsx importer (task-06) ---

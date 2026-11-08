@@ -10,7 +10,7 @@ Render the pedagogical payoff of the controlling-angle method: show BOTH candida
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `ledger-render` sentinel block after task-29:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `ledger-render` sentinel block after task-29:
 
 ```js
   // --- Two-inflow detail (task-30) ---

@@ -10,7 +10,7 @@ Document-level `keydown` handler for `↑/↓/Enter/Esc`. Default (upstream) mod
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-18:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-18:
 
 ```js
   // --- Arrow walk handler (task-19) ---

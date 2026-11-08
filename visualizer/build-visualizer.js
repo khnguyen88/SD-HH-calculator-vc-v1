@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Builds storm-drain-visualizer.html from the dev HTML by inlining SheetJS.
-// Run: node drainage-calculator/build-visualizer.js
+// Run: node visualizer/build-visualizer.js
 
 const fs = require("fs");
 const path = require("path");
@@ -8,7 +8,8 @@ const path = require("path");
 const ROOT = path.join(__dirname);
 const DEV = path.join(ROOT, "storm-drain-visualizer-dev.html");
 const OUT = path.join(ROOT, "storm-drain-visualizer.html");
-const SHEETJS = path.join(ROOT, "lib", "sheetjs-bundle.js");
+// Shared with the main app build; the visualizer does not carry its own copy.
+const SHEETJS = path.join(ROOT, "..", "drainage-calculator", "lib", "sheetjs-bundle.js");
 const SENTINEL = "<!-- SHEETJS -->";
 
 function build() {

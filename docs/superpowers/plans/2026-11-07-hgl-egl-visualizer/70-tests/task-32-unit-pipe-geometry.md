@@ -10,7 +10,7 @@ Test every function from task-08 in isolation: `pipeAreaCircular`, `pipeRadiusCi
 
 ## Exact changes
 
-**Create** `drainage-calculator/visualizer-tests/pipe-geometry.test.js`:
+**Create** `visualizer/visualizer-tests/pipe-geometry.test.js`:
 
 ```js
 const test = require("node:test");
@@ -84,7 +84,7 @@ test("TABLE_4_6 has 24 rows covering 15..144 in", () => {
 ## Acceptance test
 
 ```powershell
-node --test drainage-calculator/visualizer-tests/pipe-geometry.test.js
+node --test visualizer/visualizer-tests/pipe-geometry.test.js
 ```
 
 Expected: `pass 9 / fail 0`.

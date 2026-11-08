@@ -26,13 +26,13 @@ second inflow carried zero flow).
 
 ## Exact changes
 
-- **Create** `drainage-calculator/visualizer-tests/fixtures/generate-fixture.js` — headless
+- **Create** `visualizer/visualizer-tests/fixtures/generate-fixture.js` — headless
   generator described above (CommonJS; requires jsdom/xlsx from `../node_modules`).
-- **Create** `drainage-calculator/visualizer-tests/fixtures/main-app-export.xlsx` — run the
+- **Create** `visualizer/visualizer-tests/fixtures/main-app-export.xlsx` — run the
   generator; commit the binary (~190 KB, the test contract).
-- **Create** `drainage-calculator/visualizer-tests/fixtures/README.md` — documents headless
+- **Create** `visualizer/visualizer-tests/fixtures/README.md` — documents headless
   regeneration, the `seedExample()` network, and the dev-only jsdom/xlsx dependency.
-- **Create** `drainage-calculator/visualizer-tests/drift.test.js` — 3 tests.
+- **Create** `visualizer/visualizer-tests/drift.test.js` — 3 tests.
 
 ### Real export schema (the original draft's column names were wrong)
 
@@ -77,7 +77,7 @@ Tolerances: `TOL_PIPE = 0.001`, `TOL_STRUCT = 0.001`, `TOL_EGL = 0.01`.
 ## Acceptance test
 
 ```powershell
-node --test drainage-calculator/visualizer-tests/drift.test.js
+node --test visualizer/visualizer-tests/drift.test.js
 ```
 
 Expected: `pass 3 / fail 0`. Verified baseline with `seedExample()`: max |ΔHf| ≈ 2.8e-5,

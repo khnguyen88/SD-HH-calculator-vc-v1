@@ -10,7 +10,7 @@ Build the ledger from the current walk path. Pure function — takes the path an
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-11:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-11:
 
 ```js
   // --- Ledger builder (task-12) ---

@@ -11,7 +11,7 @@ Implement pipe area and hydraulic radius for both circular and elliptical shapes
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Insert inside the `compute` sentinel block, immediately after the `begin` line:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Insert inside the `compute` sentinel block, immediately after the `begin` line:
 
 ```js
   // --- pipe geometry (task-08) ---

@@ -10,7 +10,7 @@ Render the full Manning friction loss derivation for a `+Hf` ledger row: A, R, S
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `ledger-render` sentinel block after task-27:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `ledger-render` sentinel block after task-27:
 
 ```js
   // --- Hf row expanded render (task-28) ---

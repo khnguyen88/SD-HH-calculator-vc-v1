@@ -10,7 +10,7 @@ In edit mode, holding Shift and pressing an arrow key nudges the selected struct
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-21:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-21:
 
 ```js
   // --- Shift+Arrow nudge (task-22) ---

@@ -10,7 +10,7 @@ Build the composable DOM helpers for calc-sheet-style content inside expanded le
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Insert inside the `ledger-render` sentinel block, immediately after the `begin` line:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Insert inside the `ledger-render` sentinel block, immediately after the `begin` line:
 
 ```js
   // --- Calc-sheet helpers (task-27) ---

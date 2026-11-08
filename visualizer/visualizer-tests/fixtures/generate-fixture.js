@@ -23,7 +23,7 @@ const { JSDOM } = require(path.join(__dirname, "..", "node_modules", "jsdom"));
 const XLSX = require(path.join(__dirname, "..", "node_modules", "xlsx"));
 
 const MAIN_DEV_HTML = path.join(
-  __dirname, "..", "..", "storm-drain-design-calculator-dev.html"
+  __dirname, "..", "..", "drainage-calculator", "storm-drain-design-calculator-dev.html"
 );
 const OUT_PATH = path.join(__dirname, "main-app-export.xlsx");
 

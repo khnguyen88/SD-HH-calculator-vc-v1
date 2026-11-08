@@ -11,7 +11,7 @@ Read a user-selected `.json` file, validate it via task-04, and populate `state.
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-04 code:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-04 code:
 
 ```js
   // --- json importer (task-05) ---

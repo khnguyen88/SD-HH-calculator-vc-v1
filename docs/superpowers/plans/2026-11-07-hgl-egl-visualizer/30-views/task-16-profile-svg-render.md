@@ -10,7 +10,7 @@
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `views` sentinel block after task-15:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `views` sentinel block after task-15:
 
 ```js
   // --- Profile render (task-16) ---

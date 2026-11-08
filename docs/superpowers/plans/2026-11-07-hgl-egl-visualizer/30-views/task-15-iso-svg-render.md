@@ -12,7 +12,7 @@ Note: task-22 made `renderIso` override-aware — structure `x`/`y` are resolved
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `views` sentinel block after task-14:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `views` sentinel block after task-14:
 
 ```js
   // --- Iso SVG render (task-15) ---

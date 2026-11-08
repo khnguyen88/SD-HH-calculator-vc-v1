@@ -10,7 +10,7 @@ In edit mode, the expanded ledger row shows editable inputs for its row kind. Ev
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `edit-mode` sentinel block after task-23:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `edit-mode` sentinel block after task-23:
 
 ```js
   // --- Editable field helpers (task-24) ---

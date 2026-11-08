@@ -10,7 +10,7 @@ Centralize the overrides API used by task-24 (editable inputs) and task-25 (rese
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Insert inside the `edit-mode` sentinel block, immediately after the `begin` line:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Insert inside the `edit-mode` sentinel block, immediately after the `begin` line:
 
 ```js
   // --- Overrides store (task-23) ---

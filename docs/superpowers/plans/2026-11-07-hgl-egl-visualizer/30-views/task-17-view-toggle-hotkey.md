@@ -10,7 +10,7 @@ Wire the `V` key and the toolbar `[ISO | profile]` label to toggle `state.ui.vie
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `views` sentinel block after task-16:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `views` sentinel block after task-16:
 
 ```js
   // --- Active view dispatcher + V hotkey (task-17) ---

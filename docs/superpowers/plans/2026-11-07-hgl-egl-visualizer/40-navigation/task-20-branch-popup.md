@@ -10,7 +10,7 @@ Modal popup when the cursor's upstream has >1 pipes. Keyboard-first (`↑/↓` c
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-19:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-19:
 
 ```js
   // --- Branch popup (task-20) ---

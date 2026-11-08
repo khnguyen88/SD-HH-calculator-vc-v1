@@ -13,7 +13,7 @@ Run the final build, open the built file, and walk through the acceptance scenar
 **Run** the full test suite first:
 
 ```powershell
-npm --prefix drainage-calculator/visualizer-tests test
+npm --prefix visualizer/visualizer-tests test
 ```
 
 Expected output: `pass 40 / fail 0` (tasks 31–37). Note: `node --test <dir>` fails on
@@ -23,22 +23,22 @@ Node 22/Windows (it tries to require the directory); use `npm --prefix ... test`
 **Then** build:
 
 ```powershell
-node drainage-calculator/build-visualizer.js
+node visualizer/build-visualizer.js
 ```
 
 Expected output: `visualizer: built OK (~510 KB)`. The original ≥800 KB estimate was wrong;
 510 KB is correct. Verify self-containment instead: no `SHEETJS_BUNDLE` placeholder, zero
 external `src|href="http(s)://` refs, no CDN hosts, SheetJS inlined.
 
-The built `drainage-calculator/storm-drain-visualizer.html` stays **untracked** (regenerated
+The built `visualizer/storm-drain-visualizer.html` stays **untracked** (regenerated
 from the dev file); only the runbook change is committed.
 
 **Then** manually verify the built file end-to-end:
 
-1. Open `drainage-calculator/storm-drain-visualizer.html` by double-click (NOT via a local server).
+1. Open `visualizer/storm-drain-visualizer.html` by double-click (NOT via a local server).
 2. Open browser DevTools (F12). Network tab, "Disable cache" checked.
 3. Reload the page. **Assert**: only one request shown, for the `file://` URL itself. No other network activity.
-4. Click `Open .xlsx`. Choose `drainage-calculator/visualizer-tests/fixtures/main-app-export.xlsx`.
+4. Click `Open .xlsx`. Choose `visualizer/visualizer-tests/fixtures/main-app-export.xlsx`.
 5. **Assert**: iso view renders — at least one structure symbol and one pipe line visible.
 6. Press `ArrowUp` once. **Assert**: ledger grows to 2 rows; iso view highlights one pipe yellow.
 7. Press `V`. **Assert**: profile view appears with crown/invert/HGL/EGL polylines.
@@ -55,12 +55,12 @@ from the dev file); only the runbook change is committed.
 
 Build and deploy mirror the main app's flow.
 
-1. Edit `drainage-calculator/storm-drain-visualizer-dev.html`.
-2. Run `node drainage-calculator/build-visualizer.js` to produce
-   `drainage-calculator/storm-drain-visualizer.html`.
-3. Run `node --test drainage-calculator/visualizer-tests/` — confirm `fail 0`.
+1. Edit `visualizer/storm-drain-visualizer-dev.html`.
+2. Run `node visualizer/build-visualizer.js` to produce
+   `visualizer/storm-drain-visualizer.html`.
+3. Run `node --test visualizer/visualizer-tests/` — confirm `fail 0`.
 4. Commit both dev and built files to `main`; push.
-5. `git checkout gh-pages`, copy `drainage-calculator/storm-drain-visualizer.html`
+5. `git checkout gh-pages`, copy `visualizer/storm-drain-visualizer.html`
    into the root as `visualizer.html`, commit, push.
 6. Live at: https://khnguyen88.github.io/SD-HH-calculator-vc-v1/visualizer.html
 

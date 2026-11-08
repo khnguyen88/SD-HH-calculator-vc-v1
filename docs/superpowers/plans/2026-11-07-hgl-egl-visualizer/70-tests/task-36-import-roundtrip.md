@@ -10,7 +10,7 @@ Build a representative JSON, import it, set an override, export the tweaked JSON
 
 ## Exact changes
 
-**Create** `drainage-calculator/visualizer-tests/roundtrip.test.js`:
+**Create** `visualizer/visualizer-tests/roundtrip.test.js`:
 
 ```js
 const test = require("node:test");
@@ -105,7 +105,7 @@ test("roundtrip: kbTable is preserved through export+reimport", async () => {
 ## Acceptance test
 
 ```powershell
-node --test drainage-calculator/visualizer-tests/roundtrip.test.js
+node --test visualizer/visualizer-tests/roundtrip.test.js
 ```
 
 Expected: `pass 4 / fail 0`.

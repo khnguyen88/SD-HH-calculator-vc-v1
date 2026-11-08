@@ -10,7 +10,7 @@ Dispatch real `keydown` and `input` events, assert state changes. Also audit the
 
 ## Exact changes
 
-**Create** `drainage-calculator/visualizer-tests/dom-events.test.js`:
+**Create** `visualizer/visualizer-tests/dom-events.test.js`:
 
 ```js
 const test = require("node:test");
@@ -143,7 +143,7 @@ test("audit: every oninput/onchange that calls a render routes through withFocus
 ## Acceptance test
 
 ```powershell
-node --test drainage-calculator/visualizer-tests/dom-events.test.js
+node --test visualizer/visualizer-tests/dom-events.test.js
 ```
 
 Expected: `pass 5 / fail 0`.

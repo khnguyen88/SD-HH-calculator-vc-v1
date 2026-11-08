@@ -10,7 +10,7 @@ If an imported file has no `x`/`y` coordinates on structures (older main-app exp
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-06 code:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-06 code:
 
 ```js
   // --- auto-layout (task-07) ---

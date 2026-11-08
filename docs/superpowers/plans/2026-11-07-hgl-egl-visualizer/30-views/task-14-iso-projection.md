@@ -10,7 +10,7 @@ Implement `projectIso(x, y, z, kZ)` — the pure math that maps world coordinate
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Insert inside the `views` sentinel block, immediately after the `begin` line:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Insert inside the `views` sentinel block, immediately after the `begin` line:
 
 ```js
   // --- Iso projection (task-14) ---

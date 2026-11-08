@@ -10,7 +10,7 @@ Implement `initialCursor`, `advanceCursor`, `retreatCursor`, and `upstreamOption
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Insert inside the `navigation` sentinel block, immediately after the `begin` line:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Insert inside the `navigation` sentinel block, immediately after the `begin` line:
 
 ```js
   // --- Cursor helpers (task-18) ---
