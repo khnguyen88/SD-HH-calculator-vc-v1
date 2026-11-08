@@ -93,7 +93,8 @@
     overrides: { byId: {} },
     cursor: { kind: null, id: null, pathStack: [] },
     ui: { view: "iso", mode: "explore", hglMethod: "hec22",
-          freeRoam: false, branchChoices: { byStructureId: {} } }
+          freeRoam: false, branchChoices: { byStructureId: {} },
+          expandedRowId: null }
   };
   // ==== state: end ====
 
@@ -1832,18 +1833,48 @@
     const cursorId = state.cursor && state.cursor.id;
     for (const row of annotated) {
       const isCurrent = row.kind !== "end" && row.id === cursorId;
+      const isExpanded = state.ui.expandedRowId === null
+        ? isCurrent
+        : row.id === state.ui.expandedRowId;
       const collapsed = el("div", {
         style: "padding:3px 6px; font-family:ui-monospace,monospace; cursor:pointer; "
              + (isCurrent ? "background:#ffeaa7;" : ""),
-        onclick: () => { /* click-to-expand handled by task-28/29 rendering an expanded block */ }
+        onclick: () => {
+          // Click a row to expand it; click the already-expanded row to return to auto-follow.
+          state.ui.expandedRowId = (state.ui.expandedRowId === row.id) ? null : row.id;
+          renderLedger();
+        }
       }, oneLineForRow(row));
       host.appendChild(collapsed);
-      if (isCurrent) {
+      if (isExpanded) {
         const details = el("div", { style: "padding:4px 20px;" }, renderExpandedRow(row));
         host.appendChild(details);
       }
     }
   }
+
+  // --- Enter key expand/collapse (task-43) ---
+  // Sentinel id that never matches a real row → effectively collapses every row.
+  const LEDGER_COLLAPSED = "(collapsed)";
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter") return;
+    if (typeof isTypingTarget === "function" && isTypingTarget(ev)) return;
+    if (typeof isBranchPopupOpen === "function" && isBranchPopupOpen()) return;
+    if (document.getElementById("overridePanel")) return;      // a modal owns the keyboard
+    const t = ev.target;
+    // Don't hijack Enter on interactive controls (buttons/links/selects).
+    if (t && (t.tagName === "BUTTON" || t.tagName === "A" || t.tagName === "SELECT")) return;
+
+    const cursorId = state.cursor && state.cursor.id;
+    if (!cursorId) return;
+    ev.preventDefault();
+
+    const cursorRowIsExpanded = state.ui.expandedRowId === null
+      || state.ui.expandedRowId === cursorId;
+    state.ui.expandedRowId = cursorRowIsExpanded ? LEDGER_COLLAPSED : null;
+    if (typeof renderLedger === "function") renderLedger();
+  });
 
   function oneLineForRow(row) {
     const arrow = " → ";
