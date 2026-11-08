@@ -1835,7 +1835,7 @@
       const isCurrent = row.kind !== "end" && row.id === cursorId;
       const isExpanded = state.ui.expandedRowId === null
         ? isCurrent
-        : row.id === state.ui.expandedRowId;
+        : (row.kind !== "end" && row.id === state.ui.expandedRowId);
       const collapsed = el("div", {
         style: "padding:3px 6px; font-family:ui-monospace,monospace; cursor:pointer; "
              + (isCurrent ? "background:#ffeaa7;" : ""),
