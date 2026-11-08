@@ -402,9 +402,13 @@
     const startId = resolveWalkStart(imp, resolvedState.ui);
     const startStr = structures.find((s) => s.id === startId) || null;
     const startType = startStr ? (resolveField(startId, "type", imp, ovr) || startStr.type) : null;
+    // A walk start whose structure record is missing is still valid when it names the
+    // imported outfall — fall back to the tailwater boundary rather than a silent 0.
+    const startIsOutfall = (startStr && startType === "outfall")
+      || (startStr === null && startId != null && imp.outfall && startId === imp.outfall.structureId);
     let boundaryEGL;
     let boundaryReason;
-    if (startStr && startType === "outfall") {
+    if (startIsOutfall) {
       boundaryEGL = (imp.outfall && typeof imp.outfall.tailwaterElev === "number") ? imp.outfall.tailwaterElev : 0;
       boundaryReason = "tailwater";
     } else if (startStr && startStr.forceElev && startStr.startElev != null) {
@@ -661,7 +665,11 @@
     // Separate the tweaked-export sidecar (if present) before copying `imported`.
     const overrides = Array.isArray(obj._overrides) ? obj._overrides : [];
     const imported = {
-      structures: obj.structures.map((s) => Object.assign({}, s)),
+      structures: obj.structures.map((s) => {
+        const copy = Object.assign({}, s);
+        copy.type = String(copy.type || "manhole").toLowerCase();
+        return copy;
+      }),
       pipes: obj.pipes.map((p) => {
         const copy = Object.assign({}, p);
         copy.shape = normalizeShape(copy.shape);
@@ -2652,7 +2660,7 @@
     }
 
     const starts = (state.analysis && Array.isArray(state.analysis.walkStarts)) ? state.analysis.walkStarts : [];
-    const sig = JSON.stringify(starts.map((s) => s.id + ":" + (s.label || "")));
+    const sig = JSON.stringify(starts.map((s) => [s.id, s.label || "", s.group || "", s.type || ""]));
     if (sig !== walkFromSig) {
       walkFromSig = sig;
       sel.innerHTML = "";
