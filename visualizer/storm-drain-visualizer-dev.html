@@ -1124,12 +1124,14 @@
   }
 
   // Inject the HGL-method label + select into the topbar, just before the mode toggle.
+  // Fallback: if the mode toggle is absent, still render both inside the topbar.
   (function () {
     const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
     const modeToggle = document.getElementById("modeToggle");
-    if (!topbar || !modeToggle) return;
-    const label = el("span", {
-      style: "font-size:12px;color:var(--fg-dim);font-family:var(--mono);"
+    const label = el("label", {
+      for: "hglMethodSelect",
+      style: "font-size:12px;color:var(--fg-dim);font-family:var(--mono);white-space:nowrap;"
     }, "HGL method:");
     const select = el("select", {
       id: "hglMethodSelect",
@@ -1143,8 +1145,13 @@
       el("option", { value: "hec22" }, "HEC-22 EGL"),
       el("option", { value: "legacy-both-crown" }, "Legacy both-crown")
     ]);
-    topbar.insertBefore(label, modeToggle);
-    topbar.insertBefore(select, modeToggle);
+    if (modeToggle) {
+      topbar.insertBefore(label, modeToggle);
+      topbar.insertBefore(select, modeToggle);
+    } else {
+      topbar.appendChild(label);
+      topbar.appendChild(select);
+    }
     syncHglSelect();
   })();
   // ==== views: end ====
