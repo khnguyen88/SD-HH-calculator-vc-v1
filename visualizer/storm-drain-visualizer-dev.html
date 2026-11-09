@@ -365,6 +365,7 @@
     const Lv1 = Kb_a * velocityHead(V1_3);
     const Lv2 = Kb_b * velocityHead(V2_3);
     // CRITICAL: the SMALLER candidate loss picks the controlling angle.
+    // Mandated by MCDOT Drainage Design Criteria §4.3.2.3 (Junctions), steps 5-6.
     const thetaC = (Lv1 > Lv2) ? bAngle : aAngle;
     const Kb = kbAt(thetaC, structureType, kbTable);
     return {
@@ -2640,7 +2641,7 @@
       csSection("two inflows — controlling-angle method", el("div", { style: "font-size:12px; color:#444; margin-bottom:6px;" }, [
         "Compute Lv = Kb·V²/(2g) for each inflow using that inflow's partial velocity (V_i/3 = Q_i / A_out). ",
         el("b", null, "The SMALLER of the two Lv's picks the controlling angle θc."),
-        " (The counter-intuitive detail: smaller Lv → θc, not larger. Per main spec §1.4.)"
+        " (The counter-intuitive detail: smaller Lv → θc, not larger. Per main spec §1.4; the procedure is mandated verbatim by MCDOT Drainage Design Criteria §4.3.2.3 Junctions, following the MSHA Highway Drainage Manual. HEC-22 4th Ed §9.1.6.7.2 instead flow-weights the angle — the county criteria govern.)"
       ])),
       candTable,
       csSection("controlling angle", csFormula(
