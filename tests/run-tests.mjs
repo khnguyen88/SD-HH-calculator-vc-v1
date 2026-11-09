@@ -838,3 +838,111 @@ test("HGL method: conservative leaves above-crown HGL unchanged", () => {
   isClose(calc.elevation, 102.00, 0.001, "HGL above crown must not be lowered");
   assert.equal(calc.pinned, false, "pinned flag must be false when computed >= crown");
 });
+
+function chainFixture(){
+  const s0 = sdc.state;
+  const saved = { structures: s0.structures, pipes: s0.pipes, hydraulics: s0.hydraulics };
+  s0.structures = [
+    { id:"pin-out", structureId:"PIN-OUT", type:"outfall", forceElev:true,
+      startElev: 100, drainageAreaId:"", rim:"" },
+    { id:"pin-b",   structureId:"PIN-B",   type:"manhole", forceElev:false,
+      startElev:"", drainageAreaId:"", rim:"" },
+    { id:"pin-a",   structureId:"PIN-A",   type:"manhole", forceElev:false,
+      startElev:"", drainageAreaId:"", rim:"" },
+  ];
+  s0.pipes = [
+    { id:"pipe-b", fromStructureId:"pin-b", toStructureId:"pin-out",
+      angle:0, shape:"circular", size:24, n:0.013, slope:0.01, length:100,
+      upstreamInvert:99, downstreamInvert:98, splitRole:"" },
+    { id:"pipe-a", fromStructureId:"pin-a", toStructureId:"pin-b",
+      angle:0, shape:"circular", size:12, n:0.013, slope:0.01, length:100,
+      upstreamInvert:100.5, downstreamInvert:99.5, splitRole:"" },
+  ];
+  return function restore(){ s0.structures = saved.structures; s0.pipes = saved.pipes; s0.hydraulics = saved.hydraulics; };
+}
+
+test("HGL method: pinned elevation propagates upstream", () => {
+  const restore = chainFixture();
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  const calcB = sdc.computeStructureCalc("pin-b");
+  const calcA = sdc.computeStructureCalc("pin-a");
+  restore();
+  isClose(calcB.elevation, 101.00, 0.001, "B pinned to its crown 99 + 24/12");
+  assert.equal(calcB.pinned, true);
+  // A now computes from B's PINNED elevation: 101.00 < A's crown (100.5 + 12/12 = 101.5)
+  isClose(calcA.elevation, 101.50, 0.001, "A pinned to its crown, computed from B's pinned HGL");
+  assert.equal(calcA.pinned, true);
+});
+
+test("HGL method: HEC-22 chain unchanged in same fixture", () => {
+  const restore = chainFixture();
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const calcA = sdc.computeStructureCalc("pin-a");
+  restore();
+  isClose(calcA.elevation, 100.00, 0.001, "HEC-22 chain: outfall 100 + 0 + 0");
+});
+
+test("HGL method: conservative applies to 25-yr override chain", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  const calc = sdc.computeStructureCalc("pin-st", null, "25yr");
+  restore();
+  isClose(calc.elevation, 101.00, 0.001, "25-yr chain must also be pinned");
+  assert.equal(calc.pinned, true);
+});
+
+test("HGL method: base/forceElev structures are never pinned", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  const calc = sdc.computeStructureCalc("pin-out");
+  restore();
+  assert.equal(calc.isBase, true);
+  isClose(calc.elevation, 100.00, 0.001, "outfall keeps its fixed elevation");
+  assert.equal(calc.pinned, false, "base structures must never be pinned");
+});
+
+test("HGL method: missing crown falls back to unpinned HEC-22 value", () => {
+  const s0 = sdc.state;
+  const saved = { structures: s0.structures, pipes: s0.pipes, hydraulics: s0.hydraulics };
+  s0.structures = [
+    { id:"pin-out", structureId:"PIN-OUT", type:"outfall", forceElev:true,
+      startElev: 100, drainageAreaId:"", rim:"" },
+    { id:"pin-st", structureId:"PIN-ST", type:"manhole", forceElev:false,
+      startElev:"", drainageAreaId:"", rim:"" },
+  ];
+  s0.pipes = [
+    { id:"pin-pipe", fromStructureId:"pin-st", toStructureId:"pin-out",
+      angle:0, shape:"circular", size:24, n:0.013, slope:0.01, length:100,
+      upstreamInvert:"", downstreamInvert:"", splitRole:"" },
+  ];
+  s0.hydraulics = { hglMethod: "conservative" };
+  const calc = sdc.computeStructureCalc("pin-st");
+  s0.structures = saved.structures; s0.pipes = saved.pipes; s0.hydraulics = saved.hydraulics;
+  assert.equal(calc.crown, null, "fixture must produce a null crown");
+  isClose(calc.elevation, 100.00, 0.001, "no crown -> keep HEC-22 value");
+  assert.equal(calc.pinned, false);
+});
+
+test("HGL method: assumed-invert crown is still pinned and flagged", () => {
+  const s0 = sdc.state;
+  const saved = { structures: s0.structures, pipes: s0.pipes, hydraulics: s0.hydraulics };
+  s0.structures = [
+    { id:"pin-out", structureId:"PIN-OUT", type:"outfall", forceElev:true,
+      startElev: 100, drainageAreaId:"", rim:"" },
+    { id:"pin-st", structureId:"PIN-ST", type:"manhole", forceElev:false,
+      startElev:"", drainageAreaId:"", rim:"" },
+  ];
+  s0.pipes = [
+    { id:"pin-pipe", fromStructureId:"pin-st", toStructureId:"pin-out",
+      angle:0, shape:"circular", size:24, n:0.013, slope:0.01, length:100,
+      // No upstream invert: pipeInvertState assumes usInvert = DS + 0.1 = 98.1, assumed:true
+      upstreamInvert:"", downstreamInvert:98, splitRole:"" },
+  ];
+  s0.hydraulics = { hglMethod: "conservative" };
+  const calc = sdc.computeStructureCalc("pin-st");
+  s0.structures = saved.structures; s0.pipes = saved.pipes; s0.hydraulics = saved.hydraulics;
+  assert.equal(calc.crownAssumed, true, "fixture must produce an assumed crown");
+  isClose(calc.crown, 100.10, 0.001, "assumed crown = 98.1 + 24/12");
+  isClose(calc.elevation, 100.10, 0.001, "pin to the assumed crown");
+  assert.equal(calc.pinned, true);
+});
