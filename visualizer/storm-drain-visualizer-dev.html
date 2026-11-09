@@ -658,7 +658,12 @@
     let obj;
     try { obj = JSON.parse(text); }
     catch (e) { throw new Error("JSON parse error: " + e.message); }
+    applyImportedJson(obj, (file && file.name) || "");
+  }
 
+  // Shared apply path: used by both file import and built-in sample loading,
+  // so samples can never bypass schema validation or walk-reset semantics.
+  function applyImportedJson(obj, fileName) {
     const result = validateImportedJson(obj);
     if (!result.valid) throw new Error("JSON validation failed: " + result.errors.join("; "));
 
@@ -704,7 +709,7 @@
       state.overrides.byId[ov.elementId][ov.field] = ov.newValue;
     }
 
-    state.ui.fileName = (file && file.name) || "";
+    state.ui.fileName = fileName || "";
     state.imported = imported;
     state.ui.mode = listOverrides().length > 0 ? "edit" : "explore";
 
