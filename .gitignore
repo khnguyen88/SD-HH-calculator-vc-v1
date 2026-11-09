@@ -43,3 +43,12 @@ visualizer/storm-drain-visualizer.html
 
 # Brainstorming visual companion session artifacts
 .superpowers/
+
+# Claude Code local settings
+.claude/
+
+# Local reference manuals (large PDFs kept out of the repo)
+hif24006-hec22_v4.pdf
+
+# Shell crash artifacts
+*.stackdump
