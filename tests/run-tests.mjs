@@ -730,3 +730,63 @@ test("OOXML: shared-string cells present (bookSST:true worked)", () => {
   }
   assert.ok(foundSst, "No shared-string (t='s') cells found — bookSST may not be active");
 });
+
+// ==================== Export/import round-trip — spec §C.4 ====================
+test("round-trip: exported row counts match live state", async () => {
+  const before = {
+    drainage:  sdc.state.drainage.length,
+    structures: sdc.state.structures.length,
+    pipes:      sdc.state.pipes.length,
+    outletStructures: sdc.state.outletStructures.length,
+    outletDevices:    sdc.state.outletDevices.length,
+  };
+  assert.ok(before.drainage > 0,   "pre-condition: drainage rows must exist");
+  assert.ok(before.structures > 0, "pre-condition: structure rows must exist");
+  assert.ok(before.pipes > 0,      "pre-condition: pipe rows must exist");
+
+  const wb  = sdc.buildWorkbook();
+  const buf = window.XLSX.write(wb, { bookType: "xlsx", type: "array", bookSST: true });
+  const wbCheck = window.XLSX.read(new Uint8Array(buf), { type: "array", cellFormula: false });
+  const daWs = wbCheck.Sheets["Drainage Area"];
+  const stWs = wbCheck.Sheets["Junction Structure"];
+  const piWs = wbCheck.Sheets["Pipe Sizing"];
+  assert.ok(daWs, "Drainage Area sheet missing from exported workbook");
+  assert.ok(stWs, "Junction Structure sheet missing from exported workbook");
+  assert.ok(piWs, "Pipe Sizing sheet missing from exported workbook");
+
+  const daRows = window.XLSX.utils.sheet_to_json(daWs, { header:1, defval:"" });
+  const stRows = window.XLSX.utils.sheet_to_json(stWs, { header:1, defval:"" });
+  const piRows = window.XLSX.utils.sheet_to_json(piWs, { header:1, defval:"" });
+
+  assert.equal(daRows.length - 1, before.drainage,   `Drainage Area: exported ${daRows.length-1}, expected ${before.drainage}`);
+  assert.equal(stRows.length - 1, before.structures, `Junction Structure: exported ${stRows.length-1}, expected ${before.structures}`);
+  assert.equal(piRows.length - 1, before.pipes,      `Pipe Sizing: exported ${piRows.length-1}, expected ${before.pipes}`);
+});
+
+test("round-trip: exported HGL elevation matches live computed value", () => {
+  const wb  = sdc.buildWorkbook();
+  const wbCheck = window.XLSX.read(
+    window.XLSX.write(wb, { bookType: "xlsx", type: "array", bookSST: true }),
+    { type: "array", cellFormula: false }
+  );
+  const stWs   = wbCheck.Sheets["Junction Structure"];
+  const stRows = window.XLSX.utils.sheet_to_json(stWs, { header:1, raw:true, defval:"" });
+  const headers = stRows[0];
+  const hglCol  = headers.indexOf("Upstream HGL (ft)");
+  assert.ok(hglCol >= 0, "Upstream HGL (ft) column not found in Junction Structure header");
+  let checked = 0;
+  for (let i = 1; i < stRows.length; i++) {
+    const row   = stRows[i];
+    const label = String(row[0]);
+    const st    = sdc.state.structures.find(s => (s.structureId||s.id) === label);
+    if (!st) continue;
+    const calc  = sdc.computeStructureCalc(st.id);
+    if (!calc || !isFinite(calc.elevation)) continue;
+    const exported = parseFloat(row[hglCol]);
+    if (!isFinite(exported)) continue;
+    isClose(exported, calc.elevation, 0.001,
+      `HGL mismatch for ${label}: exported=${exported} live=${calc.elevation}`);
+    checked++;
+  }
+  assert.ok(checked > 0, "expected at least one structure HGL value to be verified");
+});
