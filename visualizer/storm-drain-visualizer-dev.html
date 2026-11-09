@@ -1116,6 +1116,9 @@
     // Drop structures: incoming pipe's DS invert far above outgoing pipe's US invert
     // (a drop manhole). Advisory only — never mutates data. The HGL walk floors
     // the incoming pipe at its own crown (free outfall); users must be told.
+    // These warnings describe the imported baseline, not live overrides — like
+    // the banner's other keys (splitterIds, missingDesignQ), they are recomputed
+    // per import and never react to in-session UI edits.
     const finNum = (v) => (typeof v === "number" && isFinite(v)) ? v : null;
     const dropStructures = [];
     for (const st of structures) {
