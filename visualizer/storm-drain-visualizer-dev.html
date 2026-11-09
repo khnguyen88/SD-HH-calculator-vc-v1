@@ -728,6 +728,66 @@
     state.ui.expandedRowId = null;
     state.ui.lastCursorId = null;
   }
+
+  // --- built-in samples (sample-projects) ---
+  // Both samples are objects in the visualizer's own JSON import schema and
+  // load through applyImportedJson — never assigned to state directly.
+  // "calculator-demo" is a faithful mirror of the main calculator's
+  // seedExample() demo; samples-drift.test.js fails if the two drift apart.
+  const SAMPLES = {
+    "calculator-demo": {
+      label: "Calculator demo project",
+      data: {
+        schemaVersion: 1,
+        sourceApp: "storm-drain-design-calculator",
+        structures: [
+          { id: "OUTFALL", type: "outfall", rim: null, startElev: 100, crown: null },
+          { id: "ST-J", type: "manhole", rim: 108, startElev: null, crown: 103.5 },
+          { id: "ST-1", type: "inlet", rim: 110, startElev: null, crown: 104 },
+          { id: "ST-2", type: "inlet", rim: 111, startElev: null, crown: 103.46 },
+          { id: "SPLIT-1", type: "splitter", rim: 107, startElev: null, crown: 102.6 },
+          { id: "BYPASS", type: "outfall", rim: null, startElev: 97, crown: null }
+        ],
+        pipes: [
+          { id: "P1", fromId: "ST-1", toId: "ST-J", shape: "circular", size: 24, n: 0.013, slope: 0.005, length: 200, angle: 30, splitRole: "", designQ: 1.6247 },
+          { id: "P2", fromId: "ST-2", toId: "ST-J", shape: "circular", size: 18, n: 0.013, slope: 0.006, length: 160, angle: 90, splitRole: "", designQ: 4.46913 },
+          { id: "P3", fromId: "ST-J", toId: "SPLIT-1", shape: "circular", size: 30, n: 0.013, slope: 0.004, length: 100, angle: 0, splitRole: "", designQ: 6.09383 },
+          { id: "P4", fromId: "SPLIT-1", toId: "OUTFALL", shape: "circular", size: 24, n: 0.013, slope: 0.004, length: 150, angle: 0, splitRole: "primary", designQ: 6 },
+          { id: "P5", fromId: "SPLIT-1", toId: "BYPASS", shape: "circular", size: 18, n: 0.013, slope: 0.005, length: 120, angle: 45, splitRole: "secondary", designQ: 0.09383 }
+        ],
+        outfall: { structureId: "OUTFALL", tailwaterElev: 100 },
+        config: { stormLabel: "10-yr (demo)", units: "us-customary", hglMethod: "hec22" },
+        drainageAreas: [
+          { id: "DA-1", structureId: "ST-1", areaAc: 1.4, C: 0.55, tc: 91.65 },
+          { id: "DA-2", structureId: "ST-2", areaAc: 0.9, C: 0.85, tc: 8 }
+        ],
+        tr55Segments: [
+          { drainageAreaId: "DA-1", order: 1, type: "sheet", n: 0.24, L: 100, s: 0.01, P2: 3.6, surface: "", area: null, wp: null },
+          { drainageAreaId: "DA-1", order: 2, type: "shallow", n: null, L: 1400, s: 0.01, P2: null, surface: "unpaved", area: null, wp: null },
+          { drainageAreaId: "DA-1", order: 3, type: "channel", n: 0.05, L: 7300, s: 0.005, P2: null, surface: "", area: 27, wp: 28.2 }
+        ]
+      }
+    },
+    "bburg-simplified": {
+      label: "bburg legacy (simplified)",
+      data: {
+        schemaVersion: 1,
+        sourceApp: "bburg-p-c-legacy (simplified)",
+        structures: [
+          { id: "CULVERT", type: "outfall", rim: null, startElev: 67, crown: null },
+          { id: "MH-1", type: "manhole", rim: 70.5, startElev: null, crown: 69.35 },
+          { id: "I-1", type: "inlet", rim: 71.5, startElev: null, crown: 69.4 }
+        ],
+        pipes: [
+          { id: "B1", fromId: "I-1", toId: "MH-1", shape: "circular", size: 15, n: 0.013, slope: 0.01, length: 80, angle: 0, splitRole: "", designQ: 3.4 },
+          { id: "B2", fromId: "MH-1", toId: "CULVERT", shape: "circular", size: 24, n: 0.013, slope: 0.01, length: 35, angle: 0, splitRole: "", designQ: 9 }
+        ],
+        outfall: { structureId: "CULVERT", tailwaterElev: 67 },
+        config: { stormLabel: "10-yr MoCo", units: "us-customary", hglMethod: "legacy-both-crown" }
+      }
+    }
+  };
+
   // --- xlsx importer (task-06) ---
   async function importFromXlsxFile(file) {
     if (typeof XLSX === "undefined") throw new Error("SheetJS not loaded — did you open the BUILT file?");
@@ -2741,6 +2801,7 @@
   window.state = state;
   window.KB_SEED = KB_SEED;
   window.TABLE_4_6 = TABLE_4_6;
+  window.SAMPLES = SAMPLES;
   renderAll();
   // ==== bootstrap: end ====
 </script>
