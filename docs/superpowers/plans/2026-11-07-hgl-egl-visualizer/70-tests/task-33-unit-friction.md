@@ -10,7 +10,7 @@ Test `frictionSlope` and `frictionLoss` against hand-calculated references. Impl
 
 ## Exact changes
 
-**Create** `drainage-calculator/visualizer-tests/friction.test.js`:
+**Create** `visualizer/visualizer-tests/friction.test.js`:
 
 ```js
 const test = require("node:test");
@@ -18,8 +18,8 @@ const assert = require("node:assert");
 const { loadVisualizer } = require("./_harness");
 
 // Reference: Q=8.4 cfs, n=0.013, D=18 in → A=1.7671, R=0.375.
-// Sf = (0.1092 / 1.3636)² = (0.08009)² = 0.006414... (to 5 sig figs)
-// Hf at L=120 ft = 0.7697 ft (to 4 sig figs).
+// Sf = (Q·n / (1.486·A·R^(2/3)))² = 0.0063947 (exact, 1.486 English constant)
+// Hf at L=120 ft = 0.7674 ft.
 test("frictionSlope matches hand-calc at Q=8.4 cfs, D=18 in", () => {
   const { fn } = loadVisualizer();
   const A = fn("pipeAreaCircular")(18);
@@ -75,7 +75,7 @@ test("Sf scales as (Q·n)² approximately", () => {
 ## Acceptance test
 
 ```powershell
-node --test drainage-calculator/visualizer-tests/friction.test.js
+node --test visualizer/visualizer-tests/friction.test.js
 ```
 
 Expected: `pass 7 / fail 0`.

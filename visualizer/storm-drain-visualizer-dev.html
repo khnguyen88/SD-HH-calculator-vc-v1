@@ -1,0 +1,2743 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Storm Drain HGL/EGL Visualizer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ==== css: begin ==== */
+  :root {
+    --bg: #0d1117;
+    --bg-elev: #161b22;
+    --fg: #e6edf3;
+    --fg-dim: #8b949e;
+    --accent: #ffd60a;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  .topbar { padding: 8px 12px; background: var(--bg-elev);
+            border-bottom: 1px solid #30363d; display: flex; gap: 12px; align-items: center; }
+  .topbar h1 { font-size: 14px; margin: 0; }
+  .viewframe { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .viewframe .tools { padding: 6px 12px; background: var(--bg-elev); font-size: 12px;
+                       color: var(--fg-dim); border-bottom: 1px solid #30363d; }
+  .viewframe svg { flex: 1; min-height: 0; background: var(--bg); width: 100%; }
+  .ledger { height: 45%; overflow: auto; padding: 10px 14px; background: #f5f3eb;
+            color: #1a1a1a; font-family: var(--mono); border-top: 2px solid #30363d; }
+  .num { font-family: var(--mono); }
+  .app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #printArea { display: none; }
+  @media print {
+    body { display: block; background: #fff; }
+    .app { display: none !important; }
+    #printArea { display: block !important; background: #fff; color: #000; }
+    #printArea .calc-sheet {
+      page-break-after: always;
+      border-bottom: 1px solid #ccc;
+      margin-bottom: 10px;
+      padding: 8px 0;
+    }
+    #printArea .calc-sheet:last-child { page-break-after: auto; border-bottom: none; }
+  }
+  /* ==== css: end ==== */
+</style>
+</head>
+<body>
+<div class="app">
+<div class="topbar">
+  <h1>Storm Drain HGL/EGL Visualizer</h1>
+  <input type="file" id="fileInput" accept=".xlsx,.json">
+  <span id="fileName" class="num"></span>
+  <span style="flex:1"></span>
+  <button id="modeToggle" type="button">▸ explore</button>
+</div>
+<div id="warningBanner" role="status" style="display:none; padding:6px 12px; background:#ffd60a; color:#1a1a1a; font-size:12px; font-family:var(--mono); border-bottom:1px solid #d4a800;"></div>
+<div class="viewframe">
+  <div class="tools">
+    <span id="viewToggle" style="cursor:pointer">[ISO | profile]</span>
+    <span id="tr55Toggle" style="margin-left: 16px; cursor:pointer; display:none;">[TR-55 | off]</span>
+    <span style="margin-left: 16px">cursor: <span id="cursorLabel" class="num">(none)</span></span>
+  </div>
+  <svg id="viewSvg" preserveAspectRatio="xMidYMid meet"></svg>
+</div>
+<div class="ledger" id="ledger"></div>
+</div>
+<!-- SHEETJS --><!-- build-visualizer.js replaces this with the inlined bundle -->
+<script>
+  // ==== dom-helpers: begin ====
+  function el(tag, attrs, children) {
+    const e = document.createElement(tag);
+    if (attrs) for (const k in attrs) {
+      const v = attrs[k];
+      if (k === "class") e.className = v;
+      else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+      else if (v === null || v === undefined) { /* skip: do NOT setAttribute(k, null) */ }
+      else e.setAttribute(k, v);
+    }
+    if (children) (Array.isArray(children) ? children : [children]).forEach((c) => {
+      if (c == null) return;
+      e.appendChild((c instanceof Node) ? c : document.createTextNode(String(c)));
+    });
+    return e;
+  }
+
+  function withFocusPreserved(renderFn) {
+    const active = document.activeElement;
+    const key = active && active.dataset && active.dataset.focusKey;
+    const selStart = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
+    const selEnd   = active && typeof active.selectionEnd   === "number" ? active.selectionEnd   : null;
+    renderFn();
+    if (key) {
+      const match = document.querySelector('[data-focus-key="' + CSS.escape(key) + '"]');
+      if (match) {
+        match.focus();
+        if (match.setSelectionRange && selStart !== null) {
+          try { match.setSelectionRange(selStart, selEnd); } catch (e) { /* ignore */ }
+        }
+      }
+    }
+  }
+  // ==== dom-helpers: end ====
+
+  // ==== state: begin ====
+  const state = {
+    imported: null,   // { structures, pipes, outfall, config, kbTable } | null
+    analysis: null,
+    overrides: { byId: {} },
+    cursor: { kind: null, id: null, pathStack: [] },
+    ui: { view: "iso", mode: "explore", hglMethod: "hec22",
+          freeRoam: false, branchChoices: { byStructureId: {} },
+          expandedRowId: null, lastCursorId: null,
+          fileName: "", walkStartId: null, warningsDismissed: false,
+          showTr55: false }
+  };
+  // ==== state: end ====
+
+  // ==== compute: begin ====
+  // --- pipe geometry (task-08) ---
+
+  // Table 4-6: circular diameter (in), elliptical span×rise (in), elliptical area (sf).
+  // Elliptical values mirror the main app's TABLE46 (spec §1.5).
+  const TABLE_4_6 = [
+    { dia_in: 15, span_rise: null, ell_area_sf: null },
+    { dia_in: 18, span_rise: "23x14", ell_area_sf: 1.8 },
+    { dia_in: 21, span_rise: null, ell_area_sf: null },
+    { dia_in: 24, span_rise: "30x19", ell_area_sf: 4.1 },
+    { dia_in: 27, span_rise: "34x22", ell_area_sf: 5.1 },
+    { dia_in: 30, span_rise: "38x24", ell_area_sf: 6.3 },
+    { dia_in: 33, span_rise: "42x27", ell_area_sf: 7.4 },
+    { dia_in: 36, span_rise: "45x29", ell_area_sf: 8.8 },
+    { dia_in: 42, span_rise: "53x34", ell_area_sf: 10.2 },
+    { dia_in: 48, span_rise: "60x38", ell_area_sf: 12.9 },
+    { dia_in: 54, span_rise: "68x43", ell_area_sf: 16.6 },
+    { dia_in: 60, span_rise: "76x48", ell_area_sf: 20.5 },
+    { dia_in: 66, span_rise: "83x53", ell_area_sf: 24.8 },
+    { dia_in: 72, span_rise: "91x58", ell_area_sf: 29.5 },
+    { dia_in: 78, span_rise: "98x63", ell_area_sf: 34.6 },
+    { dia_in: 84, span_rise: "106x68", ell_area_sf: 40.1 },
+    { dia_in: 90, span_rise: "113x72", ell_area_sf: 46.1 },
+    { dia_in: 96, span_rise: "121x77", ell_area_sf: 52.4 },
+    { dia_in: 102, span_rise: "128x82", ell_area_sf: 59.2 },
+    { dia_in: 108, span_rise: "136x87", ell_area_sf: 66.4 },
+    { dia_in: 114, span_rise: "143x92", ell_area_sf: 74.0 },
+    { dia_in: 120, span_rise: "151x97", ell_area_sf: 82.0 },
+    { dia_in: 132, span_rise: "166x106", ell_area_sf: 99.2 },
+    { dia_in: 144, span_rise: "180x116", ell_area_sf: 118.6 }
+  ];
+
+  function pipeAreaCircular(d_in) {
+    const D_ft = d_in / 12;
+    return Math.PI * D_ft * D_ft / 4;
+  }
+
+  function pipeRadiusCircular(d_in) {
+    return (d_in / 12) / 4;
+  }
+
+  function pipeAreaElliptical(spanRise) {
+    const key = normalizeSize("elliptical", spanRise);
+    const row = key ? TABLE_4_6.find((r) => r.span_rise === key) : null;
+    if (!row) throw new Error("elliptical size not in Table 4-6: " + spanRise);
+    return row.ell_area_sf;
+  }
+
+  // Elliptical hydraulic radius uses the equivalent circular diameter from Table 4-6.
+  function pipeRadiusElliptical(spanRise) {
+    const key = normalizeSize("elliptical", spanRise);
+    const row = key ? TABLE_4_6.find((r) => r.span_rise === key) : null;
+    if (!row) throw new Error("elliptical size not in Table 4-6: " + spanRise);
+    return (row.dia_in / 12) / 4;
+  }
+
+  function pipeArea(shape, size) {
+    if (shape === "circular") return pipeAreaCircular(Number(size));
+    if (shape === "elliptical") return pipeAreaElliptical(String(size));
+    throw new Error("unknown pipe shape: " + shape);
+  }
+
+  function pipeRadius(shape, size) {
+    if (shape === "circular") return pipeRadiusCircular(Number(size));
+    if (shape === "elliptical") return pipeRadiusElliptical(String(size));
+    throw new Error("unknown pipe shape: " + shape);
+  }
+
+  // Normalize shape and size strings from imports; mirrors main-app pipeGeometry leniency.
+  function normalizeShape(value) {
+    return String(value == null ? "" : value).trim().toLowerCase();
+  }
+
+  // Circular: numeric diameter. Elliptical: nearest Table 4-6 span x rise key.
+  function normalizeSize(shape, value) {
+    if (shape === "circular") return Number(value);
+    const parts = String(value == null ? "" : value)
+      .toLowerCase().replace(/[×\s]/g, "").split("x");
+    const span = parseFloat(parts[0]);
+    const rise = parseFloat(parts[1]);
+    if (!isFinite(span) || !isFinite(rise)) return null;
+    let best = null;
+    let bestDiff = Infinity;
+    for (const row of TABLE_4_6) {
+      if (row.span_rise == null) continue;
+      const dims = row.span_rise.split("x").map(Number);
+      const diff = Math.abs(dims[0] - span) + Math.abs(dims[1] - rise);
+      if (diff < bestDiff) { bestDiff = diff; best = row.span_rise; }
+    }
+    return best;
+  }
+
+  // --- Manning's friction (task-09) ---
+
+  // Friction slope at design Q (full-flow).
+  //   Q in cfs, n unitless, A in ft², R in ft.
+  //   Returns Sf in ft/ft (unitless but conceptually ft of head per ft of pipe).
+  //   Formula: Sf = ( Q·n / (1.486·A·R^(2/3)) )²
+  function frictionSlope(Q, n, A, R) {
+    if (!(isFinite(Q) && isFinite(n) && isFinite(A) && isFinite(R))) return 0;
+    if (A <= 0 || R <= 0) return 0;
+    const num = Q * n;
+    const den = 1.486 * A * Math.pow(R, 2 / 3);
+    const ratio = num / den;
+    return ratio * ratio;
+  }
+
+  // Friction loss along the pipe.  L in ft.  Returns Hf in ft.
+  function frictionLoss(Sf, L) {
+    if (!(isFinite(Sf) && isFinite(L))) return 0;
+    return Sf * L;
+  }
+
+  // --- Kb lookup (task-10) ---
+
+  // KB_SEED: standard AASHTO bend-loss curve (matches main app defaultKbRows(), spec §1.6).
+  // 12 rows, 5° → 0.06 ... 90° → 0.70. All three columns seeded identically — users are
+  // expected to override per column before using for submittal.
+  const KB_SEED = [
+    { angleDeg:  5,  inlet: 0.06, manhole: 0.06, bend: 0.06 },
+    { angleDeg: 10,  inlet: 0.13, manhole: 0.13, bend: 0.13 },
+    { angleDeg: 15,  inlet: 0.19, manhole: 0.19, bend: 0.19 },
+    { angleDeg: 20,  inlet: 0.25, manhole: 0.25, bend: 0.25 },
+    { angleDeg: 25,  inlet: 0.30, manhole: 0.30, bend: 0.30 },
+    { angleDeg: 30,  inlet: 0.35, manhole: 0.35, bend: 0.35 },
+    { angleDeg: 40,  inlet: 0.43, manhole: 0.43, bend: 0.43 },
+    { angleDeg: 50,  inlet: 0.50, manhole: 0.50, bend: 0.50 },
+    { angleDeg: 60,  inlet: 0.56, manhole: 0.56, bend: 0.56 },
+    { angleDeg: 70,  inlet: 0.61, manhole: 0.61, bend: 0.61 },
+    { angleDeg: 80,  inlet: 0.66, manhole: 0.66, bend: 0.66 },
+    { angleDeg: 90,  inlet: 0.70, manhole: 0.70, bend: 0.70 }
+  ];
+
+  // Linear interpolation across the Kb table, clamping at endpoints.
+  //   structureType ∈ "inlet" | "manhole" | "bend" (junction/splitter also map to bend/manhole upstream).
+  function kbAt(angleDeg, structureType, kbTable) {
+    const col = (structureType === "inlet") ? "inlet"
+              : (structureType === "manhole") ? "manhole"
+              : (structureType === "bend") ? "bend"
+              : (structureType === "junction") ? "bend"
+              : (structureType === "splitter") ? "manhole"
+              : "manhole";
+    const source = (kbTable && kbTable.length > 0) ? kbTable : KB_SEED;
+    const rows = source
+      .filter((r) => r && isFinite(parseFloat(r.angleDeg)))
+      .map((r) => ({
+        angleDeg: parseFloat(r.angleDeg),
+        inlet: parseFloat(r.inlet) || 0,
+        manhole: parseFloat(r.manhole) || 0,
+        bend: parseFloat(r.bend) || 0
+      }))
+      .sort((a, b) => a.angleDeg - b.angleDeg);
+    const table = rows.length > 0 ? rows : KB_SEED.map((r) => ({ ...r }));
+
+    if (angleDeg <= table[0].angleDeg) return table[0][col];
+    if (angleDeg >= table[table.length - 1].angleDeg) return table[table.length - 1][col];
+    for (let i = 0; i < table.length - 1; i++) {
+      const lo = table[i], hi = table[i + 1];
+      if (angleDeg >= lo.angleDeg && angleDeg <= hi.angleDeg) {
+        if (hi.angleDeg === lo.angleDeg) return lo[col];  // duplicate-angle guard (main-app parity)
+        const t = (angleDeg - lo.angleDeg) / (hi.angleDeg - lo.angleDeg);
+        return lo[col] + t * (hi[col] - lo[col]);
+      }
+    }
+    return table[table.length - 1][col];
+  }
+
+  // --- Structure loss (task-11) ---
+
+  const G_FT = 32.2;
+
+  function outletVelocity(Q_total_cfs, Aout_sf) {
+    if (!(isFinite(Q_total_cfs) && isFinite(Aout_sf) && Aout_sf > 0)) return 0;
+    return Q_total_cfs / Aout_sf;
+  }
+
+  function velocityHead(V_fps) {
+    if (!isFinite(V_fps)) return 0;
+    return (V_fps * V_fps) / (2 * G_FT);
+  }
+
+  // Structure loss per main spec §1.4.
+  //   inflows:   array of {angleDeg, Qcfs}, length 0..2 (length 3+ returns {error}).
+  //   Qtotal:    total flow through the structure (cfs) — used for Vout.
+  //   Aout_sf:   outflow pipe's full-flow area (sf).
+  //   structureType: "inlet"|"manhole"|"bend"|"junction"|"splitter".
+  //   kbTable:   editable Kb lookup (or null to use KB_SEED).
+  //
+  // Returns:
+  //   { Hb, kbUsed, thetaControlling, candidateLosses }
+  //   - For >2 inflows: { error: "too-many-inflows" }.
+  function structureLoss(inflows, Qtotal_cfs, Aout_sf, structureType, kbTable) {
+    if (!Array.isArray(inflows)) return { error: "inflows-not-array" };
+    if (inflows.length > 2) return { error: "too-many-inflows" };
+
+    // Coerce inflow fields defensively (main-app parity: parseFloat(angle) || 0).
+    // Missing/NaN angles fall back to 0° so kbAt clamps to the 5° row (Kb 0.06)
+    // instead of falling through to the last row; null inflows are tolerated.
+    const angleOf = (inf) => {
+      const a = Number(inf && inf.angleDeg);
+      return isFinite(a) ? a : 0;
+    };
+    const qOf = (inf) => {
+      const q = Number(inf && inf.Qcfs);
+      return isFinite(q) ? q : 0;
+    };
+
+    const Vout = outletVelocity(Qtotal_cfs, Aout_sf);
+    const Hvout = velocityHead(Vout);
+
+    if (inflows.length === 0) {
+      const Kb = kbAt(0, structureType, kbTable);
+      return { Hb: Kb * Hvout, kbUsed: Kb, thetaControlling: 0, candidateLosses: [] };
+    }
+
+    if (inflows.length === 1) {
+      const angle = angleOf(inflows[0]);
+      const Kb = kbAt(angle, structureType, kbTable);
+      return { Hb: Kb * Hvout, kbUsed: Kb, thetaControlling: angle, candidateLosses: [] };
+    }
+
+    // length === 2 — controlling angle method
+    const [a, b] = inflows;
+    const aAngle = angleOf(a);
+    const bAngle = angleOf(b);
+    const V1_3 = (Aout_sf > 0) ? (qOf(a) / Aout_sf) : 0;
+    const V2_3 = (Aout_sf > 0) ? (qOf(b) / Aout_sf) : 0;
+    const Kb_a = kbAt(aAngle, structureType, kbTable);
+    const Kb_b = kbAt(bAngle, structureType, kbTable);
+    const Lv1 = Kb_a * velocityHead(V1_3);
+    const Lv2 = Kb_b * velocityHead(V2_3);
+    // CRITICAL: the SMALLER candidate loss picks the controlling angle.
+    const thetaC = (Lv1 > Lv2) ? bAngle : aAngle;
+    const Kb = kbAt(thetaC, structureType, kbTable);
+    return {
+      Hb: Kb * Hvout,
+      kbUsed: Kb,
+      thetaControlling: thetaC,
+      candidateLosses: [
+        { angle: aAngle, Lv: Lv1, V: V1_3, Kb: Kb_a, isControlling: thetaC === aAngle },
+        { angle: bAngle, Lv: Lv2, V: V2_3, Kb: Kb_b, isControlling: thetaC === bAngle }
+      ]
+    };
+  }
+
+  // --- Ledger builder (task-12) ---
+
+  // Resolve one field: override if present, else imported.
+  function resolveField(id, field, imported, overrides) {
+    const ov = overrides && overrides.byId && overrides.byId[id];
+    if (ov && Object.prototype.hasOwnProperty.call(ov, field)) return ov[field];
+    const el = (imported.structures.find((s) => s.id === id)
+             || imported.pipes.find((p) => p.id === id));
+    return el ? el[field] : undefined;
+  }
+
+  // Resolve the effective walk-start structure id: ui.walkStartId when it names a
+  // real structure, else the imported outfall. Returns null when neither is valid.
+  function resolveWalkStart(imported, ui) {
+    const structures = (imported && Array.isArray(imported.structures)) ? imported.structures : [];
+    const want = ui && ui.walkStartId;
+    if (want && structures.some((s) => s.id === want)) return want;
+    return (imported && imported.outfall && imported.outfall.structureId) || null;
+  }
+
+  // Build an ordered list of ledger rows.
+  //   path: array of elementIds in walk order, starting with the walk-start structure id.
+  //   resolvedState: { imported, overrides } — pass state directly.
+  //   kbTable: typically state.imported.kbTable (null → seed).
+  //   hglMethod: "hec22" | "legacy-both-crown".
+  function buildLedger(path, resolvedState, kbTable, hglMethod) {
+    if (!path || path.length === 0) return [];
+    const rows = [];
+    const imp = resolvedState.imported;
+    const ovr = resolvedState.overrides;
+
+    // Start row (v81.3 / design §3.4): resolve the walk start from ui.walkStartId,
+    // falling back to the imported outfall when the UI field is absent. The boundary
+    // EGL depends on the start structure.
+    const structures = Array.isArray(imp.structures) ? imp.structures : [];
+    const startId = resolveWalkStart(imp, resolvedState.ui);
+    const startStr = structures.find((s) => s.id === startId) || null;
+    const startType = startStr ? (resolveField(startId, "type", imp, ovr) || startStr.type) : null;
+    // A walk start whose structure record is missing is still valid when it names the
+    // imported outfall — fall back to the tailwater boundary rather than a silent 0.
+    const startIsOutfall = (startStr && startType === "outfall")
+      || (startStr === null && startId != null && imp.outfall && startId === imp.outfall.structureId);
+    let boundaryEGL;
+    let boundaryReason;
+    if (startIsOutfall) {
+      boundaryEGL = (imp.outfall && typeof imp.outfall.tailwaterElev === "number") ? imp.outfall.tailwaterElev : 0;
+      boundaryReason = "tailwater";
+    } else if (startStr && startStr.forceElev && startStr.startElev != null) {
+      boundaryEGL = startStr.startElev;
+      boundaryReason = "fixed elevation";
+    } else if (startStr && startStr.crown != null) {
+      boundaryEGL = startStr.crown;
+      boundaryReason = "crown boundary";
+    } else if (startStr && startStr.rim != null) {
+      boundaryEGL = startStr.rim;
+      boundaryReason = "rim boundary";
+    } else {
+      boundaryEGL = 0;
+      boundaryReason = "zero boundary";
+    }
+    let EGL = boundaryEGL;
+    rows.push({ kind: "start", id: startId, label: startId,
+                before: null, delta: null, after: EGL,
+                detail: { boundaryEGL, boundaryReason } });
+
+    // Walk pairs: each (structure -> pipe) adds an Hb row; each pipe adds an Hf row.
+    // We expect the path to alternate: [startSid, pipeId, structureId, pipeId, structureId, ...].
+    // The first Hb at the start structure is nominal (0 inflows, boundary is set).
+    for (let i = 1; i < path.length; i++) {
+      const id = path[i];
+      const pipe = imp.pipes.find((p) => p.id === id);
+      if (pipe) {
+        // +Hf row
+        const n = resolveField(id, "n", imp, ovr);
+        const slope = resolveField(id, "slope", imp, ovr);
+        const length = resolveField(id, "length", imp, ovr);
+        const shape = resolveField(id, "shape", imp, ovr);
+        const size = resolveField(id, "size", imp, ovr);
+        const designQ = resolveField(id, "designQ", imp, ovr);
+        const A = pipeArea(shape, size);
+        const R = pipeRadius(shape, size);
+        const Sf = frictionSlope(designQ, n, A, R);
+        const Hf = frictionLoss(Sf, length);
+        const before = EGL; EGL = EGL + Hf;
+        rows.push({ kind: "hf", id, label: id, before, delta: Hf, after: EGL,
+                    detail: { n, slope, length, shape, size, A, R, Sf, Hf, designQ } });
+      } else {
+        // +Hb row
+        const str = imp.structures.find((s) => s.id === id);
+        if (!str) continue;
+        const structureType = resolveField(id, "type", imp, ovr) || "manhole";
+        // Find inflows: imp.pipes where toId == id. Angles may be overridden per-pipe.
+        const inflowPipes = imp.pipes.filter((p) => p.toId === id);
+        const inflows = inflowPipes.map((p) => ({
+          angleDeg: resolveField(p.id, "angle", imp, ovr) || 0,
+          Qcfs:     resolveField(p.id, "designQ", imp, ovr) || 0,
+          pipeId:   p.id
+        }));
+        // Outflow pipe precedence: for a splitter, the analysis-selected primary
+        // outgoing pipe wins; else the declared Outgoing Pipe ID; else the first
+        // pipe leaving this structure (JSON imports lack outPipeId).
+        const primaryOutId = (resolvedState.analysis
+                              && resolvedState.analysis.primaryPipeByStructureId)
+          ? resolvedState.analysis.primaryPipeByStructureId[id] : null;
+        const declaredOutId = resolveField(id, "outPipeId", imp, ovr);
+        const outPipe = (primaryOutId && imp.pipes.find((p) => p.id === primaryOutId))
+                     || (declaredOutId && imp.pipes.find((p) => p.id === declaredOutId))
+                     || imp.pipes.find((p) => p.fromId === id);
+        const Aout = outPipe
+          ? pipeArea(resolveField(outPipe.id, "shape", imp, ovr),
+                     resolveField(outPipe.id, "size", imp, ovr))
+          : 0;
+        const outDesignQ = outPipe ? (resolveField(outPipe.id, "designQ", imp, ovr) || 0) : 0;
+        const declaredTotal = resolveField(id, "totalQ", imp, ovr);
+        const Qtotal = (typeof declaredTotal === "number" && isFinite(declaredTotal) && declaredTotal > 0)
+          ? declaredTotal : outDesignQ;
+        const res = structureLoss(inflows, Qtotal, Aout, structureType, kbTable);
+        const before = EGL;
+        const delta = res.error ? 0 : res.Hb;
+        EGL = EGL + delta;
+        rows.push({ kind: "hb", id, label: id, before, delta, after: EGL,
+                    detail: { structureType, inflows, Qtotal, Aout, result: res } });
+      }
+    }
+
+    // End row
+    const endId = path[path.length - 1];
+    rows.push({ kind: "end", id: endId, label: endId,
+                before: boundaryEGL, delta: EGL - boundaryEGL, after: EGL,
+                detail: { totalRise: EGL - boundaryEGL } });
+
+    return rows;
+  }
+
+  // --- HGL derivation (task-13) ---
+
+  // One pipe step per bburg reference_calcs.hgl_walk_step and spec §4.2:
+  //   both methods: HGL_dn = max(EGL_dn - V^2/(2g), Crown_dn)
+  //   hec22:        HGL_up = HGL_dn + Hf
+  //   legacy:       HGL_up = max(HGL_dn + Hf, Crown_up)
+  // Returns { hglDn, hglUp, clamped } — clamped means a crown floor fired.
+  function hglWalkStep(EGL_dn, V_fps, crownDn, crownUp, Hf, method) {
+    const hglDnRaw = EGL_dn - velocityHead(V_fps);
+    const hglDn = (crownDn == null) ? hglDnRaw : Math.max(hglDnRaw, crownDn);
+    const hglUpRaw = hglDn + Hf;
+    const hglUp = (method === "legacy-both-crown" && crownUp != null)
+      ? Math.max(hglUpRaw, crownUp) : hglUpRaw;
+    return { hglDn, hglUp, clamped: Math.abs(hglUp - (hglDnRaw + Hf)) > 1e-12 };
+  }
+
+  // Annotate each ledger row with HGL. Does not mutate rows.
+  //   start row:      HGL = max(boundary EGL, crown) — downstream boundary floor.
+  //   +Hf row:        hglWalkStep using EGL at the downstream node.
+  //   +Hb row:        HGL carries the previous value plus the structure loss.
+  function annotateLedgerHgl(rows, resolvedState, method) {
+    const imp = resolvedState.imported;
+    const ovr = resolvedState.overrides;
+    const legacy = method === "legacy-both-crown";
+    const crownOf = (id) => {
+      const crown = resolveField(id, "crown", imp, ovr);
+      return (typeof crown === "number" && isFinite(crown)) ? crown : null;
+    };
+
+    const out = [];
+    let hgl = null;
+    for (const row of rows) {
+      if (row.kind === "start") {
+        const crown = crownOf(row.id);
+        hgl = (crown == null) ? row.after : Math.max(row.after, crown);
+        out.push(Object.assign({}, row, { hgl, hglClamped: hgl !== row.after }));
+        continue;
+      }
+
+      if (row.kind === "hf") {
+        const d = row.detail;
+        const q = (typeof d.designQ === "number" && isFinite(d.designQ)) ? d.designQ : 0;
+        const V = (d.A > 0) ? (q / d.A) : 0;
+        const pipe = imp.pipes.find((p) => p.id === row.id);
+        const step = hglWalkStep(row.before, V,
+          pipe ? crownOf(pipe.toId) : null,
+          pipe ? crownOf(pipe.fromId) : null,
+          row.delta, method);
+        hgl = step.hglUp;
+        out.push(Object.assign({}, row, { hgl, hglClamped: step.clamped }));
+        continue;
+      }
+
+      if (row.kind === "hb") {
+        const rawUp = (hgl == null ? row.before : hgl) + row.delta;
+        const crown = crownOf(row.id);
+        const up = (legacy && crown != null) ? Math.max(rawUp, crown) : rawUp;
+        hgl = up;
+        out.push(Object.assign({}, row, { hgl, hglClamped: up !== rawUp }));
+        continue;
+      }
+
+      out.push(Object.assign({}, row, {
+        hgl: hgl == null ? row.after : hgl,
+        hglClamped: false
+      }));
+    }
+    return out;
+  }
+  // ==== compute: end ====
+
+  // ==== import: begin ====
+  // --- schema validator (task-04) ---
+  function validateImportedJson(obj) {
+    const errors = [];
+    const push = (p) => errors.push(p);
+
+    if (!obj || typeof obj !== "object") { push("not an object"); return { valid: false, errors }; }
+    if (obj.schemaVersion !== 1) push("schemaVersion must be 1 (got " + obj.schemaVersion + ")");
+    if (typeof obj.sourceApp !== "string") push("sourceApp must be a string");
+
+    const seenIds = Object.create(null);
+    const claimId = (id, where) => {
+      if (typeof id !== "string" || !id) return;
+      // Reserved names would poison override maps keyed by element id.
+      if (id === "__proto__" || id === "constructor" || id === "prototype") {
+        push("reserved id '" + id + "' (" + where + ")");
+        return;
+      }
+      if (seenIds[id]) push("duplicate id '" + id + "' (" + where + ")");
+      else seenIds[id] = true;
+    };
+
+    if (!Array.isArray(obj.structures)) push("structures must be an array");
+    else obj.structures.forEach((s, i) => {
+      if (!s || typeof s !== "object") { push("structures[" + i + "] not an object"); return; }
+      if (typeof s.id !== "string" || !s.id) push("structures[" + i + "].id missing");
+      claimId(s.id, "structures[" + i + "]");
+      if (typeof s.type !== "string") push("structures[" + i + "].type missing");
+      ["rim", "startElev", "crown"].forEach((f) => {
+        if (s[f] != null && typeof s[f] !== "number") push("structures[" + i + "]." + f + " must be a number");
+      });
+      ["x", "y"].forEach((f) => {
+        if (s[f] != null && (typeof s[f] !== "number" || !isFinite(s[f]))) {
+          push("structures[" + i + "]." + f + " must be a finite number");
+        }
+      });
+    });
+
+    if (!Array.isArray(obj.pipes)) push("pipes must be an array");
+    else obj.pipes.forEach((p, i) => {
+      if (!p || typeof p !== "object") { push("pipes[" + i + "] not an object"); return; }
+      if (typeof p.id !== "string" || !p.id) push("pipes[" + i + "].id missing");
+      claimId(p.id, "pipes[" + i + "]");
+      if (typeof p.fromId !== "string") push("pipes[" + i + "].fromId missing");
+      if (typeof p.toId !== "string") push("pipes[" + i + "].toId missing");
+      ["slope", "length"].forEach((f) => {
+        if (typeof p[f] !== "number" || p[f] < 0) push("pipes[" + i + "]." + f + " must be non-negative number");
+      });
+      if (typeof p.n !== "number" || p.n <= 0) push("pipes[" + i + "].n must be positive number");
+      const shape = normalizeShape(p.shape);
+      if (shape !== "circular" && shape !== "elliptical") {
+        push("pipes[" + i + "].shape must be 'circular' or 'elliptical'");
+      } else {
+        const size = normalizeSize(shape, p.size);
+        if (shape === "circular" && !(typeof size === "number" && isFinite(size) && size > 0)) {
+          push("pipes[" + i + "].size must be a positive diameter (circular)");
+        } else if (shape === "elliptical" && size == null) {
+          push("pipes[" + i + "].size must be SPANxRISE (elliptical)");
+        }
+      }
+      if (p.designQ != null && (typeof p.designQ !== "number" || !isFinite(p.designQ))) {
+        push("pipes[" + i + "].designQ must be a finite number");
+      }
+      if (p.splitRole != null && typeof p.splitRole !== "string") push("pipes[" + i + "].splitRole must be a string");
+    });
+
+    if (obj.drainageAreas != null && !Array.isArray(obj.drainageAreas)) push("drainageAreas must be an array");
+    if (obj.tr55Segments != null && !Array.isArray(obj.tr55Segments)) push("tr55Segments must be an array");
+
+    if (!obj.outfall || typeof obj.outfall !== "object") push("outfall missing");
+    else {
+      if (typeof obj.outfall.structureId !== "string") push("outfall.structureId missing");
+      if (typeof obj.outfall.tailwaterElev !== "number") push("outfall.tailwaterElev must be a number");
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  // --- json importer (task-05) ---
+  function isSafeOverrideKey(k) {
+    return typeof k === "string" && k !== "" &&
+           k !== "__proto__" && k !== "constructor" && k !== "prototype";
+  }
+
+  async function importFromJsonFile(file) {
+    const text = await file.text();
+    let obj;
+    try { obj = JSON.parse(text); }
+    catch (e) { throw new Error("JSON parse error: " + e.message); }
+
+    const result = validateImportedJson(obj);
+    if (!result.valid) throw new Error("JSON validation failed: " + result.errors.join("; "));
+
+    // Separate the tweaked-export sidecar (if present) before copying `imported`.
+    const overrides = Array.isArray(obj._overrides) ? obj._overrides : [];
+    const imported = {
+      structures: obj.structures.map((s) => {
+        const copy = Object.assign({}, s);
+        copy.type = String(copy.type || "manhole").toLowerCase();
+        return copy;
+      }),
+      pipes: obj.pipes.map((p) => {
+        const copy = Object.assign({}, p);
+        copy.shape = normalizeShape(copy.shape);
+        copy.size = normalizeSize(copy.shape, copy.size);
+        copy.splitRole = String(copy.splitRole || "").toLowerCase();
+        return copy;
+      }),
+      outfall: Object.assign({}, obj.outfall),
+      config: Object.assign({}, obj.config || {}),
+      kbTable: Array.isArray(obj.kbTable) ? obj.kbTable.slice() : null,
+      drainageAreas: Array.isArray(obj.drainageAreas) ? obj.drainageAreas.map((o) => Object.assign({}, o)) : [],
+      tr55Segments:  Array.isArray(obj.tr55Segments)  ? obj.tr55Segments.map((o) => Object.assign({}, o))  : []
+    };
+
+    // If this is a tweaked export, imported fields currently hold the TWEAKED values.
+    // Walk `_overrides` and restore the originalValue onto imported so `state.imported`
+    // is a clean baseline; the newValue goes into state.overrides.
+    state.overrides = { byId: {} };
+    for (const ov of overrides) {
+      // Skip malformed or prototype-polluting entries
+      if (!ov || typeof ov !== "object") continue;
+      if (!isSafeOverrideKey(ov.elementId) || !isSafeOverrideKey(ov.field)) continue;
+      // Find and mutate the imported element
+      const el = imported.structures.find((s) => s.id === ov.elementId)
+              || imported.pipes.find((p) => p.id === ov.elementId);
+      // An override for an element absent from the payload is stale — drop it
+      // rather than surfacing a phantom row in the badge/panel.
+      if (!el) continue;
+      el[ov.field] = ov.originalValue;
+      // Record in state.overrides
+      state.overrides.byId[ov.elementId] = state.overrides.byId[ov.elementId] || {};
+      state.overrides.byId[ov.elementId][ov.field] = ov.newValue;
+    }
+
+    state.ui.fileName = (file && file.name) || "";
+    state.imported = imported;
+    state.ui.mode = listOverrides().length > 0 ? "edit" : "explore";
+
+    // Apply hglMethod from config if provided
+    if (imported.config && (imported.config.hglMethod === "hec22" || imported.config.hglMethod === "legacy-both-crown")) {
+      state.ui.hglMethod = imported.config.hglMethod;
+    }
+
+    // Any import invalidates the previous walk: reset the cursor and branch memory.
+    state.analysis = analyzeImported(state.imported);
+    state.ui.walkStartId = state.analysis ? state.analysis.defaultWalkStart : null;
+    state.ui.showTr55 = !!(state.analysis && Object.keys(state.analysis.tr55ByStructureId).length > 0);
+    resetWarningUi();
+    state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
+    state.ui.branchChoices = { byStructureId: {} };
+    state.ui.expandedRowId = null;
+    state.ui.lastCursorId = null;
+  }
+  // --- xlsx importer (task-06) ---
+  async function importFromXlsxFile(file) {
+    if (typeof XLSX === "undefined") throw new Error("SheetJS not loaded — did you open the BUILT file?");
+
+    const num = (v, fallback) => { const n = Number(v); return isFinite(n) ? n : fallback; };
+    // Return the first value that is present and numeric; null if none qualify.
+    const pickNum = (...vals) => { for (const v of vals) { if (v != null && v !== "") { const n = Number(v); if (isFinite(n)) return n; } } return null; };
+    // Return the first value that is present (non-null, non-empty); null otherwise.
+    const pick = (...vals) => { for (const v of vals) if (v != null && v !== "") return v; return null; };
+
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+
+    const sh = (name) => {
+      const s = wb.Sheets[name];
+      if (!s) return [];
+      return XLSX.utils.sheet_to_json(s, { defval: null });
+    };
+
+    if (!wb.Sheets["Junction Structure"] || !wb.Sheets["Pipe Sizing"]) {
+      throw new Error("Not a storm-drain export: expected 'Junction Structure' and 'Pipe Sizing' sheets");
+    }
+
+    const structureIdOf = (r) => r["Structure ID"] || r["Structure"] || r.structureId || r["structureId"] || "";
+
+    const daRows   = sh("Drainage Area");
+    const tr55Rows = sh("TR-55 Segments");
+    const strRows  = sh("Junction Structure");
+    const pipeRows = sh("Pipe Sizing");
+    const outRows  = sh("Outlet Structures");
+
+    // Build captured-Q lookup: drainage-area row has structureId + computed Q.
+    // The main-app export names storm columns "Q_<storm> (cfs)", not "Q (cfs)".
+    // Fallback only: the Junction Structure sheet's own "Captured Q (cfs)" is
+    // authoritative. When that is absent we cannot tell which storm column is
+    // the design storm, so take the first Q_* column rather than guess.
+    const qOf = (r) => {
+      if (r["Q (cfs)"] != null) return num(r["Q (cfs)"], 0);
+      if (r.Q != null) return num(r.Q, 0);
+      for (const k of Object.keys(r)) {
+        if (/^Q.*\(cfs\)$/i.test(k)) { const n = pickNum(r[k]); if (n != null) return n; }
+      }
+      return 0;
+    };
+    const capturedByStructureId = Object.create(null);
+    for (const r of daRows) {
+      const sid = structureIdOf(r);
+      const q = qOf(r);
+      if (sid) capturedByStructureId[sid] = (capturedByStructureId[sid] || 0) + q;
+    }
+
+    const structures = strRows.map((r, i) => {
+      // The Junction Structure sheet carries the real Captured Q; the DA-sheet
+      // lookup is only a fallback for JSON-style sheets.
+      const captured = pickNum(r["Captured Q (cfs)"]);
+      return {
+        id:           String(structureIdOf(r) || ("S-" + (i+1))),
+        label:        String(pick(r["Label"], r["Description"], r.label) || structureIdOf(r) || ""),
+        type:         String(r["Type"] || r.type || "manhole").toLowerCase(),
+        x:            num(r["X"] ?? r.x, 0),
+        y:            num(r["Y"] ?? r.y, 0),
+        rim:          pickNum(r["Rim-Grate Elev (ft)"], r["Rim"], r.rim),
+        startElev:    pickNum(r["Fixed-Start Elev (ft)"], r["Start Elev"], r.startElev),
+        crown:        pickNum(r["Pipe Crown (ft)"], r["Crown"], r.crown),
+        forceElev:    r["Force Elev"] === true || r["Force Elev"] === "TRUE" || r["Force Fixed"] === true || r["Force Fixed"] === "TRUE",
+        capturedQ:    captured != null ? captured : (capturedByStructureId[structureIdOf(r)] || 0),
+        totalQ:       pickNum(r["Total Flow (cfs)"], r["Total Q (cfs)"]) ?? 0,
+        Hb:           num(r["Hb (ft)"], 0),
+        elevation:    pickNum(r["Upstream HGL (ft)"], r["Upstream EGL (ft)"]) ?? 0,
+        outPipeId:    String(pick(r["Outgoing Pipe ID"], r.outPipeId) || "")
+      };
+    });
+
+    const pipes = pipeRows.map((r, i) => {
+      const fromId = r["From Structure"] != null && r["From Structure"] !== "" ? r["From Structure"] : r.fromId;
+      const toId   = r["To Structure"]   != null && r["To Structure"]   !== "" ? r["To Structure"]   : r.toId;
+      if (fromId == null || fromId === "" || toId == null || toId === "") {
+        throw new Error("Pipe row " + (i + 2) + " missing From/To Structure");
+      }
+      const shape = normalizeShape(r["Shape"] || "circular");
+      const size = normalizeSize(shape, pick(r["Size (in or SPANxRISE)"], r["Size"], shape === "circular" ? 18 : ""));
+      if (size == null || (shape === "circular" && !(isFinite(size) && size > 0))) {
+        throw new Error("Pipe row " + (i + 2) + " has an invalid Size for " + shape);
+      }
+      return {
+        id:         String(pick(r["ID"], r["Pipe ID"], r.id) || ("P-" + (i+1))),
+        fromId:     String(fromId),
+        toId:       String(toId),
+        shape,
+        size,
+        n:          num(pick(r["n"], r["Manning's n"], r.n), 0.013),
+        slope:      num(pick(r["Slope (ft-ft)"], r["Slope (ft/ft)"], r.slope), 0.005),
+        length:     num(r["Length (ft)"] ?? r.length, 0),
+        angle:      num(r["Angle (deg)"] ?? r.angle, 0),
+        designQ:    pickNum(r["Design Q (cfs)"], r.designQ),
+        splitRole:  String(pick(r["Split Role"], r.splitRole) || "").toLowerCase(),
+        Hf:         num(r["Hf (ft)"], 0)
+      };
+    });
+
+    // Find outfall: pick the structure with type == "outfall" (first), else lowest elevation.
+    let outfallSid = null, outfallTw = null;
+    const outfallStructs = structures.filter((s) => s.type === "outfall");
+    if (outfallStructs.length > 0) {
+      outfallSid = outfallStructs[0].id;
+      outfallTw = outfallStructs[0].startElev != null ? outfallStructs[0].startElev : outfallStructs[0].rim;
+    } else if (structures.length > 0) {
+      const lowest = structures.slice().sort((a, b) => (a.startElev || 1e9) - (b.startElev || 1e9))[0];
+      outfallSid = lowest.id;
+      outfallTw = lowest.startElev;
+    }
+    // Override tailwater from Outlet Structures when an outlet links to the outfall.
+    // The sheet's own id is "Outlet Structure ID"; the linked junction is
+    // "Tailwater Linked Structure ID", and the fixed elevation is
+    // "Tailwater Fixed Elevation (ft)" (legacy fallback: "TW Elevation").
+    for (const r of outRows) {
+      const linkedSid = String(r["Tailwater Linked Structure ID"] || r["Structure ID"] || r.structureId || "");
+      if (linkedSid === outfallSid) {
+        const twFixed = pickNum(r["Tailwater Fixed Elevation (ft)"], r["TW Elevation"]);
+        if (twFixed != null) outfallTw = twFixed;
+      }
+    }
+
+    const drainageAreas = daRows.map((r) => ({
+      id:          String(pick(r["ID"], r.id) || ""),
+      structureId: String(structureIdOf(r) || ""),
+      areaAc:      pickNum(r["Area A (ac)"], r["Area (ac)"]),
+      C:           pickNum(r["C"]),
+      tc:          pickNum(r["Tc (min)"], r["Tc"])
+    }));
+
+    const tr55Segments = tr55Rows.map((r) => ({
+      drainageAreaId: String(r["Drainage Area"] || r["DA ID"] || ""),
+      order:  pickNum(r["Order"]),
+      type:   String(r["Type"] || "").toLowerCase(),
+      n:      pickNum(r["n"]),
+      L:      pickNum(r["L (ft)"]),
+      s:      pickNum(r["s (ft/ft)"]),
+      P2:     pickNum(r["P2 (in)"]),
+      surface: pick(r["Surface"]) || "",
+      area:   pickNum(r["Area a (sf)"]),
+      wp:     pickNum(r["Wetted Perimeter Pw (ft)"])
+    }));
+
+    state.ui.fileName = (file && file.name) || "";
+    state.overrides = { byId: {} };
+    state.imported = {
+      structures, pipes,
+      outfall: { structureId: outfallSid, tailwaterElev: outfallTw != null ? outfallTw : 100 },
+      config: { stormLabel: "", units: "us-customary", hglMethod: state.ui.hglMethod },
+      kbTable: null,
+      drainageAreas, tr55Segments
+    };
+    state.ui.mode = "explore";
+
+    // Any import invalidates the previous walk: reset the cursor and branch memory.
+    state.analysis = analyzeImported(state.imported);
+    state.ui.walkStartId = state.analysis ? state.analysis.defaultWalkStart : null;
+    state.ui.showTr55 = !!(state.analysis && Object.keys(state.analysis.tr55ByStructureId).length > 0);
+    resetWarningUi();
+    state.cursor = (typeof initialCursor === "function") ? initialCursor(state.imported) : state.cursor;
+    state.ui.branchChoices = { byStructureId: {} };
+    state.ui.expandedRowId = null;
+    state.ui.lastCursorId = null;
+  }
+  // --- auto-layout (task-07) ---
+  function autoLayoutStructures(structures, pipes, outfallSid) {
+    // BFS hop-distance from the outfall backward along pipes (follow pipes upstream:
+    // for each structure S, find pipes where toId == S's id; those pipes' fromId
+    // structures are at hopDistance = S's hopDistance + 1).
+    const hop = Object.create(null);
+    hop[outfallSid] = 0;
+    const queue = [outfallSid];
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const p of pipes) {
+        if (p.toId === cur && !(p.fromId in hop)) {
+          hop[p.fromId] = hop[cur] + 1;
+          queue.push(p.fromId);
+        }
+      }
+    }
+
+    // Any structure not reached (orphan) gets a large hop, placed below the main tree.
+    const maxHop = Math.max(0, ...Object.values(hop));
+    for (const s of structures) if (!(s.id in hop)) hop[s.id] = maxHop + 2;
+
+    // Group by hop level, assign x-indices in insertion order
+    const levels = Object.create(null);
+    for (const s of structures) {
+      const h = hop[s.id];
+      (levels[h] = levels[h] || []).push(s);
+    }
+
+    for (const h in levels) {
+      const row = levels[h];
+      const count = row.length;
+      row.forEach((s, i) => {
+        s.x = (i - (count - 1) / 2) * 80;
+        s.y = -h * 100;
+      });
+    }
+  }
+
+  // Called by the bootstrap after any successful import.
+  function autoLayoutIfNeeded() {
+    if (!state.imported) return;
+    const needs = state.imported.structures.some((s) =>
+      !(typeof s.x === "number" && typeof s.y === "number" && (s.x !== 0 || s.y !== 0))
+    );
+    // A structure having (0,0) exactly is treated as "unset" only if ALL structures do.
+    const allZero = state.imported.structures.every((s) => (s.x === 0 || s.x == null) && (s.y === 0 || s.y == null));
+    if (needs && allZero) {
+      autoLayoutStructures(state.imported.structures, state.imported.pipes, state.imported.outfall.structureId);
+    }
+  }
+  // ==== import helpers end ====
+
+  // --- post-import analysis pass (v81.1, design §3.3) ---
+
+  // Derive read-only network facts once per import. Pure: takes `imported`, no DOM/state reads.
+  function analyzeImported(imported) {
+    if (!imported) return null;
+    const structures = Array.isArray(imported.structures) ? imported.structures : [];
+    const pipes      = Array.isArray(imported.pipes) ? imported.pipes : [];
+
+    const outfallIds = structures.filter((s) => s.type === "outfall").map((s) => s.id);
+
+    // Default walk start: first outfall in import order; else lowest finite startElev, then rim, then first.
+    let defaultWalkStart = null;
+    if (outfallIds.length > 0) {
+      defaultWalkStart = outfallIds[0];
+    } else if (structures.length > 0) {
+      const metric = (s) => (typeof s.startElev === "number" && isFinite(s.startElev)) ? s.startElev
+                         : (typeof s.rim === "number" && isFinite(s.rim)) ? s.rim : Infinity;
+      let best = structures[0];
+      let bestM = metric(best);
+      for (const s of structures) { const m = metric(s); if (m < bestM) { best = s; bestM = m; } }
+      defaultWalkStart = best.id;
+    }
+
+    // Splitters: structures with more than one outgoing pipe.
+    const outCount = Object.create(null);
+    for (const p of pipes) outCount[p.fromId] = (outCount[p.fromId] || 0) + 1;
+    const splitterIds = structures.filter((s) => (outCount[s.id] || 0) > 1).map((s) => s.id);
+
+    // Primary outgoing pipe per splitter: splitRole "primary" else first outgoing pipe.
+    const primaryPipeByStructureId = Object.create(null);
+    for (const sid of splitterIds) {
+      const outgoing = pipes.filter((p) => p.fromId === sid);
+      const primary = outgoing.find((p) => String(p.splitRole || "").toLowerCase() === "primary");
+      const chosen = primary || outgoing[0] || null;
+      primaryPipeByStructureId[sid] = chosen ? chosen.id : null;
+    }
+
+    // Pipes with no finite design flow (null/undefined/non-finite). Numeric 0 is NOT missing.
+    const missingDesignQ = pipes
+      .filter((p) => !(typeof p.designQ === "number" && isFinite(p.designQ)))
+      .map((p) => p.id);
+
+    // TR-55: join segments -> drainage areas by DA id, attach to the DA's linked structure.
+    const drainageAreas = Array.isArray(imported.drainageAreas) ? imported.drainageAreas : [];
+    const tr55Segments  = Array.isArray(imported.tr55Segments) ? imported.tr55Segments : [];
+    const segsByDa = Object.create(null);
+    for (const seg of tr55Segments) {
+      if (!seg || typeof seg !== "object") continue;
+      const key = seg.drainageAreaId;
+      (segsByDa[key] = segsByDa[key] || []).push(seg);
+    }
+    for (const k in segsByDa) {
+      segsByDa[k].sort((a, b) => ((a.order == null ? 0 : a.order) - (b.order == null ? 0 : b.order)));
+    }
+    const tr55ByStructureId = Object.create(null);
+    for (const da of drainageAreas) {
+      if (!da || typeof da !== "object") continue;
+      const sid = da.structureId;
+      if (!sid) continue;
+      (tr55ByStructureId[sid] = tr55ByStructureId[sid] || []).push({
+        daId: da.id, tc: da.tc, segments: segsByDa[da.id] || []
+      });
+    }
+
+    // Walk-from candidates: outfalls first, then every other structure (both in import order).
+    const walkStarts = [];
+    for (const s of structures) if (s.type === "outfall") walkStarts.push({ id: s.id, label: s.label || s.id, type: s.type, group: "outfall" });
+    for (const s of structures) if (s.type !== "outfall") walkStarts.push({ id: s.id, label: s.label || s.id, type: s.type, group: "structure" });
+
+    return { outfallIds, defaultWalkStart, splitterIds, primaryPipeByStructureId, missingDesignQ, tr55ByStructureId, walkStarts };
+  }
+
+  // ==== import: end ====
+
+  // ==== views: begin ====
+  // --- Iso projection (task-14) ---
+
+  const ISO_COS30 = Math.cos(Math.PI / 6);   // 0.866025...
+  const ISO_SIN30 = Math.sin(Math.PI / 6);   // 0.5
+
+  // Project world (x, y, z) to screen (sx, sy).
+  //   x, y in world units (feet); z in feet; kZ is vertical exaggeration (default 2.0).
+  //   screen_y is flipped (positive screen_y goes down).
+  function projectIso(x, y, z, kZ) {
+    const K = (typeof kZ === "number" && isFinite(kZ)) ? kZ : 2.0;
+    const sx = (x - y) * ISO_COS30;
+    const sy = (x + y) * ISO_SIN30 - z * K;
+    return { sx, sy };
+  }
+
+  // Compute view bounds for a set of world points; used by renderIso to set SVG viewBox.
+  function isoBounds(points, kZ) {
+    if (!points || points.length === 0) return { minX: 0, maxX: 100, minY: 0, maxY: 100 };
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let count = 0;
+    for (const p of points) {
+      const x = Number(p.x);
+      const y = Number(p.y);
+      const z = Number(p.z == null ? 0 : p.z);
+      if (!isFinite(x) || !isFinite(y) || !isFinite(z)) continue;
+      const pr = projectIso(x, y, z, kZ);
+      if (pr.sx < minX) minX = pr.sx;
+      if (pr.sx > maxX) maxX = pr.sx;
+      if (pr.sy < minY) minY = pr.sy;
+      if (pr.sy > maxY) maxY = pr.sy;
+      count++;
+    }
+    if (count === 0) return { minX: 0, maxX: 100, minY: 0, maxY: 100 };
+    return { minX, maxX, minY, maxY };
+  }
+  // --- Iso SVG render (task-15) ---
+
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  function svgEl(tag, attrs, children) {
+    const e = document.createElementNS(SVG_NS, tag);
+    if (attrs) for (const k in attrs) {
+      const v = attrs[k];
+      if (v === null || v === undefined) continue;
+      e.setAttribute(k, v);
+    }
+    if (children) (Array.isArray(children) ? children : [children]).forEach((c) => {
+      if (c == null) return;
+      e.appendChild((c instanceof Node) ? c : document.createTextNode(String(c)));
+    });
+    return e;
+  }
+
+  // Map pipe diameter (in) to stroke width (px), clamped.
+  function pipeStrokeWidth(d_in) {
+    const d = Number(d_in) || 18;
+    return Math.max(2, Math.min(10, d / 12));
+  }
+
+  // Symbol glyph per structure type.
+  function structureSymbol(type, cx, cy, size, isSelected) {
+    const s = size / 2;
+    const strokeColor = isSelected ? "#ffd60a" : "#c9d1d9";
+    const fillColor = "#161b22";
+    const common = { stroke: strokeColor, "stroke-width": isSelected ? 2 : 1, fill: fillColor };
+    if (type === "inlet")   return svgEl("polygon", Object.assign({ points: `${cx},${cy-s} ${cx+s},${cy+s} ${cx-s},${cy+s}` }, common));
+    if (type === "manhole") return svgEl("rect",    Object.assign({ x: cx-s, y: cy-s, width: 2*s, height: 2*s }, common));
+    if (type === "bend")    return svgEl("polyline", Object.assign({}, common, { points: `${cx-s},${cy+s} ${cx},${cy-s} ${cx+s},${cy+s}`, fill: "none" }));
+    if (type === "junction")return svgEl("circle",  Object.assign({ cx: cx, cy: cy, r: s }, common));
+    if (type === "splitter")return svgEl("rect",    Object.assign({ x: cx-s, y: cy-s, width: 2*s, height: 2*s, "stroke-dasharray": "3 2" }, common));
+    if (type === "outfall") return svgEl("g", null, [
+      svgEl("circle", Object.assign({ cx: cx, cy: cy, r: s * 1.2 }, common)),
+      svgEl("circle", Object.assign({ cx: cx, cy: cy, r: s * 0.65 }, common))
+    ]);
+    return svgEl("circle", Object.assign({ cx: cx, cy: cy, r: s }, common));
+  }
+
+  function renderIso(svg, s) {
+    // Clear
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    if (!s.imported) {
+      svg.appendChild(svgEl("text", { x: 10, y: 20, fill: "#8b949e" }, "No data imported."));
+      return;
+    }
+
+    // Build (x,y,z=rim) for each structure, resolving x/y overrides (task-22).
+    const pts = s.imported.structures.map((st) => {
+      const rx = resolveField(st.id, "x", s.imported, s.overrides);
+      const ry = resolveField(st.id, "y", s.imported, s.overrides);
+      const x = (typeof rx === "number" && isFinite(rx)) ? rx : 0;
+      const y = (typeof ry === "number" && isFinite(ry)) ? ry : 0;
+      return { id: st.id, type: st.type, x, y, z: (st.rim || 0) };
+    });
+    const b = isoBounds(pts, 2.0);
+    const pad = 40;
+    const vbW = Math.max(100, b.maxX - b.minX + 2 * pad);
+    const vbH = Math.max(100, b.maxY - b.minY + 2 * pad);
+    svg.setAttribute("viewBox", `${b.minX - pad} ${b.minY - pad} ${vbW} ${vbH}`);
+
+    // Build index of projected positions for edges
+    const posById = Object.create(null);
+    for (const p of pts) posById[p.id] = projectIso(p.x, p.y, p.z, 2.0);
+
+    // Draw pipes first, then flow arrows, then structures on top; depth-sort
+    // structures by (x+y).
+    const cursorId = s.cursor && s.cursor.id;
+    const arrowEls = [];
+    for (const pipe of s.imported.pipes) {
+      const a = posById[pipe.fromId], c = posById[pipe.toId];
+      if (!a || !c) continue;
+      const isSel = cursorId === pipe.id;
+      const stroke = isSel ? "#ffd60a" : "#8b949e";
+      const lineAttrs = {
+        x1: a.sx, y1: a.sy, x2: c.sx, y2: c.sy,
+        stroke: stroke,
+        "stroke-width": pipeStrokeWidth(pipe.size),
+        "data-kind": "pipe",
+        "data-id": pipe.id
+      };
+      if (isSel) lineAttrs.style = "filter:drop-shadow(0 0 4px #ffd60a)";
+      svg.appendChild(svgEl("line", lineAttrs));
+
+      // Flow-direction arrow at the projected midpoint (design §4.6); skip
+      // degenerate pipes whose endpoints coincide on screen.
+      const dx = c.sx - a.sx, dy = c.sy - a.sy;
+      const len = Math.hypot(dx, dy);
+      if (len > 1e-6) {
+        const ux = dx / len, uy = dy / len;
+        const mx = (a.sx + c.sx) / 2, my = (a.sy + c.sy) / 2;
+        const tipX = mx + ux * 3,  tipY = my + uy * 3;
+        const baseX = mx - ux * 3, baseY = my - uy * 3;
+        const nx = -uy, ny = ux;
+        arrowEls.push(svgEl("polygon", {
+          points: tipX + "," + tipY + " "
+                + (baseX + nx * 2) + "," + (baseY + ny * 2) + " "
+                + (baseX - nx * 2) + "," + (baseY - ny * 2),
+          fill: stroke,
+          "data-kind": "flow-arrow",
+          "data-id": pipe.id
+        }));
+      }
+    }
+    for (const arrow of arrowEls) svg.appendChild(arrow);
+
+    const sortedStructs = pts.slice().sort((p, q) => (p.x + p.y) - (q.x + q.y));
+    for (const p of sortedStructs) {
+      const pos = posById[p.id];
+      const isSel = cursorId === p.id;
+      const gAttrs = { "data-kind": "structure", "data-id": p.id };
+      if (isSel) gAttrs.style = "filter:drop-shadow(0 0 4px #ffd60a)";
+      const g = svgEl("g", gAttrs);
+      g.appendChild(structureSymbol(p.type, pos.sx, pos.sy, 14, isSel));
+      g.appendChild(svgEl("text", {
+        x: pos.sx + 10, y: pos.sy - 10,
+        fill: "#c9d1d9", "font-size": 10, "font-family": "ui-monospace,monospace"
+      }, p.id));
+      svg.appendChild(g);
+    }
+  }
+  // --- Profile render (task-16) ---
+
+  // Given a ledger walk (rows from buildLedger + annotateLedgerHgl), produce an array
+  // of {station, kind, id, invert, crown, egl, hgl, rim?} points marching up the path.
+  function profileStations(rows, imported, overrides) {
+    const stations = [];
+    let station = 0;
+    const elev = (str, field, fallback) => {
+      const v = str ? str[field] : null;
+      return (typeof v === "number" && isFinite(v)) ? v : fallback;
+    };
+    for (const row of rows) {
+      if (row.kind === "start") {
+        const str = imported.structures.find((s) => s.id === row.id);
+        stations.push({
+          station: 0, kind: "structure", id: row.id,
+          invert: elev(str, "startElev", row.after - 3),
+          crown: elev(str, "crown", row.after),
+          rim: elev(str, "rim", row.after + 3),
+          egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
+        });
+      } else if (row.kind === "hf") {
+        const pipe = imported.pipes.find((p) => p.id === row.id);
+        const rawLength = (overrides && overrides.byId[row.id] && overrides.byId[row.id].length != null)
+          ? overrides.byId[row.id].length
+          : (pipe ? pipe.length : 0);
+        const length = Number(rawLength);
+        // March station forward by this pipe's length (horizontally — profile ignores plan curvature)
+        if (isFinite(length) && length > 0) station += length;
+        // Crown and invert at the upstream end of this pipe come from the From structure.
+        const fromStr = pipe ? imported.structures.find((s) => s.id === pipe.fromId) : null;
+        stations.push({
+          station, kind: "pipe", id: row.id,
+          invert: elev(fromStr, "startElev", row.after - 3),
+          crown: elev(fromStr, "crown", row.after),
+          rim: null,
+          egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
+        });
+      } else if (row.kind === "hb") {
+        const str = imported.structures.find((s) => s.id === row.id);
+        stations.push({
+          station, kind: "structure", id: row.id,
+          invert: elev(str, "startElev", row.after - 3),
+          crown: elev(str, "crown", row.after),
+          rim: elev(str, "rim", row.after + 3),
+          egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
+        });
+      }
+      // skip 'end' rows — they share position with the last structure
+    }
+    return stations;
+  }
+
+  function renderProfile(svg, s, annotatedRows) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    if (!s.imported || !annotatedRows || annotatedRows.length === 0) {
+      svg.appendChild(svgEl("text", { x: 10, y: 20, fill: "#8b949e" }, "No path to profile."));
+      return;
+    }
+    const stations = profileStations(annotatedRows, s.imported, s.overrides);
+    if (stations.length === 0) return;
+
+    const xs = stations.map((p) => p.station);
+    const ys = stations.flatMap((p) => [p.invert, p.crown, p.egl, p.hgl, p.rim].filter((v) => typeof v === "number" && isFinite(v)));
+    if (ys.length === 0) ys.push(0);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const pad = 20;
+
+    // TR-55 callout band (design §4.5): reserve vertical space above the plot only
+    // when this walk has a structure with TR-55 cards, so the band is never wasted.
+    const tr55Map = (s.analysis && s.analysis.tr55ByStructureId) || {};
+    const hasCards = !!(s.ui && s.ui.showTr55)
+      && stations.some((p) => p.kind === "structure"
+                              && Array.isArray(tr55Map[p.id]) && tr55Map[p.id].length > 0);
+    const cardBand = hasCards ? 96 : 0;
+
+    const W = 800, H = 300 + cardBand;
+    const yTopSvg = pad + cardBand;
+    const yBotSvg = H - pad;
+    const sx = (x) => pad + (x - xMin) / Math.max(1e-9, xMax - xMin) * (W - 2 * pad);
+    const sy = (y) => yBotSvg - (y - yMin) / Math.max(1e-9, yMax - yMin) * (yBotSvg - yTopSvg);
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+    const poly = (color, dashed, picker) => {
+      const pts = stations.map((p) => `${sx(p.station)},${sy(picker(p))}`).join(" ");
+      return svgEl("polyline", Object.assign(
+        { points: pts, fill: "none", stroke: color, "stroke-width": 2 },
+        dashed ? { "stroke-dasharray": "6 3" } : {}
+      ));
+    };
+
+    svg.appendChild(poly("#8b949e", false, (p) => p.crown));
+    svg.appendChild(poly("#8b949e", false, (p) => p.invert));
+    svg.appendChild(poly("#ffd60a", false, (p) => p.hgl));
+    svg.appendChild(poly("#58a6ff", true,  (p) => p.egl));
+
+    // Structure vertical bars
+    const cursorId = s.cursor && s.cursor.id;
+    for (const p of stations) {
+      if (p.kind !== "structure") continue;
+      const isSel = cursorId === p.id;
+      const top = (p.rim != null) ? p.rim : p.crown + 3;
+      svg.appendChild(svgEl("line", {
+        x1: sx(p.station), y1: sy(p.invert),
+        x2: sx(p.station), y2: sy(top),
+        stroke: isSel ? "#ffd60a" : "#30363d",
+        "stroke-width": isSel ? 3 : 2,
+        "data-kind": "structure", "data-id": p.id
+      }));
+      svg.appendChild(svgEl("text", {
+        x: sx(p.station) + 4, y: sy(top) - 4,
+        fill: "#c9d1d9", "font-size": 10, "font-family": "ui-monospace,monospace"
+      }, p.id));
+    }
+
+    // Cursor band for pipe selection
+    if (s.cursor && s.cursor.kind === "pipe") {
+      const idx = stations.findIndex((p) => p.id === s.cursor.id);
+      if (idx > 0) {
+        const left = stations[idx - 1].station, right = stations[idx].station;
+        const width = sx(right) - sx(left);
+        if (width >= 0.5) {
+          svg.appendChild(svgEl("rect", {
+            x: sx(left), y: 0,
+            width: width, height: H,
+            fill: "#ffd60a", "fill-opacity": 0.08,
+            "pointer-events": "none",
+            "data-kind": "pipe", "data-id": s.cursor.id
+          }));
+        }
+      }
+    }
+
+    renderTr55Cards(svg, s, stations, sx, sy, tr55Map, cardBand, W);
+  }
+
+  // --- TR-55 callout cards (v81.5, design §4.5) ---
+
+  // Compact numeric formatting for TR-55 text (trim noise, no trailing zeros).
+  function tr55Num(v) {
+    if (typeof v !== "number" || !isFinite(v)) return "—";
+    return String(Math.round(v * 10000) / 10000);
+  }
+
+  // One text line for a TR-55 segment, per the design §4.5 formats.
+  function tr55SegmentLine(seg) {
+    const type = String(seg.type || "").toLowerCase();
+    if (type === "channel") {
+      return "channel · A " + tr55Num(seg.area) + " · L " + tr55Num(seg.L) + " · s " + tr55Num(seg.s);
+    }
+    if (type === "shallow") {
+      return "shallow · " + (seg.surface || "—") + " · L " + tr55Num(seg.L) + " · s " + tr55Num(seg.s);
+    }
+    return "sheet · n " + tr55Num(seg.n) + " · L " + tr55Num(seg.L) + " · s " + tr55Num(seg.s);
+  }
+
+  // Draw TR-55 callout cards above the profile rims (design §4.5). No-op when the
+  // card band is off. Cards are dark monospace panels with a leader line to the rim;
+  // horizontally-overlapping cards stack upward rather than shrinking.
+  function renderTr55Cards(svg, s, stations, sx, sy, tr55Map, cardBand, W) {
+    if (cardBand <= 0) return;
+    const FS = 9, LH = 11, PADX = 6, PADY = 4;
+    const PANEL_FILL = "#161b22", PANEL_STROKE = "#30363d";
+    const TEXT = "#c9d1d9", ACCENT = "#58a6ff";
+
+    const cards = [];
+    for (const st of stations) {
+      if (st.kind !== "structure") continue;
+      const blocks = tr55Map[st.id];
+      if (!Array.isArray(blocks) || blocks.length === 0) continue;
+      const lines = [];
+      for (const b of blocks) {
+        lines.push({ text: st.id + " · " + (b.daId || "DA"), accent: true });
+        for (const seg of (b.segments || [])) lines.push({ text: tr55SegmentLine(seg) });
+        if (typeof b.tc === "number" && isFinite(b.tc)) lines.push({ text: "Tc = " + tr55Num(b.tc) + " min" });
+      }
+      let maxLen = 0;
+      for (const ln of lines) maxLen = Math.max(maxLen, ln.text.length);
+      const w = Math.max(90, Math.min(220, maxLen * 5.4 + 2 * PADX));
+      const h = lines.length * LH + 2 * PADY;
+      cards.push({ st, lines, w, h, x: sx(st.station), rimY: sy(st.rim != null ? st.rim : st.crown + 3) });
+    }
+    if (cards.length === 0) return;
+
+    cards.sort((a, b) => a.x - b.x);
+    let prev = null;
+    const baseBottom = cardBand - 4;
+    for (const c of cards) {
+      const left = Math.max(2, Math.min(W - c.w - 2, c.x - c.w / 2));
+      c.left = left;
+      c.bottom = (prev && left < prev.left + prev.w + 4) ? (prev.top - 4) : baseBottom;
+      c.top = c.bottom - c.h;
+      if (c.top < 2) { c.top = 2; c.bottom = c.top + c.h; }
+      prev = c;
+    }
+
+    for (const c of cards) {
+      const g = svgEl("g", { "data-kind": "tr55-card", "data-id": c.st.id });
+      g.appendChild(svgEl("line", {
+        x1: c.left + c.w / 2, y1: c.bottom, x2: sx(c.st.station), y2: c.rimY,
+        stroke: PANEL_STROKE, "stroke-width": 1
+      }));
+      g.appendChild(svgEl("rect", {
+        x: c.left, y: c.top, width: c.w, height: c.h,
+        fill: PANEL_FILL, stroke: PANEL_STROKE, "stroke-width": 1, rx: 2
+      }));
+      let ly = c.top + PADY + FS;
+      for (const ln of c.lines) {
+        g.appendChild(svgEl("text", {
+          x: c.left + PADX, y: ly, fill: ln.accent ? ACCENT : TEXT,
+          "font-size": FS, "font-family": "ui-monospace,monospace"
+        }, ln.text));
+        ly += LH;
+      }
+      svg.appendChild(g);
+    }
+  }
+
+  // --- Active view dispatcher + V hotkey (task-17) ---
+
+  function renderActiveView() {
+    const svg = document.getElementById("viewSvg");
+    if (!svg) return;
+    if (state.ui.view === "iso") {
+      renderIso(svg, state);
+    } else {
+      // Build ledger from current path (or empty) and annotate for the active HGL method.
+      const path = (state.imported && state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
+        ? state.cursor.pathStack
+        : (state.imported && state.imported.outfall && state.imported.outfall.structureId
+            ? [state.imported.outfall.structureId] : []);
+      const rows = buildLedger(path, state, state.imported ? state.imported.kbTable : null, state.ui.hglMethod);
+      const annotated = annotateLedgerHgl(rows, state, state.ui.hglMethod);
+      renderProfile(svg, state, annotated);
+    }
+    // Update toolbar indicator
+    const label = document.getElementById("viewToggle");
+    if (label) label.textContent = state.ui.view === "iso" ? "[ISO | profile]" : "[iso | PROFILE]";
+  }
+
+  function toggleView() {
+    state.ui.view = state.ui.view === "iso" ? "profile" : "iso";
+    renderActiveView();
+  }
+
+  // --- TR-55 toggle (v81.5) ---
+  function hasTr55Data() {
+    return !!(state.analysis && Object.keys(state.analysis.tr55ByStructureId).length > 0);
+  }
+  function syncTr55Toggle() {
+    const t = document.getElementById("tr55Toggle");
+    if (!t) return;
+    if (!hasTr55Data()) { t.style.display = "none"; return; }
+    t.style.display = "";
+    t.textContent = state.ui.showTr55 ? "[TR-55 | on]" : "[TR-55 | off]";
+  }
+  function toggleTr55() {
+    state.ui.showTr55 = !state.ui.showTr55;
+    renderActiveView();
+    syncTr55Toggle();
+  }
+
+  // --- HGL method select (task-40) ---
+
+  // Keep the topbar HGL-method <select> in sync with state.ui.hglMethod.
+  function syncHglSelect() {
+    const sel = document.getElementById("hglMethodSelect");
+    if (!sel) return;
+    const v = state.ui.hglMethod === "legacy-both-crown" ? "legacy-both-crown" : "hec22";
+    if (sel.value !== v) sel.value = v;
+  }
+
+  // Inject the HGL-method label + select into the topbar, just before the mode toggle.
+  // Fallback: if the mode toggle is absent, still render both inside the topbar.
+  (function () {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+    const modeToggle = document.getElementById("modeToggle");
+    const label = el("label", {
+      for: "hglMethodSelect",
+      style: "font-size:12px;color:var(--fg-dim);font-family:var(--mono);white-space:nowrap;"
+    }, "HGL method:");
+    const select = el("select", {
+      id: "hglMethodSelect",
+      style: "font-family:var(--mono);font-size:12px;background:var(--bg-elev);" +
+             "color:var(--fg);border:1px solid #30363d;border-radius:3px;padding:2px 4px;",
+      onchange: (ev) => {
+        state.ui.hglMethod = ev.target.value;
+        withFocusPreserved(renderAll);
+      }
+    }, [
+      el("option", { value: "hec22" }, "HEC-22 EGL"),
+      el("option", { value: "legacy-both-crown" }, "Legacy both-crown")
+    ]);
+    if (modeToggle) {
+      topbar.insertBefore(label, modeToggle);
+      topbar.insertBefore(select, modeToggle);
+    } else {
+      topbar.appendChild(label);
+      topbar.appendChild(select);
+    }
+    syncHglSelect();
+  })();
+  // ==== views: end ====
+
+  // ==== navigation: begin ====
+  // --- Cursor helpers (task-18) ---
+
+  // Return the list of candidate next-upstream elements from a given cursor position.
+  //   - At a structure: list the pipes with toId == structure.id.
+  //   - At a pipe: list the pipe's fromId structure (always just one).
+  function upstreamOptions(cursor, imported) {
+    if (!cursor || !imported) return [];
+    if (cursor.kind === "structure") {
+      return imported.pipes
+        .filter((p) => p.toId === cursor.id)
+        .map((p) => ({ kind: "pipe", id: p.id, label: p.id + " (from " + p.fromId + ")", pipe: p }));
+    }
+    if (cursor.kind === "pipe") {
+      const pipe = imported.pipes.find((p) => p.id === cursor.id);
+      if (!pipe) return [];
+      const s = imported.structures.find((st) => st.id === pipe.fromId);
+      return s ? [{ kind: "structure", id: s.id, label: s.id, structure: s }] : [];
+    }
+    return [];
+  }
+
+  function initialCursor(imported) {
+    if (!imported || !imported.outfall) return { kind: null, id: null, pathStack: [] };
+    // Honor the chosen walk start (v81.3); fall back to the imported outfall.
+    const sid = resolveWalkStart(imported, state.ui) || imported.outfall.structureId;
+    return { kind: "structure", id: sid, pathStack: [sid] };
+  }
+
+  // Produce a NEW cursor advanced to the chosen next element.
+  //   next: one of the options returned by upstreamOptions (or null to stay).
+  function advanceCursor(cursor, next) {
+    if (!next) return cursor;
+    return {
+      kind: next.kind,
+      id: next.id,
+      pathStack: cursor.pathStack.concat([next.id])
+    };
+  }
+
+  // Produce a NEW cursor with the last entry popped.
+  function retreatCursor(cursor) {
+    if (!cursor || !cursor.pathStack || cursor.pathStack.length <= 1) return cursor;
+    const newStack = cursor.pathStack.slice(0, -1);
+    const topId = newStack[newStack.length - 1];
+    // Determine kind from the id: if it's in structures → "structure", else "pipe".
+    // We don't have imported here; caller passes it. For simplicity, caller resolves.
+    return { kind: cursor.kind, id: topId, pathStack: newStack };
+  }
+
+  // Helper: re-kind after retreat (caller passes imported so we can tell structure vs pipe).
+  function resolveCursorKind(cursor, imported) {
+    if (!cursor || !cursor.id || !imported) return cursor;
+    const isPipe = imported.pipes.some((p) => p.id === cursor.id);
+    const kind = isPipe ? "pipe" : "structure";
+    return { kind, id: cursor.id, pathStack: cursor.pathStack };
+  }
+
+  // --- Arrow walk handler (task-19) ---
+
+  function isTypingTarget(ev) {
+    const t = ev.target;
+    if (!t) return false;
+    const tag = t.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (t.isContentEditable) return true;
+    return false;
+  }
+
+  // Branch popup state is managed by task-20; this handler just checks for it.
+  function isBranchPopupOpen() {
+    return !!document.getElementById("branchPopup");
+  }
+
+  // Attempt to advance the cursor upstream. If >1 options, calls openBranchPopup from task-20.
+  function tryAdvance() {
+    if (!state.imported) return;
+    const opts = upstreamOptions(state.cursor, state.imported);
+    if (opts.length === 0) return;
+    if (opts.length === 1) {
+      state.cursor = advanceCursor(state.cursor, opts[0]);
+      renderAll();
+      return;
+    }
+    // >1 options: remember a previous choice if any; otherwise open popup
+    const sid = state.cursor.id;
+    const remembered = state.ui.branchChoices.byStructureId[sid];
+    const chosen = remembered ? opts.find((o) => o.id === remembered) : null;
+    if (state.ui.freeRoam) {
+      // Free-roam never auto-fires the branch popup (spec §5.2, group 40); follow
+      // the remembered pick, or the first upstream pipe.
+      state.cursor = advanceCursor(state.cursor, chosen || opts[0]);
+      renderAll();
+      return;
+    }
+    if (chosen) {
+      state.cursor = advanceCursor(state.cursor, chosen);
+      renderAll();
+      return;
+    }
+    if (typeof openBranchPopup === "function") {
+      openBranchPopup(sid, opts);
+    } else {
+      // Fallback: pick the first until task-20 lands.
+      state.cursor = advanceCursor(state.cursor, opts[0]);
+      renderAll();
+    }
+  }
+
+  function tryRetreat() {
+    state.cursor = retreatCursor(state.cursor);
+    state.cursor = resolveCursorKind(state.cursor, state.imported);
+    renderAll();
+  }
+
+  function resetWalk() {
+    if (!state.imported) return;
+    state.cursor = initialCursor(state.imported);
+    renderAll();
+  }
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
+    if (isTypingTarget(ev)) return;
+    if (isBranchPopupOpen()) return;  // popup owns the keyboard while open
+    if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      tryAdvance();
+    } else if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      tryRetreat();
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      resetWalk();
+    }
+  });
+
+  // --- Branch popup (task-20) ---
+
+  let branchKeyHandler = null;
+
+  function closeBranchPopup() {
+    const e = document.getElementById("branchPopup");
+    if (e) e.remove();
+    if (branchKeyHandler) {
+      document.removeEventListener("keydown", branchKeyHandler, true);
+      branchKeyHandler = null;
+    }
+  }
+
+  function openBranchPopup(sid, options) {
+    closeBranchPopup();
+    let selectedIndex = 0;
+
+    const render = () => {
+      const old = document.getElementById("branchPopup");
+      if (old) old.remove();
+      const panel = el("div", {
+        id: "branchPopup",
+        style: "position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); "
+             + "background:#161b22; color:#e6edf3; padding:16px 20px; border:1px solid #30363d; "
+             + "border-radius:6px; font-family:system-ui,sans-serif; min-width:320px; z-index:1000;"
+      });
+      panel.appendChild(el("div", { style: "margin-bottom:10px; font-weight:600;" },
+        "Structure " + sid + " has " + options.length + " upstream pipes."));
+      panel.appendChild(el("div", { style: "margin-bottom:12px; color:#8b949e;" },
+        "Which branch do you want to follow?"));
+      const ul = el("div", null);
+      options.forEach((opt, i) => {
+        const row = el("div", {
+          style: "padding:6px 8px; font-family:ui-monospace,monospace; "
+               + (i === selectedIndex ? "background:#30363d;" : "")
+        }, (i === selectedIndex ? "◉ " : "○ ") + opt.label);
+        ul.appendChild(row);
+      });
+      panel.appendChild(ul);
+      panel.appendChild(el("div", { style: "margin-top:12px; color:#8b949e; font-size:12px;" },
+        "↑/↓ cycle · Enter follow · Esc cancel"));
+      document.body.appendChild(panel);
+    };
+    render();
+
+    const keyHandler = (ev) => {
+      if (!document.getElementById("branchPopup")) { closeBranchPopup(); return; }
+      if (ev.key === "ArrowUp") {
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+        render();
+      } else if (ev.key === "ArrowDown") {
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        selectedIndex = (selectedIndex + 1) % options.length;
+        render();
+      } else if (ev.key === "Enter") {
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        const chosen = options[selectedIndex];
+        state.ui.branchChoices.byStructureId[sid] = chosen.id;
+        state.cursor = advanceCursor(state.cursor, chosen);
+        closeBranchPopup();
+        renderAll();
+      } else if (ev.key === "Escape") {
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        closeBranchPopup();
+      }
+    };
+    branchKeyHandler = keyHandler;
+    document.addEventListener("keydown", keyHandler, true);
+  }
+
+  function resetBranchChoices() {
+    state.ui.branchChoices = { byStructureId: {} };
+  }
+
+  // --- Free-roam mode (task-21) ---
+
+  function toggleFreeRoam() {
+    state.ui.freeRoam = !state.ui.freeRoam;
+    renderAll();
+  }
+
+  // Build the canonical outfall→elementId chain by walking downstream from elementId.
+  // The cursor may start mid-network in free-roam, but the ledger always needs an
+  // outfall-anchored path so HGL accumulates from the tailwater boundary.
+  function pathFromOutfall(elementId, imported) {
+    if (!imported || !elementId) return [];
+    // Anchor at the current walk start (v81.3), validated against the network.
+    const anchorSid = resolveWalkStart(imported, state.ui);
+    const seen = new Set();
+    const down = [elementId];
+    let cur = elementId;
+    while (cur && cur !== anchorSid && !seen.has(cur)) {
+      seen.add(cur);
+      const pipe = imported.pipes.find((p) => p.id === cur);
+      if (pipe) {
+        cur = pipe.toId;
+      } else {
+        const outlet = imported.pipes.find((p) => p.fromId === cur);
+        cur = outlet ? outlet.id : null;
+      }
+      if (cur) down.push(cur);
+    }
+    // When the anchor is reached, it is already the last element of `down`, so the
+    // reversed path starts at it. If it was never reached, the clicked element lies
+    // outside the walked subnetwork — return [] (caller falls back to the bare id).
+    if (!anchorSid || down.indexOf(anchorSid) === -1) return [];
+    return down.reverse();
+  }
+
+  // In free-roam, clicking an iso element starts a new walk there.
+  function installIsoClickHandler() {
+    const svg = document.getElementById("viewSvg");
+    if (!svg) return;
+    svg.addEventListener("click", (ev) => {
+      if (!state.ui.freeRoam || state.ui.view !== "iso") return;
+      const target = ev.target.closest("[data-kind][data-id]");
+      if (!target) return;
+      const kind = target.getAttribute("data-kind");
+      const id = target.getAttribute("data-id");
+      const pathStack = pathFromOutfall(id, state.imported);
+      state.cursor = { kind, id, pathStack: pathStack.length ? pathStack : [id] };
+      renderAll();
+    });
+  }
+  installIsoClickHandler();
+
+  // ←/→ at a multi-inflow junction. Default mode opens the branch popup; free-roam
+  // must never fire the popup (spec §5.2), so it cycles the remembered branch directly.
+  document.addEventListener("keydown", (ev) => {
+    if (ev.shiftKey) return;  // Shift+Arrow is the task-22 nudge gesture
+    if (isTypingTarget(ev)) return;
+    if (isBranchPopupOpen()) return;
+    if (!state.imported || !state.cursor || state.cursor.kind !== "structure") return;
+    if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+    const opts = upstreamOptions(state.cursor, state.imported);
+    if (opts.length < 2) return;
+    ev.preventDefault();
+    const sid = state.cursor.id;
+    if (state.ui.freeRoam) {
+      const remembered = state.ui.branchChoices.byStructureId[sid];
+      const at = Math.max(0, opts.findIndex((o) => o.id === remembered));
+      const step = ev.key === "ArrowRight" ? 1 : -1;
+      const next = (at + step + opts.length) % opts.length;
+      state.ui.branchChoices.byStructureId[sid] = opts[next].id;
+      renderAll();
+    } else {
+      openBranchPopup(sid, opts);
+    }
+  });
+
+  // --- Shift+Arrow nudge (task-22) ---
+
+  const NUDGE_FT = 10;
+
+  function nudgeSelectedStructure(dx, dy) {
+    if (state.ui.mode !== "edit") return;
+    if (!state.cursor || state.cursor.kind !== "structure") return;
+    const sid = state.cursor.id;
+    if (!isSafeOverrideKey(sid)) return;
+    const str = state.imported && state.imported.structures.find((s) => s.id === sid);
+    if (!str) return;
+
+    // Overrides are a separate layer; never mutate state.imported (task-23 depends on
+    // imported staying the immutable source). renderIso resolves x/y overrides.
+    const ov = state.overrides.byId[sid] = state.overrides.byId[sid] || {};
+    if (dx) {
+      const curX = (typeof ov.x === "number") ? ov.x : (typeof str.x === "number" ? str.x : 0);
+      ov.x = curX + dx;
+    }
+    if (dy) {
+      const curY = (typeof ov.y === "number") ? ov.y : (typeof str.y === "number" ? str.y : 0);
+      ov.y = curY + dy;
+    }
+    renderAll();
+  }
+
+  document.addEventListener("keydown", (ev) => {
+    if (isTypingTarget(ev)) return;
+    if (isBranchPopupOpen()) return;
+    if (!ev.shiftKey) return;
+    // Only claim the gesture when it will actually nudge; otherwise let the
+    // browser handle Shift+Arrow (text selection) in explore mode.
+    if (state.ui.mode !== "edit") return;
+    if (!state.cursor || state.cursor.kind !== "structure") return;
+    let dx = 0, dy = 0;
+    if (ev.key === "ArrowUp") dy = -NUDGE_FT;
+    else if (ev.key === "ArrowDown") dy = NUDGE_FT;
+    else if (ev.key === "ArrowLeft") dx = -NUDGE_FT;
+    else if (ev.key === "ArrowRight") dx = NUDGE_FT;
+    else return;
+    ev.preventDefault();
+    nudgeSelectedStructure(dx, dy);
+  });
+  // ==== navigation: end ====
+
+  // ==== edit-mode: begin ====
+  // --- Overrides store (task-23) ---
+
+  function setOverride(elementId, field, newValue) {
+    if (!isSafeOverrideKey(elementId) || !isSafeOverrideKey(field)) return;
+    state.overrides.byId[elementId] = state.overrides.byId[elementId] || {};
+    state.overrides.byId[elementId][field] = newValue;
+  }
+
+  function revertOverride(elementId, field) {
+    if (!isSafeOverrideKey(elementId) || !isSafeOverrideKey(field)) return;
+    const ov = state.overrides.byId[elementId];
+    if (!ov) return;
+    delete ov[field];
+    if (Object.keys(ov).length === 0) delete state.overrides.byId[elementId];
+  }
+
+  function resetAllOverrides() {
+    state.overrides = { byId: {} };
+  }
+
+  function listOverrides() {
+    const out = [];
+    for (const elementId of Object.keys(state.overrides.byId)) {
+      const fields = state.overrides.byId[elementId];
+      for (const field of Object.keys(fields)) {
+        const el = state.imported
+          ? (state.imported.structures.find((s) => s.id === elementId)
+             || state.imported.pipes.find((p) => p.id === elementId))
+          : null;
+        out.push({
+          elementId, field,
+          newValue: fields[field],
+          originalValue: el ? el[field] : null
+        });
+      }
+    }
+    return out;
+  }
+
+  function syncModeButton() {
+    const btn = document.getElementById("modeToggle");
+    if (btn) btn.textContent = state.ui.mode === "edit" ? "▸ edit" : "▸ explore";
+  }
+
+  // Mode toggle (E hotkey + toolbar button are handled in task-24 for completeness).
+  function setMode(mode) {
+    if (mode !== "explore" && mode !== "edit") return;
+    state.ui.mode = mode;
+    renderAll();
+  }
+
+  // --- Editable field helpers (task-24) ---
+
+  // A monospace numeric input bound to an override. Uses data-focus-key per main spec §A.2.
+  function editableNumber(elementId, field, imported, overrides, opts) {
+    opts = opts || {};
+    const currentVal = resolveField(elementId, field, imported, overrides);
+    const originalEl = (imported.structures.find((s) => s.id === elementId)
+                     || imported.pipes.find((p) => p.id === elementId));
+    const original = originalEl ? originalEl[field] : null;
+    const isOverridden = overrides.byId[elementId] && Object.prototype.hasOwnProperty.call(overrides.byId[elementId], field);
+
+    // text + inputmode rather than type=number: a number input reports "" for
+    // in-progress text like "0." so decimals cannot be typed reliably.
+    const input = el("input", {
+      type: "text",
+      inputmode: "decimal",
+      value: currentVal != null ? currentVal : "",
+      placeholder: original != null ? String(original) : "",
+      style: "width:90px; font-family:ui-monospace,monospace; "
+           + (isOverridden ? "font-weight:bold; color:#ffd60a;" : "color:#1a1a1a;"),
+      "data-focus-key": "edit:" + elementId + ":" + field,
+      oninput: (ev) => {
+        const raw = ev.target.value;
+        if (raw.trim() === "") { revertOverride(elementId, field); withFocusPreserved(renderAll); return; }
+        const n = Number(raw);
+        if (!isFinite(n)) return; // partial ("-", "1e", ".") — keep the text, store nothing
+        const cur = resolveField(elementId, field, imported, overrides);
+        if (cur === n) return;    // no semantic change yet; preserves "0.0" / "1.50"
+        setOverride(elementId, field, n);
+        withFocusPreserved(renderAll);
+      }
+    });
+    return input;
+  }
+
+  function editableSelect(elementId, field, imported, overrides, options) {
+    const currentVal = resolveField(elementId, field, imported, overrides);
+    const originalEl = (imported.structures.find((s) => s.id === elementId)
+                     || imported.pipes.find((p) => p.id === elementId));
+    const original = originalEl ? originalEl[field] : null;
+    const isOverridden = overrides.byId[elementId] && Object.prototype.hasOwnProperty.call(overrides.byId[elementId], field);
+    const sel = el("select", {
+      style: "font-family:ui-monospace,monospace; " + (isOverridden ? "font-weight:bold; color:#ffd60a;" : ""),
+      "data-focus-key": "edit:" + elementId + ":" + field,
+      onchange: (ev) => {
+        const v = ev.target.value;
+        // Picking the original value is a revert, not an override.
+        if (original != null && String(v) === String(original)) revertOverride(elementId, field);
+        else setOverride(elementId, field, v);
+        withFocusPreserved(renderAll);
+      }
+    });
+    for (const opt of options) {
+      const o = el("option", { value: opt, selected: (String(opt) === String(currentVal)) ? "selected" : null }, opt);
+      sel.appendChild(o);
+    }
+    return sel;
+  }
+
+  // E hotkey
+  document.addEventListener("keydown", (ev) => {
+    if (isTypingTarget(ev)) return;
+    if (ev.shiftKey) return;
+    if (isBranchPopupOpen()) return;
+    if (document.getElementById("overridePanel")) return;
+    if (ev.key === "e" || ev.key === "E") {
+      ev.preventDefault();
+      setMode(state.ui.mode === "edit" ? "explore" : "edit");
+    }
+  });
+
+  // Toolbar button
+  const modeBtn = document.getElementById("modeToggle");
+  if (modeBtn) modeBtn.addEventListener("click", () => setMode(state.ui.mode === "edit" ? "explore" : "edit"));
+
+  // --- Override badge + reset panel (task-25) ---
+
+  function renderOverrideBadge() {
+    let badge = document.getElementById("overrideBadge");
+    const count = listOverrides().length;
+    if (!badge) {
+      const topbar = document.querySelector(".topbar");
+      if (!topbar) return;
+      badge = el("button", { id: "overrideBadge", type: "button", style: "display:none;" });
+      badge.addEventListener("click", openOverridePanel);
+      topbar.appendChild(badge);
+    }
+    if (count === 0) {
+      badge.style.display = "none";
+    } else {
+      badge.textContent = count + " fields overridden";
+      badge.style.cssText = "background:#ffd60a; color:#1a1a1a; border:none; padding:4px 10px; border-radius:4px; font-weight:600;";
+    }
+  }
+
+  function closeOverridePanel() {
+    const p = document.getElementById("overridePanel");
+    if (p) p.remove();
+  }
+
+  function openOverridePanel() {
+    closeOverridePanel();
+    const ovs = listOverrides();
+    const panel = el("div", {
+      id: "overridePanel",
+      style: "position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); "
+           + "background:#161b22; color:#e6edf3; padding:16px 20px; border:1px solid #30363d; "
+           + "border-radius:6px; font-family:system-ui,sans-serif; min-width:420px; max-height:70vh; overflow:auto; z-index:1000;"
+    });
+    panel.appendChild(el("div", { style: "font-weight:600; margin-bottom:10px;" }, "Active overrides (" + ovs.length + ")"));
+    if (ovs.length === 0) {
+      panel.appendChild(el("div", { style: "color:#8b949e;" }, "No overrides. Edits in the ledger will appear here."));
+    } else {
+      const table = el("table", { style: "width:100%; border-collapse:collapse; font-family:ui-monospace,monospace; font-size:12px;" });
+      const head = el("tr", { style: "border-bottom:1px solid #30363d;" }, [
+        el("th", { style: "text-align:left; padding:4px;" }, "Element"),
+        el("th", { style: "text-align:left; padding:4px;" }, "Field"),
+        el("th", { style: "text-align:right; padding:4px;" }, "Original"),
+        el("th", { style: "text-align:right; padding:4px;" }, "New"),
+        el("th", { style: "padding:4px;" }, "")
+      ]);
+      table.appendChild(head);
+      for (const o of ovs) {
+        const revertBtn = el("button", {
+          type: "button",
+          style: "padding:2px 8px;",
+          onclick: () => {
+            revertOverride(o.elementId, o.field);
+            renderAll();
+            // Nothing left to show — dismissing the panel is the honest state.
+            if (listOverrides().length === 0) closeOverridePanel();
+            else openOverridePanel();
+          }
+        }, "Revert");
+        const row = el("tr", { style: "border-bottom:1px solid #21262d;" }, [
+          el("td", { style: "padding:4px;" }, o.elementId),
+          el("td", { style: "padding:4px;" }, o.field),
+          el("td", { style: "padding:4px; text-align:right;" }, String(o.originalValue)),
+          el("td", { style: "padding:4px; text-align:right; color:#ffd60a;" }, String(o.newValue)),
+          el("td", { style: "padding:4px;" }, revertBtn)
+        ]);
+        table.appendChild(row);
+      }
+      panel.appendChild(table);
+    }
+
+    const footer = el("div", { style: "margin-top:12px; display:flex; gap:8px; justify-content:flex-end;" }, [
+      el("button", { type: "button",
+        onclick: () => { resetAllOverrides(); renderAll(); closeOverridePanel(); }
+      }, "Reset all"),
+      el("button", { type: "button", onclick: closeOverridePanel }, "Close")
+    ]);
+    panel.appendChild(footer);
+
+    document.body.appendChild(panel);
+  }
+
+  // Esc closes the panel. Capture phase + stopImmediatePropagation so the walk
+  // handlers (registered earlier, bubble phase) don't also run resetWalk.
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && document.getElementById("overridePanel")) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      closeOverridePanel();
+    }
+  }, true);
+
+  // --- Tweaked JSON export (task-26) ---
+
+  function buildTweakedJsonExport() {
+    if (!state.imported) throw new Error("no imported data to export");
+    const ovs = listOverrides();
+
+    // Merge overrides into element fields for output
+    const mergeField = (el) => {
+      const ov = state.overrides.byId[el.id];
+      if (!ov) return Object.assign({}, el);
+      return Object.assign({}, el, ov);
+    };
+    const structures = state.imported.structures.map(mergeField);
+    const pipes = state.imported.pipes.map(mergeField);
+
+    return {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      sourceApp: "storm-drain-hgl-visualizer",
+      basedOn: {
+        sourceApp: state.imported.config && state.imported.config.sourceApp || "unknown",
+        exportedAt: state.imported.config && state.imported.config.exportedAt || null
+      },
+      config: Object.assign({}, state.imported.config || {}, { hglMethod: state.ui.hglMethod }),
+      structures, pipes,
+      outfall: Object.assign({}, state.imported.outfall),
+      kbTable: state.imported.kbTable || null,
+      drainageAreas: (state.imported.drainageAreas || []).map((o) => Object.assign({}, o)),
+      tr55Segments:  (state.imported.tr55Segments || []).map((o) => Object.assign({}, o)),
+      _overrides: ovs
+    };
+  }
+
+  function downloadTweakedJson() {
+    const obj = buildTweakedJsonExport();
+    const text = JSON.stringify(obj, null, 2);
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.download = "visualizer-tweaked-" + stamp + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Wire a toolbar button
+  (function () {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+    const btn = el("button", {
+      type: "button",
+      id: "exportTweakedBtn",
+      style: "margin-left:4px;",
+      onclick: () => {
+        try { downloadTweakedJson(); }
+        catch (e) { alert("Export failed: " + e.message); }
+      }
+    }, "export tweaked");
+    topbar.appendChild(btn);
+  })();
+  // ==== edit-mode: end ====
+
+  // ==== ledger-render: begin ====
+  // Sentinel id that never matches a real row → effectively collapses every row.
+  const LEDGER_COLLAPSED = "(collapsed)";
+  // --- Calc-sheet helpers (task-27) ---
+
+  function csSection(label, children) {
+    return el("div", { class: "cs-section", style: "margin:4px 0 8px 0;" }, [
+      el("div", { style: "font-weight:600; font-size:11px; color:#444; text-transform:uppercase; margin-bottom:4px;" }, label),
+      el("div", null, children)
+    ]);
+  }
+
+  function csFormula(symbolic, substituted, result, unit) {
+    return el("div", { style: "font-family:ui-monospace,monospace; font-size:12px; margin:2px 0;" }, [
+      el("span", { style: "color:#555;" }, symbolic + " = "),
+      substituted != null ? el("span", { style: "color:#222;" }, substituted + " = ") : null,
+      el("span", { style: "font-weight:600;" }, String(result)),
+      unit ? el("span", { style: "color:#555;" }, " " + unit) : null
+    ]);
+  }
+
+  function csResult(label, value, unit) {
+    return el("div", { style: "margin:6px 0; padding:4px 8px; background:#eceae2; font-family:ui-monospace,monospace;" }, [
+      el("span", { style: "color:#444;" }, label + " = "),
+      el("span", { style: "font-weight:700;" }, String(value)),
+      unit ? el("span", { style: "color:#444;" }, " " + unit) : null
+    ]);
+  }
+
+  function csWarn(text) {
+    return el("div", {
+      style: "margin:6px 0; padding:6px 10px; background:#fff4e5; color:#8a3a00; border-left:3px solid #ff8c00; font-size:12px;"
+    }, text);
+  }
+
+  function fmtNum(v, decimals) {
+    const d = (typeof decimals === "number") ? decimals : 3;
+    if (typeof v !== "number" || !isFinite(v)) return String(v);
+    return v.toFixed(d);
+  }
+
+  // Top-level ledger container — invoked by renderAll (task-17 wiring).
+  function renderLedger() {
+    const host = document.getElementById("ledger");
+    if (!host) return;
+    while (host.firstChild) host.removeChild(host.firstChild);
+    if (!state.imported) {
+      host.appendChild(el("div", { style: "color:#666;" }, "No data imported."));
+      return;
+    }
+    const outfallId = state.imported.outfall && state.imported.outfall.structureId;
+    const path = (state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
+      ? state.cursor.pathStack
+      : (outfallId ? [outfallId] : []);
+    const rows = buildLedger(path, state, state.imported.kbTable, state.ui.hglMethod);
+    const annotated = annotateLedgerHgl(rows, state, state.ui.hglMethod);
+
+    // Header line
+    host.appendChild(el("div", { style: "font-weight:700; margin-bottom:8px;" },
+      "Energy ledger (" + (state.ui.freeRoam ? "free-roam" : "upstream walk") + ") — HGL method: " + state.ui.hglMethod));
+
+    // One row per ledger entry. The synthetic end row reuses the last element's
+    // id, so it must never be treated as the cursor target (that would expand
+    // both the real row and the summary).
+    const cursorId = state.cursor && state.cursor.id;
+    // Auto-follow: whenever the cursor moves, re-expand the (new) current row.
+    if (state.ui.lastCursorId !== cursorId) {
+      state.ui.expandedRowId = null;
+      state.ui.lastCursorId = cursorId;
+    }
+    for (const row of annotated) {
+      const isCurrent = row.kind !== "end" && row.id === cursorId;
+      const isExpanded = state.ui.expandedRowId === null
+        ? isCurrent
+        : (row.kind !== "end" && row.id === state.ui.expandedRowId);
+      const isEnd = row.kind === "end";
+      const rowAttrs = {
+        style: "padding:3px 6px; font-family:ui-monospace,monospace; "
+             + (isEnd ? "" : "cursor:pointer; ")
+             + (isCurrent ? "background:#ffeaa7;" : ""),
+        "aria-expanded": isExpanded ? "true" : "false"
+      };
+      if (!isEnd) {
+        rowAttrs.onclick = () => {
+          // Click the row currently shown expanded to collapse it; any other row locks it open.
+          const shownExpanded = state.ui.expandedRowId === null
+            ? (row.kind !== "end" && row.id === cursorId)
+            : state.ui.expandedRowId === row.id;
+          state.ui.expandedRowId = shownExpanded ? LEDGER_COLLAPSED : row.id;
+          renderLedger();
+        };
+      }
+      const collapsed = el("div", rowAttrs, oneLineForRow(row));
+      host.appendChild(collapsed);
+      if (isExpanded) {
+        const details = el("div", { style: "padding:4px 20px;" }, renderExpandedRow(row));
+        host.appendChild(details);
+      }
+    }
+  }
+
+  // --- Enter key expand/collapse (task-43) ---
+  document.addEventListener("keydown", (ev) => {
+    if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
+    if (ev.key !== "Enter") return;
+    if (typeof isTypingTarget === "function" && isTypingTarget(ev)) return;
+    if (typeof isBranchPopupOpen === "function" && isBranchPopupOpen()) return;
+    if (document.getElementById("overridePanel")) return;      // a modal owns the keyboard
+    const t = ev.target;
+    // Don't hijack Enter on interactive controls (buttons/links/selects).
+    if (t && (t.tagName === "BUTTON" || t.tagName === "A" || t.tagName === "SELECT")) return;
+
+    const cursorId = state.cursor && state.cursor.id;
+    if (!cursorId) return;
+    ev.preventDefault();
+
+    const cursorRowIsExpanded = state.ui.expandedRowId === null
+      || state.ui.expandedRowId === cursorId;
+    state.ui.expandedRowId = cursorRowIsExpanded ? LEDGER_COLLAPSED : null;
+    if (typeof renderLedger === "function") renderLedger();
+  });
+
+  function oneLineForRow(row) {
+    const arrow = " → ";
+    const after = fmtNum(row.after, 2);
+    if (row.kind === "start") {
+      const reason = (row.detail && row.detail.boundaryReason) || "tailwater";
+      return "Start: " + row.label + "   EGL = " + after + " ft (" + reason + ")";
+    }
+    if (row.kind === "hf")     return "+Hf " + row.label + "   +" + fmtNum(row.delta, 3) + arrow + after;
+    if (row.kind === "hb")     return "+Hb " + row.label + "   +" + fmtNum(row.delta, 3) + arrow + after;
+    if (row.kind === "end")    return "End: " + row.label + "   total rise = " + fmtNum(row.detail.totalRise, 3) + " ft";
+    return JSON.stringify(row);
+  }
+
+  // --- Hf row expanded render (task-28) ---
+
+  function renderHfRow(row) {
+    const d = row.detail;
+    const isEdit = state.ui.mode === "edit";
+    const q = (typeof d.designQ === "number" && isFinite(d.designQ)) ? d.designQ : 0;
+    const inp = (field, step) => isEdit
+      ? editableNumber(row.id, field, state.imported, state.overrides, { step })
+      : el("span", { style: "font-family:ui-monospace,monospace;" }, fmtNum(resolveField(row.id, field, state.imported, state.overrides), 3));
+    // Elliptical sizes are "SPANxRISE" keys from Table 4-6; a free numeric input
+    // would commit a value pipeAreaElliptical cannot resolve. Offer the table.
+    const sizeControl = () => {
+      if (!isEdit) return String(d.size);
+      if (d.shape === "elliptical") {
+        const sizes = TABLE_4_6.map((r) => r.span_rise).filter((v) => v != null);
+        return editableSelect(row.id, "size", state.imported, state.overrides, sizes);
+      }
+      return editableNumber(row.id, "size", state.imported, state.overrides, { step: 3 });
+    };
+
+    return el("div", null, [
+      csSection("inputs", el("table", { style: "font-family:ui-monospace,monospace; font-size:12px;" }, [
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Q (cfs)"), el("td", null, fmtNum(q, 2))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "n"), el("td", null, inp("n", "0.001"))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "slope (ft/ft)"), el("td", null, inp("slope", "0.0001"))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "length (ft)"), el("td", null, inp("length", "0.1"))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "shape"), el("td", null, d.shape)]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "size"), el("td", null, sizeControl())])
+      ])),
+      csSection("hydraulics", el("div", null, [
+        csFormula("A", fmtNum(d.A, 4), fmtNum(d.A, 4), "ft²"),
+        csFormula("R", fmtNum(d.R, 4), fmtNum(d.R, 4), "ft")
+      ])),
+      csSection("friction slope", csFormula(
+        "Sf = (Q·n / (1.486·A·R^(2/3)))²",
+        "(" + fmtNum(q, 2) + "·" + fmtNum(d.n, 3) + " / (1.486·" + fmtNum(d.A, 3) + "·" + fmtNum(d.R, 3) + "^(2/3)))²",
+        fmtNum(d.Sf, 6),
+        "ft/ft"
+      )),
+      csSection("friction loss", csFormula(
+        "Hf = Sf · L",
+        fmtNum(d.Sf, 6) + " · " + fmtNum(d.length, 2),
+        fmtNum(d.Hf, 3),
+        "ft"
+      )),
+      csResult("EGL_up = EGL_dn + Hf = " + fmtNum(row.before, 3) + " + " + fmtNum(d.Hf, 3), fmtNum(row.after, 3), "ft")
+    ]);
+  }
+
+  // --- Hb row expanded render (task-29) ---
+
+  function renderHbRow(row) {
+    const d = row.detail;
+    const res = d.result;
+    const isEdit = state.ui.mode === "edit";
+    const typeSelect = isEdit
+      ? editableSelect(row.id, "type", state.imported, state.overrides, ["inlet", "manhole", "bend", "junction", "splitter", "outfall"])
+      : el("span", { style: "font-family:ui-monospace,monospace;" }, d.structureType);
+
+    const header = el("div", null, [
+      csSection("structure", el("table", { style: "font-family:ui-monospace,monospace; font-size:12px;" }, [
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Type"), el("td", null, typeSelect)]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Total Q (cfs)"), el("td", null, fmtNum(d.Qtotal, 2))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Outflow pipe A_out (sf)"), el("td", null, fmtNum(d.Aout, 3))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Vout (ft/s)"),
+          el("td", null, fmtNum(d.Aout > 0 ? d.Qtotal / d.Aout : 0, 3))]),
+        el("tr", null, [el("td", { style: "padding:2px 8px;" }, "V²/(2g) (ft)"),
+          el("td", null, fmtNum(velocityHead(d.Aout > 0 ? d.Qtotal / d.Aout : 0), 4))])
+      ]))
+    ]);
+
+    if (res && res.error === "too-many-inflows") {
+      return el("div", null, [
+        header,
+        csWarn(d.inflows.length + " inflows at structure " + row.id + "; controlling-angle method supports ≤2. No Hb computed.")
+      ]);
+    }
+
+    const n = d.inflows.length;
+    if (n === 0) {
+      return el("div", null, [
+        header,
+        csSection("zero inflows (headwater)", el("div", { style: "font-size:12px; color:#444;" },
+          "Nominal entrance condition: Kb evaluated at 0° for a " + d.structureType + ".")),
+        csFormula("Kb(0°, " + d.structureType + ")", fmtNum(res.kbUsed, 3), fmtNum(res.kbUsed, 3), ""),
+        csFormula("Hb = Kb · V²/(2g)",
+          fmtNum(res.kbUsed, 3) + " · " + fmtNum(velocityHead(d.Aout > 0 ? d.Qtotal / d.Aout : 0), 4),
+          fmtNum(res.Hb, 4), "ft"),
+        csResult("Hb", fmtNum(res.Hb, 4), "ft")
+      ]);
+    }
+    if (n === 1) {
+      const a = d.inflows[0];
+      return el("div", null, [
+        header,
+        csSection("one inflow", el("div", { style: "font-size:12px; color:#444;" },
+          "Pipe " + a.pipeId + " enters at " + fmtNum(a.angleDeg, 1) + "°; Kb read at that angle.")),
+        csFormula("Kb(" + fmtNum(a.angleDeg, 1) + "°, " + d.structureType + ")", null, fmtNum(res.kbUsed, 3), ""),
+        csFormula("Hb = Kb · V²/(2g)",
+          fmtNum(res.kbUsed, 3) + " · " + fmtNum(velocityHead(d.Aout > 0 ? d.Qtotal / d.Aout : 0), 4),
+          fmtNum(res.Hb, 4), "ft"),
+        csResult("Hb", fmtNum(res.Hb, 4), "ft")
+      ]);
+    }
+    // n === 2 — defer to task-30
+    if (typeof renderTwoInflowDetail === "function") {
+      return el("div", null, [header, renderTwoInflowDetail(row)]);
+    }
+    return el("div", null, [header,
+      csFormula("Hb (2-inflow controlling)", null, fmtNum(res.Hb, 4), "ft (detail in task-30)")]);
+  }
+
+  // Default expanded renderer — replaced by task-28/29 per row kind.
+  function renderExpandedRow(row) {
+    if (typeof renderHfRow === "function" && row.kind === "hf")   return renderHfRow(row);
+    if (typeof renderHbRow === "function" && row.kind === "hb")   return renderHbRow(row);
+    if (row.kind === "start") {
+      const reason = row.detail.boundaryReason || "tailwater";
+      const label = reason === "fixed elevation" ? "Fixed start elevation"
+                  : reason === "crown boundary" ? "Crown boundary elevation"
+                  : reason === "rim boundary" ? "Rim boundary elevation"
+                  : reason === "zero boundary" ? "Boundary elevation"
+                  : "Tailwater elevation";
+      return csResult(label, fmtNum(row.detail.boundaryEGL, 2), "ft");
+    }
+    if (row.kind === "end")   return csResult("Total rise over walked path", fmtNum(row.detail.totalRise, 3), "ft");
+    return el("div", null, "(no detail)");
+  }
+  // --- Two-inflow detail (task-30) ---
+
+  function renderTwoInflowDetail(row) {
+    const d = row.detail;
+    const res = d.result;
+    const cands = res.candidateLosses || [];
+    if (cands.length !== 2) return csWarn("Expected 2 candidate losses, got " + cands.length);
+
+    const candTable = el("table", { style: "font-family:ui-monospace,monospace; font-size:12px; border-collapse:collapse;" }, [
+      el("tr", { style: "border-bottom:1px solid #999;" }, [
+        el("th", { style: "padding:3px 10px; text-align:left;" }, "angle"),
+        el("th", { style: "padding:3px 10px; text-align:right;" }, "V_i/3"),
+        el("th", { style: "padding:3px 10px; text-align:right;" }, "Kb(angle)"),
+        el("th", { style: "padding:3px 10px; text-align:right;" }, "Lv = Kb·V²/(2g)"),
+        el("th", { style: "padding:3px 10px;" }, "")
+      ])
+    ]);
+    // Derive the marker from the loss itself, not `isControlling`: when both
+    // inflows share an angle the engine marks both true, which would label the
+    // larger loss "smaller".
+    const minLv = Math.min(cands[0].Lv, cands[1].Lv);
+    for (const c of cands) {
+      const marker = c.Lv === minLv
+        ? el("span", { style: "color:#0a7a0a; font-weight:700;" }, "← controls (smaller)")
+        : el("span", { style: "color:#999;" }, "(not used)");
+      candTable.appendChild(el("tr", { style: "border-bottom:1px dotted #ccc;" }, [
+        el("td", { style: "padding:3px 10px;" }, fmtNum(c.angle, 1) + "°"),
+        el("td", { style: "padding:3px 10px; text-align:right;" }, fmtNum(c.V, 3)),
+        el("td", { style: "padding:3px 10px; text-align:right;" }, fmtNum(c.Kb, 3)),
+        el("td", { style: "padding:3px 10px; text-align:right;" }, fmtNum(c.Lv, 4)),
+        el("td", { style: "padding:3px 10px;" }, marker)
+      ]));
+    }
+
+    return el("div", null, [
+      csSection("two inflows — controlling-angle method", el("div", { style: "font-size:12px; color:#444; margin-bottom:6px;" }, [
+        "Compute Lv = Kb·V²/(2g) for each inflow using that inflow's partial velocity (V_i/3 = Q_i / A_out). ",
+        el("b", null, "The SMALLER of the two Lv's picks the controlling angle θc."),
+        " (The counter-intuitive detail: smaller Lv → θc, not larger. Per main spec §1.4.)"
+      ])),
+      candTable,
+      csSection("controlling angle", csFormula(
+        "θc  (angle giving the SMALLER Lv)",
+        null,
+        fmtNum(res.thetaControlling, 1), "°"
+      )),
+      csSection("Hb at the structure", csFormula(
+        "Hb = Kb(θc) · V_out²/(2g)",
+        fmtNum(res.kbUsed, 3) + " · " + fmtNum(velocityHead(d.Aout > 0 ? d.Qtotal / d.Aout : 0), 4),
+        fmtNum(res.Hb, 4), "ft"
+      )),
+      csResult("Hb", fmtNum(res.Hb, 4), "ft")
+    ]);
+  }
+  // ==== ledger-render: end ====
+
+  // ==== print: begin ====
+  // --- Print the current walked path (v81.7, design §4.8) ---
+
+  // Build a detached #printArea for the current annotated ledger path: a header
+  // block plus one .calc-sheet per ledger row, reusing the ledger detail renderers
+  // (which are built on csSection / csFormula).
+  function buildPrintArea() {
+    const area = el("div", { id: "printArea" });
+    if (!state.imported) return area;
+
+    const startId = (typeof resolveWalkStart === "function"
+      ? resolveWalkStart(state.imported, state.ui) : null)
+      || state.ui.walkStartId
+      || (state.imported.outfall && state.imported.outfall.structureId) || "—";
+    area.appendChild(el("div", { class: "print-header",
+      style: "margin-bottom:12px; border-bottom:2px solid #000; padding-bottom:8px;" }, [
+      el("div", { style: "font-size:16px; font-weight:700; margin-bottom:4px;" },
+        "Storm Drain HGL/EGL Visualizer — Energy Ledger"),
+      el("div", { style: "font-size:12px;" },
+        "File: " + (state.ui.fileName || "(none)")
+        + "   ·   HGL method: " + state.ui.hglMethod
+        + "   ·   Walk start: " + startId
+        + "   ·   " + new Date().toLocaleDateString())
+    ]));
+
+    const path = (state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
+      ? state.cursor.pathStack
+      : (state.imported.outfall && state.imported.outfall.structureId
+          ? [state.imported.outfall.structureId] : []);
+    if (!path.length) return area;
+
+    const rows = buildLedger(path, state, state.imported.kbTable, state.ui.hglMethod);
+    const annotated = annotateLedgerHgl(rows, state, state.ui.hglMethod);
+
+    // Render details statically even if the app is in edit mode (no form controls).
+    const prevMode = state.ui.mode;
+    state.ui.mode = "explore";
+    try {
+      for (const row of annotated) {
+        area.appendChild(el("div", { class: "calc-sheet", "data-kind": "print-sheet", "data-id": String(row.id) }, [
+          el("div", { style: "font-weight:700; font-size:13px; margin-bottom:6px; font-family:ui-monospace,monospace;" },
+            oneLineForRow(row)),
+          renderExpandedRow(row)
+        ]));
+      }
+    } finally {
+      state.ui.mode = prevMode;
+    }
+    return area;
+  }
+
+  // Build the print area, enter print mode, and open the browser print dialog.
+  function printLedger() {
+    const notice = document.getElementById("printNotice");
+    if (!state.imported) {
+      if (notice) {
+        notice.textContent = "Load a network before printing.";
+        notice.style.display = "inline";
+        setTimeout(() => { notice.style.display = "none"; }, 2500);
+      }
+      return;
+    }
+
+    // Remove any stale area from a previous invocation before building a new one.
+    const stale = document.getElementById("printArea");
+    if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+
+    const area = buildPrintArea();
+    document.body.appendChild(area);
+    document.body.classList.add("print-mode");
+
+    // Register cleanup BEFORE printing so a synchronous afterprint is not missed.
+    // Idempotent, and scoped to THIS area (not a global id lookup).
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.body.classList.remove("print-mode");
+      if (area.parentNode) area.parentNode.removeChild(area);
+    };
+    window.addEventListener("afterprint", cleanup, { once: true });
+    setTimeout(cleanup, 1500);   // fallback: some environments never fire afterprint
+    try {
+      if (typeof window.print === "function") window.print();
+    } catch (e) {
+      cleanup();
+    }
+  }
+
+  // Toolbar print button + a small non-blocking notice span.
+  (function wirePrintButton() {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+    const notice = el("span", { id: "printNotice",
+      style: "display:none; font-size:12px; color:#ffd60a;" }, "");
+    const btn = el("button", { id: "printBtn", type: "button",
+      style: "background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:4px; padding:2px 8px; font-size:12px; cursor:pointer;" },
+      "Print");
+    btn.addEventListener("click", () => printLedger());
+    topbar.appendChild(notice);
+    topbar.appendChild(btn);
+  })();
+  // ==== print: end ====
+
+  // ==== warning-banner: begin ====
+  // v81.2 (design §4.1, §4.4) — unified amber banner below the topbar.
+  // Renders splitter detection and missing-Design-Q warnings from state.analysis.
+
+  // Details disclosure is UI-only; kept out of `state` (not persisted/exported).
+  let warningDetailsOpen = false;
+  // Signature of the last full render; lets renderAll skip unchanged rebuilds.
+  let warningSignature = null;
+
+  // Called by both importers: a new import clears dismissal and collapses details.
+  function resetWarningUi() {
+    state.ui.warningsDismissed = false;
+    warningDetailsOpen = false;
+    warningSignature = null; // force a rebuild on the next render
+  }
+
+  function renderWarningBanner() {
+    const host = document.getElementById("warningBanner");
+    if (!host) return;
+
+    const a = state.analysis;
+    const splitterIds = (a && Array.isArray(a.splitterIds)) ? a.splitterIds : [];
+    const missingQ = (a && Array.isArray(a.missingDesignQ)) ? a.missingDesignQ : [];
+    const hasWarning = !!(a && !state.ui.warningsDismissed && (splitterIds.length || missingQ.length));
+
+    // Skip rebuilding when nothing that affects the banner changed (renderAll runs often).
+    const sig = hasWarning
+      ? JSON.stringify([splitterIds, missingQ, warningDetailsOpen, state.ui.warningsDismissed])
+      : "hidden";
+    if (sig === warningSignature) return;
+    warningSignature = sig;
+
+    host.innerHTML = "";
+    if (!hasWarning) { host.style.display = "none"; return; }
+    host.style.display = "block";
+
+    const pipes = (state.imported && Array.isArray(state.imported.pipes)) ? state.imported.pipes : [];
+
+    // --- summary rows ---
+    const summary = el("div", { style: "flex:1; display:flex; flex-direction:column; gap:2px;" });
+    for (const sid of splitterIds) {
+      const primaryId = a.primaryPipeByStructureId ? a.primaryPipeByStructureId[sid] : null;
+      const p = pipes.find((x) => x.id === primaryId);
+      const hasPrimaryRole = p && String(p.splitRole || "").toLowerCase() === "primary";
+      summary.appendChild(el("div", null,
+        "Flow splitter " + sid + " — following primary path only"
+        + (hasPrimaryRole ? "" : " (no primary role; using first outgoing pipe)")));
+    }
+    if (missingQ.length > 0) {
+      summary.appendChild(el("div", null,
+        "No Design Q: " + missingQ.join(", ") + " — friction shown as 0.000 ft"));
+    }
+
+    // --- controls ---
+    const detailsBtn = el("button", {
+      id: "warningBannerDetailsBtn",
+      type: "button",
+      style: "background:transparent; border:none; cursor:pointer; font-weight:600; font-family:inherit; font-size:12px;",
+      "aria-expanded": warningDetailsOpen ? "true" : "false",
+      "aria-controls": "warningBannerDetails",
+      onclick: () => {
+        // Mutate in place (no rebuild) so keyboard focus is preserved.
+        warningDetailsOpen = !warningDetailsOpen;
+        const d = document.getElementById("warningBannerDetails");
+        if (d) d.style.display = warningDetailsOpen ? "block" : "none";
+        const btn = document.getElementById("warningBannerDetailsBtn");
+        if (btn) {
+          btn.textContent = warningDetailsOpen ? "details ▴" : "details ▾";
+          btn.setAttribute("aria-expanded", warningDetailsOpen ? "true" : "false");
+        }
+        warningSignature = null; // details visibility changed; allow a later rebuild
+      }
+    }, warningDetailsOpen ? "details ▴" : "details ▾");
+
+    const dismissBtn = el("button", {
+      type: "button",
+      style: "background:transparent; border:none; cursor:pointer; font-size:14px; font-family:inherit;",
+      "aria-label": "Dismiss",
+      onclick: () => { state.ui.warningsDismissed = true; renderWarningBanner(); }
+    }, "×");
+
+    const controls = el("span", { style: "margin-left:auto; display:flex; gap:6px; align-items:baseline;" },
+      [detailsBtn, dismissBtn]);
+
+    host.appendChild(el("div", { style: "display:flex; gap:8px; align-items:baseline;" },
+      [summary, controls]));
+
+    // --- details (always built; visibility toggled in place) ---
+    const details = el("div", {
+      id: "warningBannerDetails",
+      style: "margin-top:4px; font-size:11px; line-height:1.5; display:" + (warningDetailsOpen ? "block" : "none") + ";"
+    });
+    for (const sid of splitterIds) {
+      const outs = pipes.filter((p) => p.fromId === sid).map((p) => p.id);
+      details.appendChild(el("div", null,
+        "Splitter " + sid + " downstream pipes: " + (outs.length ? outs.join(", ") : "(none)")));
+    }
+    for (const pid of missingQ) {
+      details.appendChild(el("div", null, "Pipe " + pid + ": no Design Q (friction 0.000 ft)"));
+    }
+    host.appendChild(details);
+  }
+  // ==== warning-banner: end ====
+
+  // ==== walk-from: begin ====
+  // v81.3 (design §4.2) — "Walk from" switcher, grouped outfalls-first.
+
+  let walkFromSig = null;
+
+  function renderWalkFromSelect() {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+
+    let wrap = document.getElementById("walkFromWrap");
+    let sel = document.getElementById("walkFromSelect");
+    if (!wrap) {
+      sel = el("select", {
+        id: "walkFromSelect",
+        style: "font-family:var(--mono);font-size:12px;background:var(--bg-elev);" +
+               "color:var(--fg);border:1px solid #30363d;border-radius:3px;padding:2px 4px;",
+        onchange: (ev) => {
+          const id = ev.target.value;
+          state.ui.walkStartId = id;
+          state.cursor = { kind: "structure", id: id, pathStack: [id] };
+          state.ui.branchChoices = { byStructureId: {} };
+          withFocusPreserved(renderAll);
+        }
+      });
+      wrap = el("span", { id: "walkFromWrap", style: "display:none; align-items:baseline; gap:4px; margin-left:8px;" }, [
+        el("label", {
+          for: "walkFromSelect",
+          style: "font-size:12px;color:var(--fg-dim);font-family:var(--mono);white-space:nowrap;"
+        }, "Walk from:"),
+        sel
+      ]);
+      topbar.appendChild(wrap);
+    }
+
+    const starts = (state.analysis && Array.isArray(state.analysis.walkStarts)) ? state.analysis.walkStarts : [];
+    const sig = JSON.stringify(starts.map((s) => [s.id, s.label || "", s.group || "", s.type || ""]));
+    if (sig !== walkFromSig) {
+      walkFromSig = sig;
+      sel.innerHTML = "";
+      const addGroup = (label, arr) => {
+        if (arr.length === 0) return;
+        sel.appendChild(el("optgroup", { label }, arr.map((s) => el("option", { value: s.id }, s.label || s.id))));
+      };
+      addGroup("Outfalls", starts.filter((s) => s.group === "outfall"));
+      addGroup("Structures", starts.filter((s) => s.group !== "outfall"));
+    }
+
+    const want = state.ui.walkStartId;
+    const has = (v) => Array.from(sel.options).some((o) => o.value === v);
+    if (want != null && has(want)) {
+      sel.value = want;
+    } else if (sel.options.length > 0) {
+      sel.value = sel.options[0].value;
+      // Keep UI state consistent when the current id is absent from the options.
+      if (state.ui.walkStartId !== sel.value) state.ui.walkStartId = sel.value;
+    }
+
+    wrap.style.display = starts.length ? "inline-flex" : "none";
+  }
+  // ==== walk-from: end ====
+
+  // ==== bootstrap: begin ====
+  function renderAll() {
+    renderActiveView();
+    // ledger render is wired in by group 60
+    if (typeof renderLedger === "function") renderLedger();
+    if (typeof renderOverrideBadge === "function") renderOverrideBadge();
+    if (typeof renderWarningBanner === "function") renderWarningBanner();
+    if (typeof syncModeButton === "function") syncModeButton();
+    if (typeof syncHglSelect === "function") syncHglSelect();
+    if (typeof renderWalkFromSelect === "function") renderWalkFromSelect();
+    if (typeof syncTr55Toggle === "function") syncTr55Toggle();
+  }
+
+  // V hotkey (also 'v' lowercase). Ignore while typing in form controls.
+  document.addEventListener("keydown", (ev) => {
+    if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
+    if (isBranchPopupOpen() || document.getElementById("overridePanel")) return;  // a modal owns the keyboard
+    const t = ev.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (ev.key === "v" || ev.key === "V") {
+      ev.preventDefault();
+      toggleView();
+    }
+  });
+
+  // Toolbar click
+  const toggleLabel = document.getElementById("viewToggle");
+  if (toggleLabel) toggleLabel.addEventListener("click", () => toggleView());
+  const tr55Label = document.getElementById("tr55Toggle");
+  if (tr55Label) tr55Label.addEventListener("click", () => toggleTr55());
+  document.getElementById("fileInput").addEventListener("change", async (ev) => {
+    const f = ev.target.files[0]; if (!f) return;
+    document.getElementById("fileName").textContent = f.name;
+    try {
+      const name = f.name.toLowerCase();
+      if (name.endsWith(".json")) await importFromJsonFile(f);
+      else if (name.endsWith(".xlsx")) await importFromXlsxFile(f);  // added by task-06
+      else throw new Error("Unsupported file type: " + f.name);
+      autoLayoutIfNeeded();
+      renderAll();
+    } catch (err) {
+      alert("Import failed: " + err.message);
+      renderAll();
+    }
+  });
+  // Expose top-level bindings for the jsdom test harness (top-level const/let
+  // declarations are not properties of `window`).
+  window.state = state;
+  window.KB_SEED = KB_SEED;
+  window.TABLE_4_6 = TABLE_4_6;
+  renderAll();
+  // ==== bootstrap: end ====
+</script>
+</body>
+</html>

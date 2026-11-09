@@ -10,7 +10,7 @@ Build the composable DOM helpers for calc-sheet-style content inside expanded le
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Insert inside the `ledger-render` sentinel block, immediately after the `begin` line:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Insert inside the `ledger-render` sentinel block, immediately after the `begin` line:
 
 ```js
   // --- Calc-sheet helpers (task-27) ---
@@ -60,9 +60,10 @@ Build the composable DOM helpers for calc-sheet-style content inside expanded le
       host.appendChild(el("div", { style: "color:#666;" }, "No data imported."));
       return;
     }
+    const outfallId = state.imported.outfall && state.imported.outfall.structureId;
     const path = (state.cursor && state.cursor.pathStack && state.cursor.pathStack.length)
       ? state.cursor.pathStack
-      : [state.imported.outfall.structureId];
+      : (outfallId ? [outfallId] : []);
     const rows = buildLedger(path, state, state.imported.kbTable, state.ui.hglMethod);
     const annotated = annotateLedgerHgl(rows, state, state.ui.hglMethod);
 
@@ -70,10 +71,12 @@ Build the composable DOM helpers for calc-sheet-style content inside expanded le
     host.appendChild(el("div", { style: "font-weight:700; margin-bottom:8px;" },
       "Energy ledger (" + (state.ui.freeRoam ? "free-roam" : "upstream walk") + ") — HGL method: " + state.ui.hglMethod));
 
-    // One row per ledger entry
+    // One row per ledger entry. The synthetic end row reuses the last element's
+    // id, so it must never be treated as the cursor target (that would expand
+    // both the real row and the summary).
     const cursorId = state.cursor && state.cursor.id;
     for (const row of annotated) {
-      const isCurrent = row.id === cursorId;
+      const isCurrent = row.kind !== "end" && row.id === cursorId;
       const collapsed = el("div", {
         style: "padding:3px 6px; font-family:ui-monospace,monospace; cursor:pointer; "
              + (isCurrent ? "background:#ffeaa7;" : ""),

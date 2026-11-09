@@ -10,7 +10,7 @@ Implement `outletVelocity`, `velocityHead`, and `structureLoss` per spec §7.3 a
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-10:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `compute` sentinel block after task-10:
 
 ```js
   // --- Structure loss (task-11) ---
@@ -41,6 +41,18 @@ Implement `outletVelocity`, `velocityHead`, and `structureLoss` per spec §7.3 a
     if (!Array.isArray(inflows)) return { error: "inflows-not-array" };
     if (inflows.length > 2) return { error: "too-many-inflows" };
 
+    // Coerce inflow fields defensively (main-app parity: parseFloat(angle) || 0).
+    // Missing/NaN angles fall back to 0° so kbAt clamps to the 5° row (Kb 0.06)
+    // instead of falling through to the last row; null inflows are tolerated.
+    const angleOf = (inf) => {
+      const a = Number(inf && inf.angleDeg);
+      return isFinite(a) ? a : 0;
+    };
+    const qOf = (inf) => {
+      const q = Number(inf && inf.Qcfs);
+      return isFinite(q) ? q : 0;
+    };
+
     const Vout = outletVelocity(Qtotal_cfs, Aout_sf);
     const Hvout = velocityHead(Vout);
 
@@ -50,29 +62,31 @@ Implement `outletVelocity`, `velocityHead`, and `structureLoss` per spec §7.3 a
     }
 
     if (inflows.length === 1) {
-      const angle = inflows[0].angleDeg;
+      const angle = angleOf(inflows[0]);
       const Kb = kbAt(angle, structureType, kbTable);
       return { Hb: Kb * Hvout, kbUsed: Kb, thetaControlling: angle, candidateLosses: [] };
     }
 
     // length === 2 — controlling angle method
     const [a, b] = inflows;
-    const V1_3 = (Aout_sf > 0) ? (a.Qcfs / Aout_sf) : 0;
-    const V2_3 = (Aout_sf > 0) ? (b.Qcfs / Aout_sf) : 0;
-    const Kb_a = kbAt(a.angleDeg, structureType, kbTable);
-    const Kb_b = kbAt(b.angleDeg, structureType, kbTable);
+    const aAngle = angleOf(a);
+    const bAngle = angleOf(b);
+    const V1_3 = (Aout_sf > 0) ? (qOf(a) / Aout_sf) : 0;
+    const V2_3 = (Aout_sf > 0) ? (qOf(b) / Aout_sf) : 0;
+    const Kb_a = kbAt(aAngle, structureType, kbTable);
+    const Kb_b = kbAt(bAngle, structureType, kbTable);
     const Lv1 = Kb_a * velocityHead(V1_3);
     const Lv2 = Kb_b * velocityHead(V2_3);
     // CRITICAL: the SMALLER candidate loss picks the controlling angle.
-    const thetaC = (Lv1 > Lv2) ? b.angleDeg : a.angleDeg;
+    const thetaC = (Lv1 > Lv2) ? bAngle : aAngle;
     const Kb = kbAt(thetaC, structureType, kbTable);
     return {
       Hb: Kb * Hvout,
       kbUsed: Kb,
       thetaControlling: thetaC,
       candidateLosses: [
-        { angle: a.angleDeg, Lv: Lv1, V: V1_3, Kb: Kb_a, isControlling: thetaC === a.angleDeg },
-        { angle: b.angleDeg, Lv: Lv2, V: V2_3, Kb: Kb_b, isControlling: thetaC === b.angleDeg }
+        { angle: aAngle, Lv: Lv1, V: V1_3, Kb: Kb_a, isControlling: thetaC === aAngle },
+        { angle: bAngle, Lv: Lv2, V: V2_3, Kb: Kb_b, isControlling: thetaC === bAngle }
       ]
     };
   }
@@ -96,8 +110,8 @@ console.assert(r.thetaControlling === 30, "1-inflow theta");
 
 // 2-inflow controlling-angle counter-example:
 //   Aout=1.767 sf.
-//   Inflow A: angle=10°, Q=6 cfs → V=3.39 → Hv=0.179 → Lv1=0.12·0.179 = 0.0215
-//   Inflow B: angle=60°, Q=2 cfs → V=1.13 → Hv=0.020 → Lv2=0.59·0.020 = 0.0118
+//   Inflow A: angle=10°, Q=6 cfs → V=3.39 → Hv=0.179 → Lv1=0.13·0.179 = 0.0233
+//   Inflow B: angle=60°, Q=2 cfs → V=1.13 → Hv=0.020 → Lv2=0.56·0.020 = 0.0112
 //   Lv1 > Lv2 → SMALLER is Lv2 → thetaC = B's angle = 60°
 r = structureLoss(
   [{ angleDeg: 10, Qcfs: 6 }, { angleDeg: 60, Qcfs: 2 }],

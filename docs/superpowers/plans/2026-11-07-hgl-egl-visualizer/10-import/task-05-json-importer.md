@@ -11,7 +11,7 @@ Read a user-selected `.json` file, validate it via task-04, and populate `state.
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-04 code:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-04 code:
 
 ```js
   // --- json importer (task-05) ---
@@ -28,7 +28,12 @@ Read a user-selected `.json` file, validate it via task-04, and populate `state.
     const overrides = Array.isArray(obj._overrides) ? obj._overrides : [];
     const imported = {
       structures: obj.structures.map((s) => Object.assign({}, s)),
-      pipes: obj.pipes.map((p) => Object.assign({}, p)),
+      pipes: obj.pipes.map((p) => {
+        const copy = Object.assign({}, p);
+        copy.shape = normalizeShape(copy.shape);
+        copy.size = normalizeSize(copy.shape, copy.size);
+        return copy;
+      }),
       outfall: Object.assign({}, obj.outfall),
       config: Object.assign({}, obj.config || {}),
       kbTable: Array.isArray(obj.kbTable) ? obj.kbTable.slice() : null
@@ -39,17 +44,23 @@ Read a user-selected `.json` file, validate it via task-04, and populate `state.
     // is a clean baseline; the newValue goes into state.overrides.
     state.overrides = { byId: {} };
     for (const ov of overrides) {
+      // Skip malformed or prototype-polluting entries
+      if (!ov || typeof ov !== "object") continue;
+      if (!isSafeOverrideKey(ov.elementId) || !isSafeOverrideKey(ov.field)) continue;
       // Find and mutate the imported element
       const el = imported.structures.find((s) => s.id === ov.elementId)
               || imported.pipes.find((p) => p.id === ov.elementId);
-      if (el) el[ov.field] = ov.originalValue;
+      // An override for an element absent from the payload is stale — drop it
+      // rather than surfacing a phantom row in the badge/panel.
+      if (!el) continue;
+      el[ov.field] = ov.originalValue;
       // Record in state.overrides
       state.overrides.byId[ov.elementId] = state.overrides.byId[ov.elementId] || {};
       state.overrides.byId[ov.elementId][ov.field] = ov.newValue;
     }
 
     state.imported = imported;
-    state.ui.mode = overrides.length > 0 ? "edit" : "explore";
+    state.ui.mode = listOverrides().length > 0 ? "edit" : "explore";
 
     // Apply hglMethod from config if provided
     if (imported.config && (imported.config.hglMethod === "hec22" || imported.config.hglMethod === "legacy-both-crown")) {

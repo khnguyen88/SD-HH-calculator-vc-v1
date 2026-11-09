@@ -10,7 +10,7 @@ Render the pedagogical payoff of the controlling-angle method: show BOTH candida
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `ledger-render` sentinel block after task-29:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `ledger-render` sentinel block after task-29:
 
 ```js
   // --- Two-inflow detail (task-30) ---
@@ -30,8 +30,12 @@ Render the pedagogical payoff of the controlling-angle method: show BOTH candida
         el("th", { style: "padding:3px 10px;" }, "")
       ])
     ]);
+    // Derive the marker from the loss itself, not `isControlling`: when both
+    // inflows share an angle the engine marks both true, which would label the
+    // larger loss "smaller".
+    const minLv = Math.min(cands[0].Lv, cands[1].Lv);
     for (const c of cands) {
-      const marker = c.isControlling
+      const marker = c.Lv === minLv
         ? el("span", { style: "color:#0a7a0a; font-weight:700;" }, "← controls (smaller)")
         : el("span", { style: "color:#999;" }, "(not used)");
       candTable.appendChild(el("tr", { style: "border-bottom:1px dotted #ccc;" }, [
@@ -103,6 +107,16 @@ console.assert(i60 > 0 && i10 > 0, "both angles present in output");
 // The 'controls (smaller)' string should be closer to the 60° row than the 10° row.
 const iCtrl = text.indexOf("controls (smaller)");
 console.assert(Math.abs(iCtrl - i60) < Math.abs(iCtrl - i10), "60° marked as controlling (smaller Lv)");
+
+// Duplicate angles: the engine marks both candidates controlling, but the table
+// must still label only the smaller loss as controlling.
+state.imported.pipes.find((p) => p.id === "PA2").angle = 10;
+renderLedger();
+const text2 = host.textContent;
+const first = text2.indexOf("controls (smaller)");
+console.assert(first >= 0 && text2.indexOf("controls (smaller)", first + 1) === -1,
+  "duplicate angles still mark exactly one controlling candidate");
+console.assert(text2.includes("(not used)"), "larger duplicate-angle loss marked not used");
 
 console.log("task-30 two-inflow detail: OK");
 ```

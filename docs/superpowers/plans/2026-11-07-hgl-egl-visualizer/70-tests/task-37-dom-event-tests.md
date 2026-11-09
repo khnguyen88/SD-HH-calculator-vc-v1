@@ -10,7 +10,7 @@ Dispatch real `keydown` and `input` events, assert state changes. Also audit the
 
 ## Exact changes
 
-**Create** `drainage-calculator/visualizer-tests/dom-events.test.js`:
+**Create** `visualizer/visualizer-tests/dom-events.test.js`:
 
 ```js
 const test = require("node:test");
@@ -32,9 +32,12 @@ const SEED = {
   outfall: { structureId: "OUT", tailwaterElev: 100 }
 };
 
+// jsdom 24 lacks Blob/File.prototype.text() and CSS.escape; polyfill both from
+// jsdom primitives before exercising the real import/edit/render path.
 async function bootWithJson(window, obj) {
-  const blob = new window.Blob([JSON.stringify(obj)]);
-  const file = new window.File([blob], "seed.json");
+  ensureFileText(window);   // FileReader-based .text() shim
+  ensureCssEscape(window);  // CSS.escape shim (withFocusPreserved calls it)
+  const file = new window.File([JSON.stringify(obj)], "seed.json");
   await window.importFromJsonFile(file);
   if (typeof window.autoLayoutIfNeeded === "function") window.autoLayoutIfNeeded();
   window.renderAll();
@@ -105,20 +108,33 @@ test("V hotkey toggles view (not when typing in a field)", async () => {
 
 test("audit: every oninput/onchange that calls a render routes through withFocusPreserved", () => {
   const html = fs.readFileSync(DEV_HTML_PATH, "utf8");
-  // Find all occurrences of `oninput:` and `onchange:` and check the following 200 chars
-  // contain either `withFocusPreserved` OR do NOT contain `renderAll(`/`renderLedger(`/`renderActiveView(`.
-  const patterns = [/oninput\s*:\s*\([^)]*\)\s*=>\s*\{[^}]*\}/g,
-                    /onchange\s*:\s*\([^)]*\)\s*=>\s*\{[^}]*\}/g];
+  // Balanced-brace scan over each `oninput:` / `onchange:` handler body (the
+  // naive first-`}` regex missed multi-statement handlers and expression-bodied
+  // arrows). The scan also asserts it actually inspected ≥2 handlers so the
+  // test cannot pass vacuously.
   const violations = [];
-  for (const p of patterns) {
-    let m;
-    while ((m = p.exec(html)) !== null) {
-      const body = m[0];
-      const callsRender = /\brender(All|Ledger|ActiveView)\(/.test(body);
-      const safe = /\bwithFocusPreserved\s*\(/.test(body);
-      if (callsRender && !safe) violations.push(body.slice(0, 120));
+  let handlers = 0;
+  const re = /\bon(?:input|change)\s*:\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    handlers++;
+    let i = re.lastIndex, depth = 0, body = "";
+    if (html[i] === "{") {
+      for (; i < html.length; i++) {
+        const ch = html[i];
+        if (ch === "{") depth++;
+        else if (ch === "}") { depth--; if (depth === 0) { i++; break; } }
+        body += ch;
+      }
+    } else {
+      // expression body: capture to the end of the statement-ish chunk
+      body = html.slice(i, i + 400);
+    }
+    if (/\brender(All|Ledger|ActiveView)\(/.test(body) && !/\bwithFocusPreserved\s*\(/.test(body)) {
+      violations.push(body.slice(0, 120));
     }
   }
+  assert.ok(handlers >= 2, "expected at least two oninput/onchange handlers, found " + handlers);
   assert.strictEqual(violations.length, 0,
     "unguarded render-triggering handlers:\n" + violations.join("\n"));
 });
@@ -127,7 +143,7 @@ test("audit: every oninput/onchange that calls a render routes through withFocus
 ## Acceptance test
 
 ```powershell
-node --test drainage-calculator/visualizer-tests/dom-events.test.js
+node --test visualizer/visualizer-tests/dom-events.test.js
 ```
 
 Expected: `pass 5 / fail 0`.

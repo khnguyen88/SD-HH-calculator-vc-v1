@@ -10,7 +10,7 @@ In edit mode, holding Shift and pressing an arrow key nudges the selected struct
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-21:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-21:
 
 ```js
   // --- Shift+Arrow nudge (task-22) ---
@@ -21,17 +21,21 @@ In edit mode, holding Shift and pressing an arrow key nudges the selected struct
     if (state.ui.mode !== "edit") return;
     if (!state.cursor || state.cursor.kind !== "structure") return;
     const sid = state.cursor.id;
+    if (!isSafeOverrideKey(sid)) return;
     const str = state.imported && state.imported.structures.find((s) => s.id === sid);
     if (!str) return;
 
+    // Overrides are a separate layer; never mutate state.imported (task-23 depends on
+    // imported staying the immutable source). renderIso resolves x/y overrides.
     const ov = state.overrides.byId[sid] = state.overrides.byId[sid] || {};
-    const curX = (typeof ov.x === "number") ? ov.x : (str.x || 0);
-    const curY = (typeof ov.y === "number") ? ov.y : (str.y || 0);
-    ov.x = curX + dx;
-    ov.y = curY + dy;
-    // Materialize into imported so renderIso reads it via normal field path
-    str.x = ov.x;
-    str.y = ov.y;
+    if (dx) {
+      const curX = (typeof ov.x === "number") ? ov.x : (typeof str.x === "number" ? str.x : 0);
+      ov.x = curX + dx;
+    }
+    if (dy) {
+      const curY = (typeof ov.y === "number") ? ov.y : (typeof str.y === "number" ? str.y : 0);
+      ov.y = curY + dy;
+    }
     renderAll();
   }
 
@@ -39,6 +43,10 @@ In edit mode, holding Shift and pressing an arrow key nudges the selected struct
     if (isTypingTarget(ev)) return;
     if (isBranchPopupOpen()) return;
     if (!ev.shiftKey) return;
+    // Only claim the gesture when it will actually nudge; otherwise let the
+    // browser handle Shift+Arrow (text selection) in explore mode.
+    if (state.ui.mode !== "edit") return;
+    if (!state.cursor || state.cursor.kind !== "structure") return;
     let dx = 0, dy = 0;
     if (ev.key === "ArrowUp") dy = -NUDGE_FT;
     else if (ev.key === "ArrowDown") dy = NUDGE_FT;
@@ -48,6 +56,18 @@ In edit mode, holding Shift and pressing an arrow key nudges the selected struct
     ev.preventDefault();
     nudgeSelectedStructure(dx, dy);
   });
+```
+
+**Also modify `renderIso` (task-15)** so it resolves `x`/`y` through `resolveField`, keeping overrides out of `state.imported`. Replace its `pts` construction with:
+
+```js
+    const pts = s.imported.structures.map((st) => {
+      const rx = resolveField(st.id, "x", s.imported, s.overrides);
+      const ry = resolveField(st.id, "y", s.imported, s.overrides);
+      const x = (typeof rx === "number" && isFinite(rx)) ? rx : 0;
+      const y = (typeof ry === "number" && isFinite(ry)) ? ry : 0;
+      return { id: st.id, type: st.type, x, y, z: (st.rim || 0) };
+    });
 ```
 
 **Important:** The non-Shift arrow handler from task-19 should ignore events where `ev.shiftKey === true` so Shift+Arrow doesn't also advance the cursor. Modify task-19's handler to add the guard (if not already present). Locate the handler installed by task-19 (starts `document.addEventListener("keydown"` and handles `ArrowUp`/`ArrowDown`). Add `if (ev.shiftKey) return;` as the first line inside the handler body:
@@ -84,25 +104,24 @@ state.cursor = { kind: "structure", id: "A", pathStack: ["OUT", "P1", "A"] };
 // Default mode: Shift+ArrowRight should NOT move
 state.ui.mode = "explore";
 document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true }));
-console.assert((state.imported.structures.find((s) => s.id === "A")).x === 0, "no move in explore mode");
+console.assert(state.overrides.byId["A"] === undefined, "no override in explore mode");
 
-// Edit mode: moves
+// Edit mode: moves, recorded as an override (imported stays immutable)
 state.ui.mode = "edit";
 document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true }));
-let aX = state.imported.structures.find((s) => s.id === "A").x;
-console.assert(aX === 10, "Shift+ArrowRight moved A to x=10, got " + aX);
-console.assert(state.overrides.byId["A"].x === 10, "override recorded");
+console.assert(state.overrides.byId["A"].x === 10, "override A.x=10, got " + state.overrides.byId["A"].x);
+console.assert(state.imported.structures.find((s) => s.id === "A").x === 0, "imported A.x untouched");
+const isoA = state.imported; // renderIso resolves overrides, so A renders at x=10
+console.assert(typeof resolveField("A", "x", isoA, state.overrides) === "number", "renderIso reads resolved x");
 
 // Multiple nudges accumulate
 document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", shiftKey: true, bubbles: true }));
-let aY = state.imported.structures.find((s) => s.id === "A").y;
-console.assert(aY === -110, "Shift+ArrowUp moved A to y=-110, got " + aY);
+console.assert(state.overrides.byId["A"].y === -110, "override A.y=-110, got " + state.overrides.byId["A"].y);
 
 // Plain ArrowUp (no shift) in edit mode should NOT nudge — it should walk the cursor
 // (we're already at A which is a headwater so no advance happens).
 document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
-aY = state.imported.structures.find((s) => s.id === "A").y;
-console.assert(aY === -110, "non-Shift ArrowUp did not nudge: y still -110");
+console.assert(state.overrides.byId["A"].y === -110, "non-Shift ArrowUp did not nudge: y still -110");
 
 console.log("task-22 nudge: OK");
 ```
@@ -112,6 +131,7 @@ console.log("task-22 nudge: OK");
 - `NUDGE_FT`, `nudgeSelectedStructure`, Shift+Arrow handler all defined.
 - Task-19's non-Shift handler has `if (ev.shiftKey) return;` guard.
 - Shift+Arrow only moves in edit mode.
+- `state.imported` is not mutated; `renderIso` resolves x/y overrides.
 - Smoke test prints `OK`.
 - Build still succeeds.
 - Commit: `feat(visualizer): task-22 Shift+Arrow structure nudge`.

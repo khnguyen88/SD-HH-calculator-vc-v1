@@ -10,7 +10,7 @@ Implement `projectIso(x, y, z, kZ)` — the pure math that maps world coordinate
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Insert inside the `views` sentinel block, immediately after the `begin` line:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Insert inside the `views` sentinel block, immediately after the `begin` line:
 
 ```js
   // --- Iso projection (task-14) ---
@@ -32,13 +32,20 @@ Implement `projectIso(x, y, z, kZ)` — the pure math that maps world coordinate
   function isoBounds(points, kZ) {
     if (!points || points.length === 0) return { minX: 0, maxX: 100, minY: 0, maxY: 100 };
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let count = 0;
     for (const p of points) {
-      const pr = projectIso(p.x, p.y, p.z || 0, kZ);
+      const x = Number(p.x);
+      const y = Number(p.y);
+      const z = Number(p.z == null ? 0 : p.z);
+      if (!isFinite(x) || !isFinite(y) || !isFinite(z)) continue;
+      const pr = projectIso(x, y, z, kZ);
       if (pr.sx < minX) minX = pr.sx;
       if (pr.sx > maxX) maxX = pr.sx;
       if (pr.sy < minY) minY = pr.sy;
       if (pr.sy > maxY) maxY = pr.sy;
+      count++;
     }
+    if (count === 0) return { minX: 0, maxX: 100, minY: 0, maxY: 100 };
     return { minX, maxX, minY, maxY };
   }
 ```

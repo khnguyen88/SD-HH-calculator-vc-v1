@@ -10,7 +10,7 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `edit-mode` sentinel block after task-24:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `edit-mode` sentinel block after task-24:
 
 ```js
   // --- Override badge + reset panel (task-25) ---
@@ -28,7 +28,6 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
     if (count === 0) {
       badge.style.display = "none";
     } else {
-      badge.style.display = "";
       badge.textContent = count + " fields overridden";
       badge.style.cssText = "background:#ffd60a; color:#1a1a1a; border:none; padding:4px 10px; border-radius:4px; font-weight:600;";
     }
@@ -65,7 +64,13 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
         const revertBtn = el("button", {
           type: "button",
           style: "padding:2px 8px;",
-          onclick: () => { revertOverride(o.elementId, o.field); renderAll(); openOverridePanel(); }
+          onclick: () => {
+            revertOverride(o.elementId, o.field);
+            renderAll();
+            // Nothing left to show — dismissing the panel is the honest state.
+            if (listOverrides().length === 0) closeOverridePanel();
+            else openOverridePanel();
+          }
         }, "Revert");
         const row = el("tr", { style: "border-bottom:1px solid #21262d;" }, [
           el("td", { style: "padding:4px;" }, o.elementId),
@@ -81,7 +86,7 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
 
     const footer = el("div", { style: "margin-top:12px; display:flex; gap:8px; justify-content:flex-end;" }, [
       el("button", { type: "button",
-        onclick: () => { resetAllOverrides(); renderAll(); openOverridePanel(); }
+        onclick: () => { resetAllOverrides(); renderAll(); closeOverridePanel(); }
       }, "Reset all"),
       el("button", { type: "button", onclick: closeOverridePanel }, "Close")
     ]);
@@ -90,20 +95,26 @@ Toolbar badge showing the count of active overrides; clicking it opens a modal l
     document.body.appendChild(panel);
   }
 
-  // Esc closes the panel
+  // Esc closes the panel. Capture phase + stopImmediatePropagation so the walk
+  // handlers (registered earlier, bubble phase) don't also run resetWalk.
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && document.getElementById("overridePanel")) {
       ev.preventDefault();
+      ev.stopImmediatePropagation();
       closeOverridePanel();
     }
-  });
+  }, true);
+```
 
-  // Hook into renderAll indirectly: call renderOverrideBadge after state changes.
-  // The simplest wiring is to call it from renderAll. We monkey-patch here instead of
-  // editing the bootstrap because renderAll is already defined.
-  const _origRenderAll_task25 = typeof renderAll === "function" ? renderAll : null;
-  if (_origRenderAll_task25) {
-    renderAll = function () { _origRenderAll_task25(); renderOverrideBadge(); };
+**Also modify the bootstrap `renderAll`** to refresh the badge after each render (no monkey-patching):
+
+```js
+  function renderAll() {
+    renderActiveView();
+    // ledger render is wired in by group 60
+    if (typeof renderLedger === "function") renderLedger();
+    if (typeof renderOverrideBadge === "function") renderOverrideBadge();
+    if (typeof syncModeButton === "function") syncModeButton();  // task-23
   }
 ```
 

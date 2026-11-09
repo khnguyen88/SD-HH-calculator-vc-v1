@@ -2,7 +2,9 @@
 
 ## Context
 
-Set up `drainage-calculator/visualizer-tests/` with Node 18 `node --test`, `jsdom`, and the real `xlsx` package. All subsequent test tasks depend on this harness. A loader function reads the dev HTML, boots it into jsdom, and returns a handle exposing `window`, `document`, and the inlined functions.
+Set up `visualizer/visualizer-tests/` with Node 18 `node --test`, `jsdom`, and the real `xlsx` package. All subsequent test tasks depend on this harness. A loader function reads the dev HTML, boots it into jsdom, and returns a handle exposing `window`, `document`, and the inlined functions.
+
+The dev HTML explicitly exposes `window.state`, `window.KB_SEED`, and `window.TABLE_4_6` in its bootstrap block so the harness and tests can read these top-level bindings (top-level `const`/`let` declarations are not properties of `window`).
 
 Implements spec §8 (testing strategy). Mirrors main spec §C.
 
@@ -14,7 +16,7 @@ Implements spec §8 (testing strategy). Mirrors main spec §C.
 
 ## Exact changes
 
-**Create** `drainage-calculator/visualizer-tests/package.json`:
+**Create** `visualizer/visualizer-tests/package.json`:
 
 ```json
 {
@@ -32,7 +34,7 @@ Implements spec §8 (testing strategy). Mirrors main spec §C.
 }
 ```
 
-**Create** `drainage-calculator/visualizer-tests/_harness.js`:
+**Create** `visualizer/visualizer-tests/_harness.js`:
 
 ```js
 // Shared test harness: boots the dev HTML in jsdom and exposes its globals.
@@ -66,7 +68,7 @@ function loadVisualizer(extraHeadScripts) {
 module.exports = { loadVisualizer, DEV_HTML_PATH };
 ```
 
-**Create** `drainage-calculator/visualizer-tests/sanity.test.js`:
+**Create** `visualizer/visualizer-tests/sanity.test.js`:
 
 ```js
 const test = require("node:test");
@@ -86,7 +88,7 @@ test("harness: el() function is defined", () => {
 });
 ```
 
-**Create** `drainage-calculator/visualizer-tests/.gitignore`:
+**Create** `visualizer/visualizer-tests/.gitignore`:
 
 ```
 node_modules/
@@ -95,10 +97,10 @@ node_modules/
 ## Installation and run
 
 ```powershell
-cd drainage-calculator/visualizer-tests
+cd visualizer/visualizer-tests
 npm install
 cd ../..
-node --test drainage-calculator/visualizer-tests/
+node --test visualizer/visualizer-tests/
 ```
 
 Expected output: two passing tests from `sanity.test.js`:
@@ -112,9 +114,9 @@ Expected output: two passing tests from `sanity.test.js`:
 
 ## Done when
 
-- `drainage-calculator/visualizer-tests/package.json` exists.
-- `drainage-calculator/visualizer-tests/_harness.js` exists.
-- `drainage-calculator/visualizer-tests/sanity.test.js` exists.
+- `visualizer/visualizer-tests/package.json` exists.
+- `visualizer/visualizer-tests/_harness.js` exists.
+- `visualizer/visualizer-tests/sanity.test.js` exists.
 - `node_modules/` present (don't commit); `.gitignore` entry excludes it.
-- `node --test drainage-calculator/visualizer-tests/sanity.test.js` prints `pass 2 / fail 0`.
+- `node --test visualizer/visualizer-tests/sanity.test.js` prints `pass 2 / fail 0`.
 - Commit: `test(visualizer): task-31 jsdom harness + sanity test`.

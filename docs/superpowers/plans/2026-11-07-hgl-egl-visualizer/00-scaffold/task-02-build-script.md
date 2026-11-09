@@ -2,7 +2,7 @@
 
 ## Context
 
-Create `drainage-calculator/build-visualizer.js` that reads the dev HTML, replaces the `<!-- SHEETJS -->` sentinel with an inlined `<script>…</script>` block containing the SheetJS bundle, and writes `storm-drain-visualizer.html`. Mirrors the main app's `build.js`.
+Create `visualizer/build-visualizer.js` that reads the dev HTML, replaces the `<!-- SHEETJS -->` sentinel with an inlined `<script>…</script>` block containing the SheetJS bundle, and writes `storm-drain-visualizer.html`. Mirrors the main app's `build.js`.
 
 Implements spec §0 (single-file offline) and §10.3 (build script).
 
@@ -14,12 +14,12 @@ Implements spec §0 (single-file offline) and §10.3 (build script).
 
 ## Exact changes
 
-**Create** `drainage-calculator/build-visualizer.js` with these exact contents:
+**Create** `visualizer/build-visualizer.js` with these exact contents:
 
 ```js
 #!/usr/bin/env node
 // Builds storm-drain-visualizer.html from the dev HTML by inlining SheetJS.
-// Run: node drainage-calculator/build-visualizer.js
+// Run: node visualizer/build-visualizer.js
 
 const fs = require("fs");
 const path = require("path");
@@ -55,7 +55,7 @@ catch (err) { console.error("visualizer build failed:", err.message); process.ex
 Make the file executable-readable; no chmod needed on Windows but safe on Unix:
 
 ```
-(Windows: skip. On Unix: chmod +x drainage-calculator/build-visualizer.js — optional.)
+(Windows: skip. On Unix: chmod +x visualizer/build-visualizer.js — optional.)
 ```
 
 ## Acceptance test
@@ -63,7 +63,7 @@ Make the file executable-readable; no chmod needed on Windows but safe on Unix:
 Run:
 
 ```
-node drainage-calculator/build-visualizer.js
+node visualizer/build-visualizer.js
 ```
 
 Expected output:
@@ -74,7 +74,7 @@ visualizer: built OK (<N> KB) -> <absolute-path>/storm-drain-visualizer.html
 
 Verify:
 
-1. `drainage-calculator/storm-drain-visualizer.html` exists.
+1. `visualizer/storm-drain-visualizer.html` exists.
 2. Its size is ≥ 800 KB (SheetJS bundle is ~900 KB).
 3. The string `<!-- SHEETJS -->` is **NOT** in the built file (it was replaced).
 4. The built file opens by double-click, same dark page as the dev file.
@@ -83,7 +83,7 @@ Verify:
 **PowerShell one-liner to check** (runs after build):
 
 ```
-$built = "drainage-calculator/storm-drain-visualizer.html"
+$built = "visualizer/storm-drain-visualizer.html"
 if (-not (Test-Path $built)) { throw "built file missing" }
 $size = (Get-Item $built).Length
 if ($size -lt 800*1024) { throw "built file too small: $size bytes" }
@@ -94,7 +94,7 @@ Write-Host "visualizer build check: OK ($size bytes)"
 
 ## Done when
 
-- `drainage-calculator/build-visualizer.js` exists with exactly the content above.
-- Running `node drainage-calculator/build-visualizer.js` prints `visualizer: built OK` and exits 0.
+- `visualizer/build-visualizer.js` exists with exactly the content above.
+- Running `node visualizer/build-visualizer.js` prints `visualizer: built OK` and exits 0.
 - Built file passes the PowerShell check above.
 - Commit: `feat(visualizer): task-02 build script inlines SheetJS`.

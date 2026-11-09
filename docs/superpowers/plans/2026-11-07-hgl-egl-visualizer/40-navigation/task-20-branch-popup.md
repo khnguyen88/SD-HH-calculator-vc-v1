@@ -10,14 +10,20 @@ Modal popup when the cursor's upstream has >1 pipes. Keyboard-first (`↑/↓` c
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-19:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `navigation` sentinel block after task-19:
 
 ```js
   // --- Branch popup (task-20) ---
 
+  let branchKeyHandler = null;
+
   function closeBranchPopup() {
     const e = document.getElementById("branchPopup");
     if (e) e.remove();
+    if (branchKeyHandler) {
+      document.removeEventListener("keydown", branchKeyHandler, true);
+      branchKeyHandler = null;
+    }
   }
 
   function openBranchPopup(sid, options) {
@@ -53,28 +59,28 @@ Modal popup when the cursor's upstream has >1 pipes. Keyboard-first (`↑/↓` c
     render();
 
     const keyHandler = (ev) => {
+      if (!document.getElementById("branchPopup")) { closeBranchPopup(); return; }
       if (ev.key === "ArrowUp") {
-        ev.preventDefault();
+        ev.preventDefault(); ev.stopImmediatePropagation();
         selectedIndex = (selectedIndex - 1 + options.length) % options.length;
         render();
       } else if (ev.key === "ArrowDown") {
-        ev.preventDefault();
+        ev.preventDefault(); ev.stopImmediatePropagation();
         selectedIndex = (selectedIndex + 1) % options.length;
         render();
       } else if (ev.key === "Enter") {
-        ev.preventDefault();
+        ev.preventDefault(); ev.stopImmediatePropagation();
         const chosen = options[selectedIndex];
         state.ui.branchChoices.byStructureId[sid] = chosen.id;
         state.cursor = advanceCursor(state.cursor, chosen);
         closeBranchPopup();
-        document.removeEventListener("keydown", keyHandler, true);
         renderAll();
       } else if (ev.key === "Escape") {
-        ev.preventDefault();
+        ev.preventDefault(); ev.stopImmediatePropagation();
         closeBranchPopup();
-        document.removeEventListener("keydown", keyHandler, true);
       }
     };
+    branchKeyHandler = keyHandler;
     document.addEventListener("keydown", keyHandler, true);
   }
 

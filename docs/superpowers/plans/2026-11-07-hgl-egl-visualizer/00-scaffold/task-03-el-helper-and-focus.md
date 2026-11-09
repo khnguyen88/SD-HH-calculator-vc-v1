@@ -11,11 +11,11 @@ Implements spec §0 (same helpers as main app), main spec §A.1 and §A.2.
 ## Preconditions
 
 - Prior tasks: task-01.
-- File `drainage-calculator/storm-drain-visualizer-dev.html` exists with the `// ==== dom-helpers: begin ==== / end ====` sentinels empty.
+- File `visualizer/storm-drain-visualizer-dev.html` exists with the `// ==== dom-helpers: begin ==== / end ====` sentinels empty.
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Replace the entire block between the two sentinels (inclusive of the sentinel lines) with:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Replace the entire block between the two sentinels (inclusive of the sentinel lines) with:
 
 ```js
   // ==== dom-helpers: begin ====
@@ -100,5 +100,5 @@ This smoke test is inline-only; task-32 adds a proper test harness.
 
 - The `dom-helpers` sentinel block contains exactly the code above.
 - The browser DevTools console smoke test prints `dom-helpers smoke test: OK` with no AssertionError.
-- Running `node drainage-calculator/build-visualizer.js` still succeeds.
+- Running `node visualizer/build-visualizer.js` still succeeds.
 - Commit: `feat(visualizer): task-03 el() helper and withFocusPreserved`.

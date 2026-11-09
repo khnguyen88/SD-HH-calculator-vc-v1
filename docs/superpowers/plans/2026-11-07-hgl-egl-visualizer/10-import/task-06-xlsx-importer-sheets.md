@@ -11,7 +11,7 @@ Parse the main app's `.xlsx` export (per main spec §B) into the same in-memory 
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-05 code:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `import` sentinel block, after the task-05 code:
 
 ```js
   // --- xlsx importer (task-06) ---
@@ -56,19 +56,26 @@ Parse the main app's `.xlsx` export (per main spec §B) into the same in-memory 
       elevation:    Number(r["Upstream EGL (ft)"] || 0)
     }));
 
-    const pipes = pipeRows.map((r, i) => ({
-      id:         String(r["Pipe ID"] || r.id || ("P-" + (i+1))),
-      fromId:     String(r["From Structure"] || r.fromId),
-      toId:       String(r["To Structure"] || r.toId),
-      shape:      String(r["Shape"] || "circular").toLowerCase(),
-      size:       r["Size"] || 18,
-      n:          Number(r["Manning's n"] || r.n || 0.013),
-      slope:      Number(r["Slope (ft/ft)"] || r.slope || 0.005),
-      length:     Number(r["Length (ft)"] || r.length || 0),
-      angle:      Number(r["Angle (deg)"] || r.angle || 0),
-      designQ:    Number(r["Design Q (cfs)"] || 0),
-      Hf:         Number(r["Hf (ft)"] || 0)
-    }));
+    const pipes = pipeRows.map((r, i) => {
+      const shape = normalizeShape(r["Shape"] || "circular");
+      const size = normalizeSize(shape, r["Size"] || (shape === "circular" ? 18 : ""));
+      if (size == null || (shape === "circular" && !(isFinite(size) && size > 0))) {
+        throw new Error("Pipe row " + (i + 2) + " has an invalid Size for " + shape);
+      }
+      return {
+        id:         String(r["Pipe ID"] || r.id || ("P-" + (i+1))),
+        fromId:     String(r["From Structure"] || r.fromId),
+        toId:       String(r["To Structure"] || r.toId),
+        shape,
+        size,
+        n:          Number(r["Manning's n"] || r.n || 0.013),
+        slope:      Number(r["Slope (ft/ft)"] || r.slope || 0.005),
+        length:     Number(r["Length (ft)"] || r.length || 0),
+        angle:      Number(r["Angle (deg)"] || r.angle || 0),
+        designQ:    Number(r["Design Q (cfs)"] || 0),
+        Hf:         Number(r["Hf (ft)"] || 0)
+      };
+    });
 
     // Find outfall: pick the structure with type == "outfall" (first), else lowest elevation.
     let outfallSid = null, outfallTw = null;

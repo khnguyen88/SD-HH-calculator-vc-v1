@@ -16,9 +16,9 @@ decomposes those into atomic flash-model-runnable tasks.
 
 ## 0. Non-negotiable constraints (state these every phase)
 
-- **Single HTML file.** `drainage-calculator/storm-drain-visualizer.html` is the
+- **Single HTML file.** `visualizer/storm-drain-visualizer.html` is the
   built artifact; users open it by double-click. Edits happen in
-  `storm-drain-visualizer-dev.html`. `drainage-calculator/build-visualizer.js`
+  `storm-drain-visualizer-dev.html`. `visualizer/build-visualizer.js`
   inlines SheetJS and produces the built file — exactly like the main app.
 - **Offline.** No CDN, no network. SheetJS `xlsx.full.min.js` bundled inline
   (same source as `drainage-calculator/lib/sheetjs-bundle.js`).
@@ -516,7 +516,7 @@ absent. Editable via a modal settings panel (editing stores into
 
 ## 8. Testing strategy
 
-A jsdom harness sits in `drainage-calculator/visualizer-tests/`, mirroring the
+A jsdom harness sits in `visualizer/visualizer-tests/`, mirroring the
 main app's test layout. Node + `jsdom` + the real `xlsx` npm package for
 independent read-back (main spec §B.4 — never verify the writer with itself).
 
@@ -539,7 +539,7 @@ independent read-back (main spec §B.4 — never verify the writer with itself).
 
 ### 8.2 Drift test — parity with the main app (central guarantee)
 
-Fixture `drainage-calculator/visualizer-tests/fixtures/main-app-export.xlsx`
+Fixture `visualizer/visualizer-tests/fixtures/main-app-export.xlsx`
 is checked into the repo. Generated once by exporting a representative project
 from the main app (two-inflow controlling-angle junction, elliptical pipe on
 one leg, known tailwater). The test:
@@ -718,25 +718,25 @@ and acceptance test.
 - Files that must exist with specific contents.
 
 ## Exact changes
-- File: drainage-calculator/storm-drain-visualizer-dev.html
+- File: visualizer/storm-drain-visualizer-dev.html
 - Insert between sentinels: `// ==== compute: begin ====` / `// ==== compute: end ====`
 - Code to add (exact function signature + body, or a precise edit).
 
 ## Acceptance test
-- New test file: drainage-calculator/visualizer-tests/<name>.test.js
+- New test file: visualizer/visualizer-tests/<name>.test.js
 - Test code: ...
-- Run: `node --test drainage-calculator/visualizer-tests/<name>.test.js`
+- Run: `node --test visualizer/visualizer-tests/<name>.test.js`
 - Must print: `pass 1`.
 
 ## Done when
-- Build still succeeds: `node drainage-calculator/build-visualizer.js`.
+- Build still succeeds: `node visualizer/build-visualizer.js`.
 - New test passes.
-- No pre-existing tests regressed: `node --test drainage-calculator/visualizer-tests/`.
+- No pre-existing tests regressed: `node --test visualizer/visualizer-tests/`.
 ```
 
 ### 10.3 Build script
 
-`drainage-calculator/build-visualizer.js` mirrors the main app's `build.js`:
+`visualizer/build-visualizer.js` mirrors the main app's `build.js`:
 reads `storm-drain-visualizer-dev.html`, inlines `lib/sheetjs-bundle.js` at a
 `<!-- SHEETJS -->` sentinel comment, writes `storm-drain-visualizer.html`.
 
@@ -753,7 +753,7 @@ both files work when served from disk, GitHub Pages, or any static host.
 Added in task `90-deploy/task-38`:
 
 1. Edit `storm-drain-visualizer-dev.html`; run
-   `node drainage-calculator/build-visualizer.js`.
+   `node visualizer/build-visualizer.js`.
 2. Commit both dev and built files to `main`.
 3. On `gh-pages`, copy `storm-drain-visualizer.html` → `visualizer.html`.
 4. Site: `https://khnguyen88.github.io/SD-HH-calculator-vc-v1/visualizer.html`.

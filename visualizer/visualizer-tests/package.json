@@ -1,0 +1,13 @@
+{
+  "name": "storm-drain-visualizer-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "jsdom": "^24.0.0",
+    "xlsx": "^0.18.5"
+  }
+}

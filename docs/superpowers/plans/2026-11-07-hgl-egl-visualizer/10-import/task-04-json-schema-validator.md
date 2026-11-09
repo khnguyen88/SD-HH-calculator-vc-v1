@@ -11,7 +11,7 @@ Validate that an imported JSON object matches schemaVersion 1. Reject malformed 
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Insert inside the `import` sentinel block, immediately after the `begin` line:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Insert inside the `import` sentinel block, immediately after the `begin` line:
 
 ```js
   // --- schema validator (task-04) ---
@@ -23,13 +23,31 @@ Validate that an imported JSON object matches schemaVersion 1. Reject malformed 
     if (obj.schemaVersion !== 1) push("schemaVersion must be 1 (got " + obj.schemaVersion + ")");
     if (typeof obj.sourceApp !== "string") push("sourceApp must be a string");
 
+    const seenIds = Object.create(null);
+    const claimId = (id, where) => {
+      if (typeof id !== "string" || !id) return;
+      // Reserved names would poison override maps keyed by element id.
+      if (id === "__proto__" || id === "constructor" || id === "prototype") {
+        push("reserved id '" + id + "' (" + where + ")");
+        return;
+      }
+      if (seenIds[id]) push("duplicate id '" + id + "' (" + where + ")");
+      else seenIds[id] = true;
+    };
+
     if (!Array.isArray(obj.structures)) push("structures must be an array");
     else obj.structures.forEach((s, i) => {
       if (!s || typeof s !== "object") { push("structures[" + i + "] not an object"); return; }
       if (typeof s.id !== "string" || !s.id) push("structures[" + i + "].id missing");
+      claimId(s.id, "structures[" + i + "]");
       if (typeof s.type !== "string") push("structures[" + i + "].type missing");
       ["rim", "startElev", "crown"].forEach((f) => {
         if (s[f] != null && typeof s[f] !== "number") push("structures[" + i + "]." + f + " must be a number");
+      });
+      ["x", "y"].forEach((f) => {
+        if (s[f] != null && (typeof s[f] !== "number" || !isFinite(s[f]))) {
+          push("structures[" + i + "]." + f + " must be a finite number");
+        }
       });
     });
 
@@ -37,12 +55,27 @@ Validate that an imported JSON object matches schemaVersion 1. Reject malformed 
     else obj.pipes.forEach((p, i) => {
       if (!p || typeof p !== "object") { push("pipes[" + i + "] not an object"); return; }
       if (typeof p.id !== "string" || !p.id) push("pipes[" + i + "].id missing");
+      claimId(p.id, "pipes[" + i + "]");
       if (typeof p.fromId !== "string") push("pipes[" + i + "].fromId missing");
       if (typeof p.toId !== "string") push("pipes[" + i + "].toId missing");
       ["slope", "length"].forEach((f) => {
         if (typeof p[f] !== "number" || p[f] < 0) push("pipes[" + i + "]." + f + " must be non-negative number");
       });
       if (typeof p.n !== "number" || p.n <= 0) push("pipes[" + i + "].n must be positive number");
+      const shape = normalizeShape(p.shape);
+      if (shape !== "circular" && shape !== "elliptical") {
+        push("pipes[" + i + "].shape must be 'circular' or 'elliptical'");
+      } else {
+        const size = normalizeSize(shape, p.size);
+        if (shape === "circular" && !(typeof size === "number" && isFinite(size) && size > 0)) {
+          push("pipes[" + i + "].size must be a positive diameter (circular)");
+        } else if (shape === "elliptical" && size == null) {
+          push("pipes[" + i + "].size must be SPANxRISE (elliptical)");
+        }
+      }
+      if (p.designQ != null && (typeof p.designQ !== "number" || !isFinite(p.designQ))) {
+        push("pipes[" + i + "].designQ must be a finite number");
+      }
     });
 
     if (!obj.outfall || typeof obj.outfall !== "object") push("outfall missing");
@@ -63,7 +96,7 @@ Validate that an imported JSON object matches schemaVersion 1. Reject malformed 
 // Valid minimal object
 const ok = { schemaVersion: 1, sourceApp: "x",
   structures: [{ id: "S1", type: "outfall", rim: 100, startElev: 95, crown: 94 }],
-  pipes: [{ id: "P1", fromId: "S2", toId: "S1", n: 0.013, slope: 0.005, length: 100 }],
+  pipes: [{ id: "P1", fromId: "S2", toId: "S1", shape: "circular", size: 18, n: 0.013, slope: 0.005, length: 100, designQ: 8.4 }],
   outfall: { structureId: "S1", tailwaterElev: 100 } };
 let r = validateImportedJson(ok);
 console.assert(r.valid === true, "valid rejected:", r.errors);
@@ -83,6 +116,18 @@ console.assert(r.valid === false && r.errors.some((e) => e.includes(".n ")), "ze
 // Null input
 r = validateImportedJson(null);
 console.assert(r.valid === false, "null not rejected");
+
+// Unknown shape rejected
+r = validateImportedJson({ ...ok, pipes: [{ ...ok.pipes[0], shape: "box" }] });
+console.assert(r.valid === false && r.errors.some((e) => e.includes("shape")), "shape check failed");
+
+// Duplicate id across structures and pipes rejected
+r = validateImportedJson({ ...ok, structures: [...ok.structures, { id: "P1", type: "manhole" }] });
+console.assert(r.valid === false && r.errors.some((e) => e.includes("duplicate id")), "duplicate id check failed");
+
+// Circular size may be exported as text
+r = validateImportedJson({ ...ok, pipes: [{ ...ok.pipes[0], size: "18" }] });
+console.assert(r.valid === true, "string circular size rejected:", r.errors);
 
 console.log("task-04 validator smoke test: OK");
 ```

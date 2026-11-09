@@ -11,22 +11,22 @@ Implement pipe area and hydraulic radius for both circular and elliptical shapes
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Insert inside the `compute` sentinel block, immediately after the `begin` line:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Insert inside the `compute` sentinel block, immediately after the `begin` line:
 
 ```js
   // --- pipe geometry (task-08) ---
 
   // Table 4-6: circular diameter (in), elliptical span×rise (in), elliptical area (sf).
-  // The circular_area column is DERIVED (π·d²/4 in ft²) and asserted against the table in tests.
+  // Elliptical values mirror the main app's TABLE46 (spec §1.5).
   const TABLE_4_6 = [
-    { dia_in: 15, span_rise: "18x11", ell_area_sf: 1.1 },
+    { dia_in: 15, span_rise: null, ell_area_sf: null },
     { dia_in: 18, span_rise: "23x14", ell_area_sf: 1.8 },
-    { dia_in: 21, span_rise: "27x17", ell_area_sf: 2.6 },
-    { dia_in: 24, span_rise: "30x19", ell_area_sf: 3.3 },
-    { dia_in: 27, span_rise: "34x22", ell_area_sf: 4.1 },
-    { dia_in: 30, span_rise: "38x24", ell_area_sf: 5.1 },
-    { dia_in: 33, span_rise: "42x27", ell_area_sf: 6.3 },
-    { dia_in: 36, span_rise: "45x29", ell_area_sf: 7.4 },
+    { dia_in: 21, span_rise: null, ell_area_sf: null },
+    { dia_in: 24, span_rise: "30x19", ell_area_sf: 4.1 },
+    { dia_in: 27, span_rise: "34x22", ell_area_sf: 5.1 },
+    { dia_in: 30, span_rise: "38x24", ell_area_sf: 6.3 },
+    { dia_in: 33, span_rise: "42x27", ell_area_sf: 7.4 },
+    { dia_in: 36, span_rise: "45x29", ell_area_sf: 8.8 },
     { dia_in: 42, span_rise: "53x34", ell_area_sf: 10.2 },
     { dia_in: 48, span_rise: "60x38", ell_area_sf: 12.9 },
     { dia_in: 54, span_rise: "68x43", ell_area_sf: 16.6 },
@@ -55,14 +55,16 @@ Implement pipe area and hydraulic radius for both circular and elliptical shapes
   }
 
   function pipeAreaElliptical(spanRise) {
-    const row = TABLE_4_6.find((r) => r.span_rise === spanRise);
+    const key = normalizeSize("elliptical", spanRise);
+    const row = key ? TABLE_4_6.find((r) => r.span_rise === key) : null;
     if (!row) throw new Error("elliptical size not in Table 4-6: " + spanRise);
     return row.ell_area_sf;
   }
 
   // Elliptical hydraulic radius uses the equivalent circular diameter from Table 4-6.
   function pipeRadiusElliptical(spanRise) {
-    const row = TABLE_4_6.find((r) => r.span_rise === spanRise);
+    const key = normalizeSize("elliptical", spanRise);
+    const row = key ? TABLE_4_6.find((r) => r.span_rise === key) : null;
     if (!row) throw new Error("elliptical size not in Table 4-6: " + spanRise);
     return (row.dia_in / 12) / 4;
   }
@@ -78,6 +80,30 @@ Implement pipe area and hydraulic radius for both circular and elliptical shapes
     if (shape === "elliptical") return pipeRadiusElliptical(String(size));
     throw new Error("unknown pipe shape: " + shape);
   }
+
+  // Normalize shape and size strings from imports; mirrors main-app pipeGeometry leniency.
+  function normalizeShape(value) {
+    return String(value == null ? "" : value).trim().toLowerCase();
+  }
+
+  // Circular: numeric diameter. Elliptical: nearest Table 4-6 span x rise key.
+  function normalizeSize(shape, value) {
+    if (shape === "circular") return Number(value);
+    const parts = String(value == null ? "" : value)
+      .toLowerCase().replace(/[×\s]/g, "").split("x");
+    const span = parseFloat(parts[0]);
+    const rise = parseFloat(parts[1]);
+    if (!isFinite(span) || !isFinite(rise)) return null;
+    let best = null;
+    let bestDiff = Infinity;
+    for (const row of TABLE_4_6) {
+      if (row.span_rise == null) continue;
+      const dims = row.span_rise.split("x").map(Number);
+      const diff = Math.abs(dims[0] - span) + Math.abs(dims[1] - rise);
+      if (diff < bestDiff) { bestDiff = diff; best = row.span_rise; }
+    }
+    return best;
+  }
 ```
 
 ## Acceptance test
@@ -92,23 +118,22 @@ console.assert(Math.abs(a - Math.PI * 2.25 / 4) < 1e-12, "pipeAreaCircular(18): 
 // R = D/4 = 18/48 = 0.375 ft
 console.assert(Math.abs(pipeRadiusCircular(18) - 0.375) < 1e-12, "pipeRadiusCircular(18)");
 
-// Elliptical: 38x24 → 5.1 sf per Table 4-6
-console.assert(pipeAreaElliptical("38x24") === 5.1, "pipeAreaElliptical(38x24)");
+// Elliptical: 38x24 → 6.3 sf per Table 4-6
+console.assert(pipeAreaElliptical("38x24") === 6.3, "pipeAreaElliptical(38x24)");
 console.assert(Math.abs(pipeRadiusElliptical("38x24") - pipeRadiusCircular(30)) < 1e-12, "elliptical R matches circular 30");
 
 // Dispatch
 console.assert(pipeArea("circular", 18) === a, "dispatch circular");
-console.assert(pipeArea("elliptical", "38x24") === 5.1, "dispatch elliptical");
+console.assert(pipeArea("elliptical", "38x24") === 6.3, "dispatch elliptical");
 
 // Unknown shape throws
 let threw = false;
 try { pipeArea("rectangular", 12); } catch (e) { threw = true; }
 console.assert(threw, "unknown shape should throw");
 
-// Unknown elliptical size throws
-threw = false;
-try { pipeAreaElliptical("99x99"); } catch (e) { threw = true; }
-console.assert(threw, "unknown elliptical size should throw");
+// Elliptical size resolves by nearest Table 4-6 match (main-app parity)
+console.assert(pipeAreaElliptical("99x99") === TABLE_4_6.find((r) => r.span_rise === "98x63").ell_area_sf, "nearest elliptical match");
+console.assert(pipeAreaElliptical("38X24") === 6.3, "uppercase elliptical size normalizes");
 
 console.log("task-08 pipe geometry: OK");
 ```

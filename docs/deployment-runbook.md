@@ -87,3 +87,21 @@ git checkout main
 ## Never Hand-Edit `gh-pages`
 
 `gh-pages`'s `index.html` is a build artifact of `main`'s `drainage-calculator/storm-drain-design-calculator.html`. Never edit it directly on `gh-pages` — any direct edit will be overwritten on the next redeploy and silently diverges the deployed site from `main`. To change what is deployed, edit the source on `main`, merge, then run the Redeploy Procedure.
+
+## HGL/EGL Visualizer (companion app)
+
+Build and deploy mirror the main app's flow.
+
+1. Edit `visualizer/storm-drain-visualizer-dev.html`.
+2. Run `node visualizer/build-visualizer.js` to produce
+   `visualizer/storm-drain-visualizer.html` (self-contained, SheetJS inlined).
+3. Run `npm --prefix visualizer/visualizer-tests test` — confirm `fail 0`.
+4. Commit the dev file and runbook to `main`; push. The built `.html` is regenerated
+   from the dev file and is not committed.
+5. To publish: create a temp worktree for `gh-pages`, copy
+   `visualizer/storm-drain-visualizer.html` into it as `visualizer.html`,
+   commit, push `gh-pages`, then remove the temp worktree.
+6. Live at: https://khnguyen88.github.io/SD-HH-calculator-vc-v1/visualizer.html
+
+Never hand-edit the deployed `visualizer.html` — always build from the dev file
+(same rule as the main app).

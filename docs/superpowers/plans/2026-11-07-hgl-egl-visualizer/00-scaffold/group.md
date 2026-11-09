@@ -8,8 +8,8 @@
 - `task-03-el-helper-and-focus.md` — inject `el()` and `withFocusPreserved` into the dev file
 
 **Group acceptance criteria** (verify after all three tasks):
-- `drainage-calculator/storm-drain-visualizer-dev.html` exists and opens in a browser (blank page with dark background and title "Storm Drain HGL/EGL Visualizer").
-- `node drainage-calculator/build-visualizer.js` runs, produces `storm-drain-visualizer.html`, prints `visualizer: built OK (<N> KB)`.
+- `visualizer/storm-drain-visualizer-dev.html` exists and opens in a browser (blank page with dark background and title "Storm Drain HGL/EGL Visualizer").
+- `node visualizer/build-visualizer.js` runs, produces `storm-drain-visualizer.html`, prints `visualizer: built OK (<N> KB)`.
 - Built file size ≥ 800 KB (SheetJS inlined; if under 800 KB, SheetJS wasn't inlined).
 - Opening the built file by double-click shows the same dark page with no network requests (verify in browser DevTools Network tab).
 - `el("div", {hidden: null}, "x").outerHTML === "<div>x</div>"` — null guard works.

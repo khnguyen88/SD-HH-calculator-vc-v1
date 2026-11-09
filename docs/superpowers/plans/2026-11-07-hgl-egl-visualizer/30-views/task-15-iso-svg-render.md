@@ -4,13 +4,15 @@
 
 `renderIso(svgEl, state)` populates the `<svg id="viewSvg">` with one group per structure and one line per pipe. Depth-sorted by `(x + y)` ascending. Selected cursor element gets a yellow glow. Implements spec §3.1.
 
+Note: task-22 made `renderIso` override-aware — structure `x`/`y` are resolved via `resolveField` over `s.overrides`.
+
 ## Preconditions
 
 - Prior tasks: task-01, task-03, task-05 or 06 or 07 (something that populates `state.imported`), task-14.
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `views` sentinel block after task-14:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `views` sentinel block after task-14:
 
 ```js
   // --- Iso SVG render (task-15) ---
@@ -45,10 +47,13 @@
     const common = { stroke: strokeColor, "stroke-width": isSelected ? 2 : 1, fill: fillColor };
     if (type === "inlet")   return svgEl("polygon", Object.assign({ points: `${cx},${cy-s} ${cx+s},${cy+s} ${cx-s},${cy+s}` }, common));
     if (type === "manhole") return svgEl("rect",    Object.assign({ x: cx-s, y: cy-s, width: 2*s, height: 2*s }, common));
-    if (type === "bend")    return svgEl("polygon", Object.assign({ points: `${cx-s},${cy} ${cx},${cy-s} ${cx+s},${cy} ${cx},${cy+s}` }, common));
+    if (type === "bend")    return svgEl("polyline", Object.assign({}, common, { points: `${cx-s},${cy+s} ${cx},${cy-s} ${cx+s},${cy+s}`, fill: "none" }));
     if (type === "junction")return svgEl("circle",  Object.assign({ cx: cx, cy: cy, r: s }, common));
     if (type === "splitter")return svgEl("rect",    Object.assign({ x: cx-s, y: cy-s, width: 2*s, height: 2*s, "stroke-dasharray": "3 2" }, common));
-    if (type === "outfall") return svgEl("circle",  Object.assign({ cx: cx, cy: cy, r: s * 1.2, "stroke-width": 2 }, common));
+    if (type === "outfall") return svgEl("g", null, [
+      svgEl("circle", Object.assign({ cx: cx, cy: cy, r: s * 1.2 }, common)),
+      svgEl("circle", Object.assign({ cx: cx, cy: cy, r: s * 0.65 }, common))
+    ]);
     return svgEl("circle", Object.assign({ cx: cx, cy: cy, r: s }, common));
   }
 
@@ -60,10 +65,14 @@
       return;
     }
 
-    // Build (x,y,z=rim) for each structure
-    const pts = s.imported.structures.map((st) => ({
-      id: st.id, type: st.type, x: st.x || 0, y: st.y || 0, z: (st.rim || 0)
-    }));
+    // Build (x,y,z=rim) for each structure, resolving x/y overrides (task-22).
+    const pts = s.imported.structures.map((st) => {
+      const rx = resolveField(st.id, "x", s.imported, s.overrides);
+      const ry = resolveField(st.id, "y", s.imported, s.overrides);
+      const x = (typeof rx === "number" && isFinite(rx)) ? rx : 0;
+      const y = (typeof ry === "number" && isFinite(ry)) ? ry : 0;
+      return { id: st.id, type: st.type, x, y, z: (st.rim || 0) };
+    });
     const b = isoBounds(pts, 2.0);
     const pad = 40;
     const vbW = Math.max(100, b.maxX - b.minX + 2 * pad);
@@ -71,7 +80,7 @@
     svg.setAttribute("viewBox", `${b.minX - pad} ${b.minY - pad} ${vbW} ${vbH}`);
 
     // Build index of projected positions for edges
-    const posById = {};
+    const posById = Object.create(null);
     for (const p of pts) posById[p.id] = projectIso(p.x, p.y, p.z, 2.0);
 
     // Draw pipes first, then structures on top; depth-sort structures by (x+y)

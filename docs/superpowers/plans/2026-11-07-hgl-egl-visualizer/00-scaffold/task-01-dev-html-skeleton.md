@@ -14,7 +14,7 @@ Implements spec §0 (non-negotiables) and §3.3 (overall screen layout).
 
 ## Exact changes
 
-**Create** `drainage-calculator/storm-drain-visualizer-dev.html` with the exact contents below. Do not deviate from the sentinel comments — later tasks grep for these literal strings.
+**Create** `visualizer/storm-drain-visualizer-dev.html` with the exact contents below. Do not deviate from the sentinel comments — later tasks grep for these literal strings.
 
 ```html
 <!doctype html>
@@ -141,7 +141,7 @@ No automated test for this task — it's a scaffold file. The group acceptance c
 
 ## Done when
 
-- `drainage-calculator/storm-drain-visualizer-dev.html` exists with the exact content above.
+- `visualizer/storm-drain-visualizer-dev.html` exists with the exact content above.
 - All sentinel comment pairs are present and empty between them.
 - File opens in a browser with no console errors.
 - Commit: `feat(visualizer): task-01 dev HTML skeleton with sentinel comments`.

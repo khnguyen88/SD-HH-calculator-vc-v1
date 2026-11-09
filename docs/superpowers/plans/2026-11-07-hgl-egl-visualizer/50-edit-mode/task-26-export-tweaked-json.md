@@ -10,7 +10,7 @@ Build a tweaked-JSON object matching spec §6.3 and download it as a file. Inclu
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `edit-mode` sentinel block after task-25:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `edit-mode` sentinel block after task-25:
 
 ```js
   // --- Tweaked JSON export (task-26) ---

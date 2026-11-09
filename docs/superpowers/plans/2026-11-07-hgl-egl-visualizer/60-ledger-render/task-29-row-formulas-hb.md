@@ -10,7 +10,7 @@ Render the full structure-loss derivation for a `+Hb` ledger row. Dispatches by 
 
 ## Exact changes
 
-**Modify** `drainage-calculator/storm-drain-visualizer-dev.html`. Append inside the `ledger-render` sentinel block after task-28:
+**Modify** `visualizer/storm-drain-visualizer-dev.html`. Append inside the `ledger-render` sentinel block after task-28:
 
 ```js
   // --- Hb row expanded render (task-29) ---
