@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import XLSX_NODE from "xlsx";
 
 const html = readFileSync(
   new URL("../drainage-calculator/storm-drain-design-calculator.html", import.meta.url),
@@ -693,4 +694,39 @@ test("computeTr55: multi-segment Tc = sum of segment Tt", () => {
   isClose(result.totalHr, sumTt, 1e-12, "totalHr = sum of segment Tt");
   assert.ok(result.totalMin > 0, "totalMin > 0");
   isClose(result.totalMin, result.totalHr * 60, 1e-10, "totalMin = totalHr*60");
+});
+
+// ==================== OOXML structural checks — spec §B.4, §C.5 ====================
+test("OOXML: no t='str' cell without a formula (bookSST compliance)", () => {
+  const wb = sdc.buildWorkbook();
+  const buf = window.XLSX.write(wb, { bookType: "xlsx", type: "array", bookSST: true });
+  const wbRead = XLSX_NODE.read(buf, { type: "array" });
+  const violations = [];
+  for (const sheetName of wbRead.SheetNames) {
+    const ws = wbRead.Sheets[sheetName];
+    for (const addr of Object.keys(ws)) {
+      if (addr.startsWith("!")) continue;
+      const cell = ws[addr];
+      if (cell.t === "str" && !cell.f) {
+        violations.push(`${sheetName}!${addr}`);
+      }
+    }
+  }
+  assert.deepEqual(violations, [],
+    "Cells with t='str' and no formula (spec-invalid): " + violations.slice(0,5).join(", "));
+});
+
+test("OOXML: shared-string cells present (bookSST:true worked)", () => {
+  const wb = sdc.buildWorkbook();
+  const buf = window.XLSX.write(wb, { bookType: "xlsx", type: "array", bookSST: true });
+  const wbRead = XLSX_NODE.read(buf, { type: "array" });
+  let foundSst = false;
+  outer: for (const sheetName of wbRead.SheetNames) {
+    const ws = wbRead.Sheets[sheetName];
+    for (const addr of Object.keys(ws)) {
+      if (addr.startsWith("!")) continue;
+      if (ws[addr].t === "s") { foundSst = true; break outer; }
+    }
+  }
+  assert.ok(foundSst, "No shared-string (t='s') cells found — bookSST may not be active");
 });
