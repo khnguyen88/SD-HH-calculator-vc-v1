@@ -969,3 +969,44 @@ test("renderRainfall: HGL method selector present and bound to state", () => {
     sdc.renderRainfall();
   }
 });
+
+// ==================== HGL method toggle — persistence ====================
+test("hglMethodFromLabel: maps Excel labels to state values", () => {
+  assert.equal(sdc.hglMethodFromLabel("Conservative"), "conservative");
+  assert.equal(sdc.hglMethodFromLabel("conservative"), "conservative");
+  assert.equal(sdc.hglMethodFromLabel("  CONSERVATIVE  "), "conservative");
+  assert.equal(sdc.hglMethodFromLabel("HEC-22"), "hec22");
+  assert.equal(sdc.hglMethodFromLabel(""), "hec22");
+  assert.equal(sdc.hglMethodFromLabel(undefined), "hec22");
+  assert.equal(sdc.hglMethodFromLabel("Nonsense"), "hec22");
+});
+
+test("round-trip: HGL Method row exported on Rainfall Settings sheet", () => {
+  const s0 = sdc.state;
+  const orig = s0.hydraulics;
+  s0.hydraulics = { hglMethod: "conservative" };
+  const wb = sdc.buildWorkbook();
+  s0.hydraulics = orig;
+  const ws = wb.Sheets["Rainfall Settings"];
+  assert.ok(ws, "Rainfall Settings sheet missing");
+  const rows = window.XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:""});
+  const row = rows.find(r => String(r[0]).trim() === "HGL Method");
+  assert.ok(row, "HGL Method row missing from Rainfall Settings sheet");
+  assert.equal(String(row[1]).trim(), "Conservative");
+});
+
+test("round-trip: snapshot and restore carry hglMethod", () => {
+  const s0 = sdc.state;
+  const orig = s0.hydraulics;
+  s0.hydraulics = { hglMethod: "conservative" };
+  const snap = JSON.parse(JSON.stringify(sdc.captureState()));
+  s0.hydraulics = { hglMethod: "hec22" };
+  sdc.restoreState(snap, "HGL Method Snapshot Test");
+  assert.equal(s0.hydraulics.hglMethod, "conservative", "restore must reinstate conservative method");
+  // restore an old-style snapshot without hydraulics -> default hec22
+  const oldSnap = JSON.parse(JSON.stringify(sdc.captureState()));
+  delete oldSnap.hydraulics;
+  sdc.restoreState(oldSnap, "HGL Method Snapshot Test");
+  assert.equal(s0.hydraulics.hglMethod, "hec22", "missing hydraulics in snapshot must default to hec22");
+  s0.hydraulics = orig;
+});
