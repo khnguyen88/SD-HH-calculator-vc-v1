@@ -5,7 +5,8 @@ const { JSDOM } = require("jsdom");
 
 const DEV_HTML_PATH = path.join(__dirname, "..", "storm-drain-visualizer-dev.html");
 
-function loadVisualizer(extraHeadScripts) {
+function loadVisualizer(extraHeadScripts, opts) {
+  opts = opts || {};
   const html = fs.readFileSync(DEV_HTML_PATH, "utf8");
   // Replace the SHEETJS sentinel with an inlined bundle when needed; tests pass
   // extraHeadScripts to inject the real `xlsx` module into globalThis.
@@ -13,6 +14,8 @@ function loadVisualizer(extraHeadScripts) {
     runScripts: "dangerously",
     resources: "usable",
     pretendToBeVisual: true,
+    url: opts.url,
+    virtualConsole: opts.virtualConsole,
     beforeParse(window) {
       if (extraHeadScripts && extraHeadScripts.XLSX) window.XLSX = extraHeadScripts.XLSX;
     }
