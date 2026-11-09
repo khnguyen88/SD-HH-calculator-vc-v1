@@ -1010,3 +1010,33 @@ test("round-trip: snapshot and restore carry hglMethod", () => {
   assert.equal(s0.hydraulics.hglMethod, "hec22", "missing hydraulics in snapshot must default to hec22");
   s0.hydraulics = orig;
 });
+
+// ==================== HGL method toggle — display surfaces ====================
+test("buildHglRowSheet: method label and pin note under conservative", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  const sheet = sdc.buildHglRowSheet("pin-st");
+  restore();
+  const text = sheet.textContent;
+  assert.ok(text.includes("Method: Conservative (crown-pinned HGL)"), "method label missing");
+  assert.ok(text.includes("computed 100.00 ft → pinned to pipe crown 101.00 ft"),
+    "pin note must show computed value and crown value");
+});
+
+test("buildHglRowSheet: no pin note under HEC-22", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const sheet = sdc.buildHglRowSheet("pin-st");
+  restore();
+  assert.ok(!sheet.textContent.includes("pinned to pipe crown"), "no pin note under HEC-22");
+});
+
+test("buildHglDetailSheet: title carries method label", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  const sheet = sdc.buildHglDetailSheet();
+  restore();
+  assert.ok(sheet, "detail sheet is null — state.pipes must be non-empty (fixture provides one)");
+  assert.ok(sheet.textContent.includes("Conservative (crown-pinned HGL)"),
+    "print detail header must carry the method label");
+});

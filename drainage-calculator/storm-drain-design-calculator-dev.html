@@ -2062,6 +2062,12 @@ function hglMethodFromLabel(v){
   return String(v==null ? "" : v).trim().toLowerCase() === "conservative" ? "conservative" : "hec22";
 }
 
+// Human-readable label for the selected HGL method, used on detail/print sheets.
+function hglMethodLabel(){
+  return (state.hydraulics && state.hydraulics.hglMethod) === "conservative"
+    ? "Conservative (crown-pinned HGL)" : "HEC-22 (standard)";
+}
+
 const fmt = (v,d=2)=> (v===null||v===undefined||!isFinite(v)) ? "\u2014" : Number(v).toFixed(d);
 
 /* =======================================================================
@@ -4780,11 +4786,16 @@ function buildHglRowSheet(structureId, stormOverride){
       structLossBody.push(csResult("H_ah / Hb", fmt(calc.Hb,4)+" ft"));
     }
     body.push(csSection("Structure loss", el("div",{}, structLossBody)));
-    body.push(csSection("Upstream HGL", el("div",{},[
+    const hglNodes = [
       csFormula(["Upstream HGL = Downstream Elev + Hf + Hb"]),
       csFormula(["Upstream HGL = "+fmt(calc.downstreamElev,2)+" + "+fmt(calc.Hf,4)+" + "+fmt(calc.Hb,4)]),
-      csResult("Upstream HGL", fmt(calc.elevation,2)+" ft"),
-    ])));
+    ];
+    if (calc.pinned) {
+      hglNodes.push(el("div",{class:"cs-note"},
+        "Conservative method: computed "+fmt(calc.hec22Elevation,2)+" ft → pinned to pipe crown "+fmt(calc.crown,2)+" ft"));
+    }
+    hglNodes.push(csResult("Upstream HGL", fmt(calc.elevation,2)+" ft"));
+    body.push(csSection("Upstream HGL", el("div",{}, hglNodes)));
   }
   const crown = calc.crown;
   const crownAssumed = calc.crownAssumed;
@@ -4802,7 +4813,7 @@ function buildHglRowSheet(structureId, stormOverride){
   }
   return sheetWrapper("hgl",
     "HGL \u2014 "+(st.structureId||st.id)+(stormOverride?" ("+stormOverride+")":""),
-    "Friction loss, structure loss, and upstream HGL", body);
+    "Friction loss, structure loss, and upstream HGL \u2014 Method: "+hglMethodLabel(), body);
 }
 
 function buildOutletStageSheet(stageResult, os){
@@ -5882,9 +5893,9 @@ function buildHglDetailSheet(stormOverride){
       el("td",{class:"out computed-cell",style:rimStyle},rimPass===null?"—":rimPass?"✓":"✗ FLOOD"),
     ];
   });
-  const title = stormOverride==="25yr"
+  const title = (stormOverride==="25yr"
     ? "HGL — 25-yr Detail"
-    : "HGL — Primary Design Storm Detail";
+    : "HGL — Primary Design Storm Detail") + " — " + hglMethodLabel();
   return makeDetailSheet(title, heads, rows);
 }
 
@@ -6811,7 +6822,8 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   resolvedInletFields, resolvedInletLabel,
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs, renderRainfall,
-  hglMethodFromLabel, captureState, restoreState,
+  hglMethodFromLabel, hglMethodLabel, captureState, restoreState,
+  buildHglRowSheet, buildHglDetailSheet,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES,
   kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 
