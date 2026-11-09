@@ -5216,6 +5216,11 @@ function tr55SegmentLabel(seg){
   return (TR55_SEGMENT_TYPES.find(t=>t[0]===seg.type)||["","Segment"])[1];
 }
 
+function sdc_tr55ShallowCp(surfaceKey){
+  const entry = TR55_SHALLOW_CP[surfaceKey] || TR55_SHALLOW_CP.unpaved;
+  return entry ? entry.cp : 0;
+}
+
 function buildTr55Sheet(row){
   const calc = computeTr55(row);
   const segs = (row.tr55 && row.tr55.segments) || [];
@@ -5242,9 +5247,33 @@ function buildTr55Sheet(row){
       rows.push(["Cross-sectional area, a", fmt(parseFloat(seg.area),2)+" sf"]);
       rows.push(["Wetted perimeter, Pw", fmt(parseFloat(seg.wp),2)+" ft"]);
     }
-    const formulaLines = seg.type==="sheet" ? ["Tt = 0.007(nL)^0.8 / (P2^0.5 \u00d7 s^0.4)"]
-      : seg.type==="shallow" ? ["V = Cp \u00d7 \u221as", "Tt = L / (3600 \u00d7 V)"]
-      : ["r = a / Pw", "V = (1.486/n) \u00d7 r^(2/3) \u00d7 s^0.5", "Tt = L / (3600 \u00d7 V)"];
+    let formulaLines;
+    const f4 = v => fmt(v, 4), f3 = v => fmt(v, 3), f0 = v => fmt(v, 0);
+    if (seg.type === "sheet") {
+      const n_ = parseFloat(seg.n), L_ = parseFloat(seg.L),
+            s_ = parseFloat(seg.s), P2_ = parseFloat(seg.P2);
+      formulaLines = [
+        "Tt = 0.007(n\u00d7L)^0.8 / (P2^0.5 \u00d7 s^0.4)",
+        "Tt = 0.007(" + f3(n_) + "\u00d7" + f0(L_) + ")^0.8 / (" +
+          f3(P2_) + "^0.5 \u00d7 " + f4(s_) + "^0.4) = " + f4(r.tt) + " hr",
+      ];
+    } else if (seg.type === "shallow") {
+      const Cp = (sdc_tr55ShallowCp(seg.surface)||0);
+      const s_ = parseFloat(seg.s), L_ = parseFloat(seg.L);
+      formulaLines = [
+        "V = Cp \u00d7 \u221as  =  " + f3(Cp) + " \u00d7 \u221a" + f4(s_) + " = " + f3(r.V||0) + " fps",
+        "Tt = L / (3600 \u00d7 V)  =  " + f0(L_) + " / (3600 \u00d7 " + f3(r.V||0) + ") = " + f4(r.tt) + " hr",
+      ];
+    } else {
+      const L_ = parseFloat(seg.L), s_ = parseFloat(seg.s),
+            n_ = parseFloat(seg.n);
+      formulaLines = [
+        "r = a / Pw  =  " + f3(parseFloat(seg.area)||0) + " / " + f3(parseFloat(seg.wp)||0) + " = " + f3(r.r||0) + " ft",
+        "V = (1.486/n) \u00d7 r^(2/3) \u00d7 s^0.5  =  (1.486/" + f3(n_) + ") \u00d7 " +
+          f3(r.r||0) + "^(2/3) \u00d7 " + f4(s_) + "^0.5 = " + f3(r.V||0) + " fps",
+        "Tt = L / (3600 \u00d7 V)  =  " + f0(L_) + " / (3600 \u00d7 " + f3(r.V||0) + ") = " + f4(r.tt) + " hr",
+      ];
+    }
     const resultsBody = [csTable(rows), csFormula(formulaLines)];
     if(r.r!=null) resultsBody.push(csResult("r", fmt(r.r,3)+" ft"));
     if(r.V!=null) resultsBody.push(csResult("V", fmt(r.V,3)+" fps"));
