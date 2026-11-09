@@ -105,8 +105,18 @@ conservative method raised the computed elevation to the crown. `pinned` is
   `computed X.XX ft → pinned to pipe crown Y.YY ft`.
 - **Print detail** (`buildHglDetailSheet`, ~line 5756): same method label in the
   sheet header.
-- **Excel "Junction Structure" sheet:** U/S HGL values flow automatically from
-  `calc.elevation`; the method label lives on the Rainfall Settings sheet row.
+- **Excel "Junction Structure" sheet:** the cached U/S HGL value is
+  `calc.elevation`, but the live Q-column formula itself implements the
+  conditional pin under the Conservative method: the HEC-22 chain expression
+  (`INDEX(Q:Q,MATCH(...))+M+O`) is wrapped in
+  `IF(INDEX('Rainfall Settings'!$B:$B,MATCH("HGL Method",'Rainfall Settings'!$A:$A,0))="Conservative", MAX(<chain>, G<row>), <chain>)`,
+  so Excel's on-open recalc (the workbook ships without a calcChain) cannot
+  silently revert pinned HGLs to HEC-22 values. The method label lives on the
+  Rainfall Settings sheet row. Under HEC-22 the plain chain formula is exported
+  unchanged. Cross-feature interaction: linked-tailwater outlet structures
+  resolve their tailwater from the (possibly pinned) upstream HGL, so
+  Conservative shifts BMP/outlet rating curves consistently with this
+  single-source-of-truth design.
 - **Selected method only.** Never show both methods side by side in tables —
   no dual HGL columns anywhere.
 

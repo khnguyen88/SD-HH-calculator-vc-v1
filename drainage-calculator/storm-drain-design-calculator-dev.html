@@ -4978,6 +4978,10 @@ function buildFormulasReferenceSheet(){
     b4.push(csFormula(["Hb = "+fmt(calc.kb,3)+" \u00d7 "+fmt(calc.Vout,3)+"\u00b2 / "+(2*G).toFixed(1)]));
     b4.push(csResult("Hb", fmt(calc.Hb,4)+" ft"));
     b4.push(csFormula(["Upstream HGL = Downstream Elev + Hf + Hb = "+fmt(calc.downstreamElev,3)+" + "+fmt(calc.Hf,4)+" + "+fmt(calc.Hb,4)]));
+    if (calc.pinned) {
+      b4.push(el("div",{class:"cs-note"},
+        "Conservative method: computed "+fmt(calc.hec22Elevation,2)+" ft → pinned to pipe crown "+fmt(calc.crown,2)+" ft"));
+    }
     b4.push(csResult("Upstream HGL", fmt(calc.elevation,3)+" ft"));
   }
   body.push(csSection("4. Structure Loss \u2014 Controlling-Angle Method (Junction Structures tab)", el("div",{}, b4)));
@@ -6221,7 +6225,21 @@ function buildWorkbook(){
       setFormula(wsSt, "P"+row, "=IF("+areaLookup+"=0,0,K"+row+"/("+areaLookup+"))", round(calc.Vout,3));
       setFormula(wsSt, "O"+row, "=N"+row+"*P"+row+"^2/(2*32.2)", round(calc.Hb,4));
       setFormula(wsSt, "R"+row, "=IFERROR(INDEX('Pipe Sizing'!C:C,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),\"\")", (findStructure(calc.outPipe.toStructureId)||{}).structureId || "");
-      setFormula(wsSt, "Q"+row, "=IF(OR(E"+row+"=\"TRUE\",R"+row+"=\"\"),F"+row+",IFERROR(INDEX(Q:Q,MATCH(R"+row+",A:A,0)),F"+row+")+M"+row+"+O"+row+")", round(calc.elevation,3));
+      // Upstream HGL. Under the Conservative method the cached value is the
+      // crown-pinned elevation; the live formula must implement the same pin
+      // (conditional on the Rainfall Settings "HGL Method" row) or Excel's
+      // on-open recalc silently reverts pinned HGLs to the HEC-22 chain —
+      // drifting from the exported intent. The pin is MAX(chain, G-row crown):
+      // MAX matches the app's `hec22Elevation < crown` guard exactly, and it
+      // ignores G when no crown was computed (G holds ""), matching the app's
+      // crown !== null fallback. Under HEC-22 the plain chain formula is
+      // exported unchanged.
+      const hglChain = "IFERROR(INDEX(Q:Q,MATCH(R"+row+",A:A,0)),F"+row+")+M"+row+"+O"+row;
+      const hglMethodLookup = "INDEX('Rainfall Settings'!$B:$B,MATCH(\"HGL Method\",'Rainfall Settings'!$A:$A,0))";
+      const hglFormula = (state.hydraulics && state.hydraulics.hglMethod) === "conservative"
+        ? "IF(OR(E"+row+"=\"TRUE\",R"+row+"=\"\"),F"+row+",IF("+hglMethodLookup+"=\"Conservative\",MAX("+hglChain+",G"+row+"),"+hglChain+"))"
+        : "IF(OR(E"+row+"=\"TRUE\",R"+row+"=\"\"),F"+row+","+hglChain+")";
+      setFormula(wsSt, "Q"+row, "="+hglFormula, round(calc.elevation,3));
     }
     setFormula(wsSt, "S"+row, "=IF(G"+row+"=\"\",\"\",IF(Q"+row+"<=G"+row+"+1,\"OK\",\"EXCEEDS\"))", calc.crownPass===null?"":(calc.crownPass?"OK":"EXCEEDS"));
     setFormula(wsSt, "T"+row, "=IF(H"+row+"=\"\",\"\",IF(Q"+row+"<=H"+row+"-1,\"OK\",\"EXCEEDS\"))", calc.rimPass===null?"":(calc.rimPass?"OK":"EXCEEDS"));
@@ -6823,7 +6841,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs, renderRainfall,
   hglMethodFromLabel, hglMethodLabel, captureState, restoreState,
-  buildHglRowSheet, buildHglDetailSheet,
+  buildHglRowSheet, buildHglDetailSheet, buildFormulasReferenceSheet,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES,
   kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 

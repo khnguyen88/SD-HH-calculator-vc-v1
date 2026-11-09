@@ -1040,3 +1040,131 @@ test("buildHglDetailSheet: title carries method label", () => {
   assert.ok(sheet.textContent.includes("Conservative (crown-pinned HGL)"),
     "print detail header must carry the method label");
 });
+
+// ==================== HGL method toggle — Excel export no-drift ====================
+// The Junction Structure sheet exports "Upstream HGL (ft)" (column Q) as a live
+// formula. The workbook has no calcChain, so Excel recalculates formulas on
+// open. Under the Conservative method the cached value is the crown-pinned
+// elevation; the live formula must implement the same pin (conditional on the
+// Rainfall Settings "HGL Method" row) or Excel silently reverts pinned HGLs to
+// the HEC-22 chain — a drift violation.
+function jsStructRowFor(wb, label){
+  const ws = wb.Sheets["Junction Structure"];
+  assert.ok(ws, "Junction Structure sheet missing from workbook");
+  const rows = window.XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:null });
+  const idx = rows.findIndex(r => String(r[0]).trim() === label);
+  assert.ok(idx >= 0, "structure row " + label + " missing from Junction Structure sheet");
+  return idx + 1; // rows[0] is the header (Excel row 1), so data starts at idx+1
+}
+
+test("Excel export: conservative HGL formula implements the conditional crown pin", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  const wb = sdc.buildWorkbook();
+  restore();
+  const row = jsStructRowFor(wb, "PIN-ST");
+  const cell = wb.Sheets["Junction Structure"]["Q"+row];
+  assert.ok(cell, "Upstream HGL (ft) cell missing for PIN-ST");
+  const f = String(cell.f);
+  assert.ok(f.includes('MATCH("HGL Method"'),
+    "formula must look up the HGL Method row by name: " + f);
+  assert.ok(f.includes("'Rainfall Settings'"),
+    "formula must read the method from the Rainfall Settings sheet: " + f);
+  assert.ok(f.includes('"Conservative"'),
+    "formula must branch on the Conservative label: " + f);
+  assert.ok(f.includes("MAX("),
+    "Conservative branch must MAX the chain result with the crown cell: " + f);
+  assert.ok(f.includes("G"+row),
+    "pin branch must reference this row's crown column G: " + f);
+  // HEC-22 chain mechanics must be preserved verbatim inside the wrapper.
+  assert.ok(f.includes("INDEX(Q:Q,MATCH(R"+row+",A:A,0))"),
+    "downstream HGL INDEX chain must be preserved: " + f);
+  assert.ok(f.includes("M"+row) && f.includes("O"+row),
+    "Hf (M) and Hb (O) cell references must be preserved: " + f);
+});
+
+test("Excel export: HEC-22 export keeps the plain chain formula, no pin branch", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const wb = sdc.buildWorkbook();
+  restore();
+  const row = jsStructRowFor(wb, "PIN-ST");
+  const cell = wb.Sheets["Junction Structure"]["Q"+row];
+  assert.ok(cell, "Upstream HGL (ft) cell missing for PIN-ST");
+  const f = String(cell.f);
+  assert.ok(!f.includes('MATCH("HGL Method"'),
+    "HEC-22 export must not carry the Conservative pin branch: " + f);
+  assert.ok(!f.includes("MAX("), "HEC-22 export must not MAX with the crown: " + f);
+  assert.ok(f.includes("M"+row) && f.includes("O"+row),
+    "HEC-22 chain formula must keep its Hf/Hb references: " + f);
+});
+
+test("Excel export: cached HGL value is the pinned 101.00 (conservative) and 100.00 (HEC-22)", () => {
+  let restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  let wb = sdc.buildWorkbook();
+  let row = jsStructRowFor(wb, "PIN-ST");
+  let v = wb.Sheets["Junction Structure"]["Q"+row].v;
+  restore();
+  isClose(v, 101.00, 0.001, "conservative cached HGL must be the pinned crown 101.00");
+
+  restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  wb = sdc.buildWorkbook();
+  row = jsStructRowFor(wb, "PIN-ST");
+  v = wb.Sheets["Junction Structure"]["Q"+row].v;
+  restore();
+  isClose(v, 100.00, 0.001, "HEC-22 cached HGL must stay at the computed chain value 100.00");
+});
+
+// Fixture whose Formulas & Examples worked example (section 4 picks the first
+// structure with exactly two inflow pipes) is a pinned structure, so the
+// printed HGL sum and the printed result disagree unless the pin note appears.
+function twoInflowPinFixture(){
+  const s0 = sdc.state;
+  const saved = { structures: s0.structures, pipes: s0.pipes, hydraulics: s0.hydraulics };
+  s0.structures = [
+    { id:"ti-out", structureId:"TI-OUT", type:"outfall", forceElev:true,
+      startElev: 100, drainageAreaId:"", rim:"" },
+    { id:"ti-j",   structureId:"TI-J",   type:"manhole", forceElev:false,
+      startElev:"", drainageAreaId:"", rim:"" },
+    { id:"ti-u1",  structureId:"TI-U1",  type:"manhole", forceElev:false,
+      startElev:"", drainageAreaId:"", rim:"" },
+  ];
+  s0.pipes = [
+    { id:"ti-out-pipe", fromStructureId:"ti-j", toStructureId:"ti-out",
+      angle:0, shape:"circular", size:24, n:0.013, slope:0.01, length:100,
+      upstreamInvert:99, downstreamInvert:98, splitRole:"" },
+    { id:"ti-in1", fromStructureId:"ti-u1", toStructureId:"ti-j",
+      angle:45, shape:"circular", size:12, n:0.013, slope:0.01, length:50,
+      upstreamInvert:100, downstreamInvert:99.5, splitRole:"" },
+    { id:"ti-in2", fromStructureId:"ti-u1", toStructureId:"ti-j",
+      angle:90, shape:"circular", size:12, n:0.013, slope:0.01, length:50,
+      upstreamInvert:100, downstreamInvert:99.5, splitRole:"" },
+  ];
+  return function restore(){ s0.structures = saved.structures; s0.pipes = saved.pipes; s0.hydraulics = saved.hydraulics; };
+}
+
+test("buildFormulasReferenceSheet: conservative pin note when the worked example pins", () => {
+  const restore = twoInflowPinFixture();
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  const calc = sdc.computeStructureCalc("ti-j");
+  const sheet = sdc.buildFormulasReferenceSheet();
+  restore();
+  assert.ok(sheet, "formulas reference sheet must build");
+  assert.equal(calc.pinned, true, "fixture must actually pin the two-inflow example structure");
+  isClose(calc.elevation, 101.00, 0.001, "example structure HGL must be pinned to crown 99 + 24/12");
+  const text = sheet.textContent;
+  assert.ok(text.includes("computed 100.00 ft → pinned to pipe crown 101.00 ft"),
+    "pin note must disclose computed vs pinned values in the worked example");
+});
+
+test("buildFormulasReferenceSheet: no pin note under HEC-22", () => {
+  const restore = twoInflowPinFixture();
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const sheet = sdc.buildFormulasReferenceSheet();
+  restore();
+  assert.ok(sheet, "formulas reference sheet must build");
+  assert.ok(!sheet.textContent.includes("pinned to pipe crown"),
+    "no pin note under HEC-22");
+});
