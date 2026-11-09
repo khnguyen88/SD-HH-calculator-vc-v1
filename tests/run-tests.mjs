@@ -1292,3 +1292,17 @@ test("visualizer payload matches xlsx import (drift guard, Conservative)", async
     viz.close();
   }
 });
+
+test("hash handoff encoding round-trips the payload", () => {
+  const payload = sdc.buildVisualizerPayload();
+  const enc = sdc.encodeVisualizerHandoff(payload);
+  assert.equal(typeof enc, "string", "seed payload must fit under the guard");
+  assert.ok(enc.length <= sdc.VISUALIZER_HASH_MAX);
+  assert.deepEqual(JSON.parse(decodeURIComponent(enc)), JSON.parse(JSON.stringify(payload)));
+});
+
+test("hash handoff size guard trips on oversized payloads", () => {
+  const big = sdc.buildVisualizerPayload();
+  big.structures[0].label = "x".repeat(70000);
+  assert.equal(sdc.encodeVisualizerHandoff(big), null, "oversized payload must return null");
+});

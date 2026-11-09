@@ -6586,6 +6586,13 @@ function buildVisualizerPayload(){
   };
 }
 
+// Encode for the #data= URL-hash protocol. Returns the encoded string, or
+// null when it exceeds the size guard (caller falls back to file download).
+function encodeVisualizerHandoff(payload){
+  const encoded = encodeURIComponent(JSON.stringify(payload));
+  return encoded.length <= VISUALIZER_HASH_MAX ? encoded : null;
+}
+
 /* =======================================================================
    Excel Import
 ======================================================================= */
@@ -6966,7 +6973,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs, renderRainfall,
   hglMethodFromLabel, hglMethodLabel, captureState, restoreState,
-  buildHglRowSheet, buildHglDetailSheet, buildFormulasReferenceSheet, buildVisualizerPayload, VISUALIZER_HASH_MAX,
+  buildHglRowSheet, buildHglDetailSheet, buildFormulasReferenceSheet, buildVisualizerPayload, encodeVisualizerHandoff, VISUALIZER_HASH_MAX,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES,
   kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 
