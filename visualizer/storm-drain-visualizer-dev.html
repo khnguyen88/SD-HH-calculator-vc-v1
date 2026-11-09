@@ -580,7 +580,8 @@
         out.push(Object.assign({}, row, { hgl, hglDn: step.hglDn, hglClamped: step.clamped,
           hglDetail: { V, vh, eglDn: row.before, crownDn, crownUp,
                        hglDnRaw: row.before - vh, hglDn: step.hglDn,
-                       hglUpRaw: step.hglDn + row.delta, hglUp: step.hglUp } }));
+                       hglUpRaw: step.hglDn + row.delta, hglUp: step.hglUp,
+                       hgl: step.hglUp } }));
         continue;
       }
 
@@ -1550,6 +1551,14 @@
         x: sx(p.station) + 4, y: sy(top) - 4,
         fill: "#c9d1d9", "font-size": 10, "font-family": "ui-monospace,monospace"
       }, p.id));
+    }
+
+    // A fresh import anchors the walk at the outfall only, so the profile has
+    // no pipes to draw yet — explain that instead of rendering a silent dot.
+    if (!stations.some((p) => p.kind === "pipe")) {
+      svg.appendChild(svgEl("text", {
+        x: 10, y: 40, fill: "#8b949e", "font-size": 12, "font-family": "ui-monospace,monospace"
+      }, "Profile follows the upstream walk — press ↑ (arrow up) to add pipes."));
     }
 
     // Cursor band for pipe selection: spans the pipe's FULL extent. With end
