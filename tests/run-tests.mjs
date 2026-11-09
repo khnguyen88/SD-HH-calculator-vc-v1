@@ -1212,3 +1212,76 @@ test("payload config maps HGL method to visualizer method names", () => {
     sdc.state.hydraulics.hglMethod = prev;
   }
 });
+
+// Compare what the visualizer state holds after importing the JSON payload
+// vs after importing the xlsx export of the SAME state. Numbers rounded to
+// 5 decimals to absorb float noise; JSON round-trip puts both sides in the
+// Node realm. x/y and pipe Hf are excluded (xlsx fills 0, payload omits —
+// auto-layout assigns real coordinates either way).
+function curatedImported(imported){
+  return JSON.parse(JSON.stringify({
+    structures: imported.structures.map(s=>({
+      id:s.id, label:s.label, type:s.type, rim:s.rim, startElev:s.startElev, crown:s.crown,
+      forceElev:s.forceElev, capturedQ:s.capturedQ, totalQ:s.totalQ, Hb:s.Hb,
+      elevation:s.elevation, outPipeId:s.outPipeId })),
+    pipes: imported.pipes.map(p=>({
+      id:p.id, fromId:p.fromId, toId:p.toId, shape:p.shape, size:p.size, n:p.n,
+      slope:p.slope, length:p.length, angle:p.angle, designQ:p.designQ,
+      usInvert:p.usInvert, dsInvert:p.dsInvert, splitRole:p.splitRole })),
+    outfall: imported.outfall,
+    config: { hglMethod: imported.config.hglMethod },
+    drainageAreas: imported.drainageAreas,
+    tr55Segments: imported.tr55Segments
+  }), (k,v)=> (typeof v==="number" && isFinite(v)) ? Number(v.toFixed(5)) : v);
+}
+
+// `window` here is the CALCULATOR's jsdom window (module top of this file);
+// window.XLSX is the SheetJS bundled inside the BUILT calculator. Write the
+// workbook in that realm, then wrap the bytes in a plain object (name +
+// arrayBuffer) so the visualizer's importer runs its real code path without
+// needing a jsdom File.
+async function importExportedWorkbook(viz){
+  const ab = window.XLSX.write(sdc.buildWorkbook(), { bookType:"xlsx", type:"array", bookSST:true });
+  const fakeFile = { name:"drift.xlsx", arrayBuffer: async ()=> Buffer.from(new Uint8Array(ab)) };
+  await viz.importFromXlsxFile(fakeFile);
+}
+
+test("visualizer payload matches xlsx import (drift guard, HEC-22)", async () => {
+  const viz = loadVisualizerWindow();
+  try {
+    const payload = sdc.buildVisualizerPayload();
+    await importExportedWorkbook(viz);
+    const viaXlsx = curatedImported(viz.state.imported);
+    viz.applyImportedJson(payload, "(test)");
+    const viaJson = curatedImported(viz.state.imported);
+    assert.deepEqual(viaJson, viaXlsx, "JSON payload drifted from the xlsx serialization");
+    assert.equal(viaXlsx.config.hglMethod, "hec22");
+  } finally {
+    viz.close();
+  }
+});
+
+test("visualizer payload matches xlsx import (drift guard, Conservative)", async () => {
+  const prev = sdc.state.hydraulics.hglMethod;
+  sdc.state.hydraulics.hglMethod = "conservative";
+  const viz = loadVisualizerWindow();
+  try {
+    const payload = sdc.buildVisualizerPayload();
+    await importExportedWorkbook(viz);
+    const viaXlsx = curatedImported(viz.state.imported);
+    viz.applyImportedJson(payload, "(test)");
+    const viaJson = curatedImported(viz.state.imported);
+    // config.hglMethod is excluded until Task 5 lands (xlsx importer does
+    // not yet read the Rainfall Settings HGL Method row); a dedicated
+    // method-mapping assertion covers the payload side. curatedImported
+    // shapes config as { hglMethod } only, so dropping config removes
+    // exactly that field.
+    const { config: _x, ...viaXlsxData } = viaXlsx;
+    const { config: _j, ...viaJsonData } = viaJson;
+    assert.deepEqual(viaJsonData, viaXlsxData, "Conservative payload drifted from the xlsx serialization");
+    assert.equal(viaJson.config.hglMethod, "legacy-both-crown");
+  } finally {
+    sdc.state.hydraulics.hglMethod = prev;
+    viz.close();
+  }
+});
