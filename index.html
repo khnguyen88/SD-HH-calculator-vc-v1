@@ -629,6 +629,8 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
         <button class="btn" id="importBtn" title="Import a previously exported .xlsx file">&#8593;<span class="btn-label"> Import from Excel</span></button>
         <input type="file" id="importFile" accept=".xlsx">
         <button class="btn btn-primary" id="exportBtn" title="Export all tables to a .xlsx file">&#8595;<span class="btn-label"> Export to Excel</span></button>
+        <a href="visualizer.html" target="_blank" rel="noopener"
+           style="margin-left:12px; color:inherit; font-size:13px;">Open HGL Visualizer &rarr;</a>
       </div>
     </div>
 
@@ -1530,6 +1532,7 @@ const state = {
   inletSpacing: [],
   inletSpacingSettings: defaultInletSpacingSettings(),
   rainfall: defaultRainfallSettings(),
+  hydraulics: { hglMethod: "hec22" },
 };
 
 function defaultOutletFields(){
@@ -1984,7 +1987,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
       outPipe, downstream:null, Sf:0, Hf:0, kbColumn:null, kb:0, Hb:0, Vout:0,
       inflowCount:0, controlling:null, elevation: parseFloat(st.startElev)||0,
       isBase:true, warnings, isSplitter, splitInfo,
-      crown: null, crownAssumed: false,
+      crown: null, crownAssumed: false, pinned: false,
       crownPass: null,
       rimPass: st.rim!==""&&st.rim!=null ? (parseFloat(st.startElev)||0) <= parseFloat(st.rim)-1.0 : null,
     };
@@ -1994,7 +1997,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
     warnings.push("Circular structure reference detected \u2014 elevation cannot be resolved.");
     return { structure:st, totalFlow, captured:totalFlowInfo.captured, inflow:totalFlowInfo.inflow, outPipe, downstream:null,
       Sf:0, Hf:0, kbColumn:null, kb:0, Hb:0, Vout:0, inflowCount:0, controlling:null, elevation:NaN, isBase:false, warnings, isSplitter, splitInfo,
-      crown:null, crownAssumed:false, crownPass:null, rimPass:null };
+      crown:null, crownAssumed:false, pinned:false, crownPass:null, rimPass:null };
   }
   seen.add(structureId);
 
@@ -2043,21 +2046,43 @@ function computeStructureCalc(structureId, seen, stormOverride){
   }
   Hb = (kb==null) ? 0 : kb*Vout*Vout/(2*G);
 
-  const elevation = downstreamElev + Hf + Hb;
+  const hec22Elevation = downstreamElev + Hf + Hb;
   const invSt = pipeInvertState(outPipe);
   const crownAssumed = invSt.assumed;
   const crown = (geo && invSt.usInvert !== null) ? invSt.usInvert + geo.equivDiamIn/12 : null;
   const rim = (st.rim!==""&&st.rim!=null) ? parseFloat(st.rim) : null;
 
+  // Conservative HGL method: pin the upstream HGL to the outgoing pipe's
+  // upstream crown so the profile never falls below the pipe soffit.
+  // Base/forceElev structures never reach this code (early return above).
+  let elevation = hec22Elevation;
+  let pinned = false;
+  if ((state.hydraulics && state.hydraulics.hglMethod) === "conservative" && crown !== null && hec22Elevation < crown) {
+    elevation = crown;
+    pinned = true;
+  }
+
   return {
     structure: st, totalFlow, captured: totalFlowInfo.captured, inflow: totalFlowInfo.inflow,
     outPipe, outPipeFlow, downstream, downstreamElev, Sf, Hf, kbColumn, kb, Hb, Vout,
     inflowCount: inflowPipes.length, inflowPipes, controlling, useCatalogKah,
-    elevation, isBase:false, warnings, isSplitter, splitInfo,
+    elevation, hec22Elevation, pinned, isBase:false, warnings, isSplitter, splitInfo,
     crown, crownAssumed,
     crownPass: crown!==null ? elevation<=crown+1.0 : null,
     rimPass: rim!==null ? elevation<=rim-1.0 : null,
   };
+}
+
+// Excel label <-> state value for the HGL method (Rainfall Settings sheet).
+// Unknown or missing values fall back to HEC-22 per the design spec.
+function hglMethodFromLabel(v){
+  return String(v==null ? "" : v).trim().toLowerCase() === "conservative" ? "conservative" : "hec22";
+}
+
+// Human-readable label for the selected HGL method, used on detail/print sheets.
+function hglMethodLabel(){
+  return (state.hydraulics && state.hydraulics.hglMethod) === "conservative"
+    ? "Conservative (crown-pinned HGL)" : "HEC-22 (standard)";
 }
 
 const fmt = (v,d=2)=> (v===null||v===undefined||!isFinite(v)) ? "\u2014" : Number(v).toFixed(d);
@@ -2367,6 +2392,7 @@ function captureState(){
     inletSpacing: state.inletSpacing,
     inletSpacingSettings: state.inletSpacingSettings,
     rainfall: state.rainfall,
+    hydraulics: state.hydraulics,
   }));
   return snap;
 }
@@ -2384,6 +2410,7 @@ function restoreState(snap, projectName){
   state.inletSpacing = snap.inletSpacing || [];
   state.inletSpacingSettings = snap.inletSpacingSettings || defaultInletSpacingSettings();
   state.rainfall = snap.rainfall || defaultRainfallSettings();
+  state.hydraulics = snap.hydraulics || { hglMethod: "hec22" };
   const restoredName = projectName || "Untitled Storm Drain Project";
   state.project = restoredName;
   document.getElementById("projectName").value = restoredName;
@@ -2557,7 +2584,7 @@ function renderOverview(){
 
   const steps = [
     ["1","Overview", "Start here; review the workflow and how the tabs connect before entering data."],
-    ["2","Rainfall & IDF", "Select rainfall source (NOAA Atlas 14 county, MDSHA, or MoCo agency table) and design storms. The Pipe & HGL Storm drives Q in Drainage Area and pipe capacity. The Inlet Storm drives inlet spacing intensity. Optionally enable the 25-yr check tabs for an additional capacity verification. The IDF table shows intensities at standard Tc values."],
+    ["2","Rainfall & IDF", "Select rainfall source (NOAA Atlas 14 county, MDSHA, or MoCo agency table) and design storms. The Pipe & HGL Storm drives Q in Drainage Area and pipe capacity. The Inlet Storm drives inlet spacing intensity. Optionally enable the 25-yr check tabs for an additional capacity verification. The HGL Method setting selects standard HEC-22 or the Conservative option, which pins each structure's upstream HGL to its outgoing pipe crown for submittal-safe profiles. The IDF table shows intensities at standard Tc values."],
     ["3","Drainage Area \u2014 Q = C \u00b7 i \u00b7 A", "Define drainage areas with area (A, acres), runoff coefficient (C), and time of concentration (Tc). Q values are auto-computed from ", "Q = Cf \u00d7 C \u00d7 i \u00d7 A", "."],
     ["4","Junction Structures", "One row per physical structure (inlet, manhole, bend, junction, flow splitter, or outfall). Link a Drainage Area to capture its runoff. ", "Total Flow = Captured Q + \u03a3(Q of every pipe flowing into this structure)", ". Inlet-type structures can be linked to Inlet Spacing rows to auto-fill area, C, and Tc from the associated drainage area."],
     ["5","Inlet Spacing", "Size grate inlets along a curb profile using HEC-22 methods. Pick a Junction Structure to auto-fill area, C, and Tc from its linked drainage area."],
@@ -3946,6 +3973,20 @@ function renderRainfall() {
   pipeStormField.appendChild(pipeSel);
   stRow.appendChild(pipeStormField);
 
+  // HGL method (global project setting — spec: HGL method toggle)
+  const hglField = el("div", {class:"field"});
+  hglField.appendChild(el("label", {}, "HGL Method"));
+  const hglSel = el("select", {class:"cell-input", style:"width:150px;",
+    "data-focus-key":"rf:hglMethod",
+    onchange: (e) => { state.hydraulics.hglMethod = e.target.value; withFocusPreserved(renderAll); }});
+  [["hec22","HEC-22 (standard)"], ["conservative","Conservative (crown-pin)"]].forEach(([v,lab]) => {
+    const o = el("option", {value:v}, lab);
+    if (((state.hydraulics && state.hydraulics.hglMethod) || "hec22") === v) o.selected = true;
+    hglSel.appendChild(o);
+  });
+  hglField.appendChild(hglSel);
+  stRow.appendChild(hglField);
+
   // Inlet storm
   const inletStormField = el("div", {class:"field"});
   inletStormField.appendChild(el("label", {}, "Inlet Design Storm"));
@@ -4762,11 +4803,16 @@ function buildHglRowSheet(structureId, stormOverride){
       structLossBody.push(csResult("H_ah / Hb", fmt(calc.Hb,4)+" ft"));
     }
     body.push(csSection("Structure loss", el("div",{}, structLossBody)));
-    body.push(csSection("Upstream HGL", el("div",{},[
+    const hglNodes = [
       csFormula(["Upstream HGL = Downstream Elev + Hf + Hb"]),
       csFormula(["Upstream HGL = "+fmt(calc.downstreamElev,2)+" + "+fmt(calc.Hf,4)+" + "+fmt(calc.Hb,4)]),
-      csResult("Upstream HGL", fmt(calc.elevation,2)+" ft"),
-    ])));
+    ];
+    if (calc.pinned) {
+      hglNodes.push(el("div",{class:"cs-note"},
+        "Conservative method: computed "+fmt(calc.hec22Elevation,2)+" ft → pinned to pipe crown "+fmt(calc.crown,2)+" ft"));
+    }
+    hglNodes.push(csResult("Upstream HGL", fmt(calc.elevation,2)+" ft"));
+    body.push(csSection("Upstream HGL", el("div",{}, hglNodes)));
   }
   const crown = calc.crown;
   const crownAssumed = calc.crownAssumed;
@@ -4784,7 +4830,7 @@ function buildHglRowSheet(structureId, stormOverride){
   }
   return sheetWrapper("hgl",
     "HGL \u2014 "+(st.structureId||st.id)+(stormOverride?" ("+stormOverride+")":""),
-    "Friction loss, structure loss, and upstream HGL", body);
+    "Friction loss, structure loss, and upstream HGL \u2014 Method: "+hglMethodLabel(), body);
 }
 
 function buildOutletStageSheet(stageResult, os){
@@ -4949,6 +4995,10 @@ function buildFormulasReferenceSheet(){
     b4.push(csFormula(["Hb = "+fmt(calc.kb,3)+" \u00d7 "+fmt(calc.Vout,3)+"\u00b2 / "+(2*G).toFixed(1)]));
     b4.push(csResult("Hb", fmt(calc.Hb,4)+" ft"));
     b4.push(csFormula(["Upstream HGL = Downstream Elev + Hf + Hb = "+fmt(calc.downstreamElev,3)+" + "+fmt(calc.Hf,4)+" + "+fmt(calc.Hb,4)]));
+    if (calc.pinned) {
+      b4.push(el("div",{class:"cs-note"},
+        "Conservative method: computed "+fmt(calc.hec22Elevation,2)+" ft → pinned to pipe crown "+fmt(calc.crown,2)+" ft"));
+    }
     b4.push(csResult("Upstream HGL", fmt(calc.elevation,3)+" ft"));
   }
   body.push(csSection("4. Structure Loss \u2014 Controlling-Angle Method (Junction Structures tab)", el("div",{}, b4)));
@@ -5214,6 +5264,11 @@ function tr55SegmentLabel(seg){
   return (TR55_SEGMENT_TYPES.find(t=>t[0]===seg.type)||["","Segment"])[1];
 }
 
+function sdc_tr55ShallowCp(surfaceKey){
+  const entry = TR55_SHALLOW_CP[surfaceKey] || TR55_SHALLOW_CP.unpaved;
+  return entry ? entry.cp : 0;
+}
+
 function buildTr55Sheet(row){
   const calc = computeTr55(row);
   const segs = (row.tr55 && row.tr55.segments) || [];
@@ -5240,9 +5295,33 @@ function buildTr55Sheet(row){
       rows.push(["Cross-sectional area, a", fmt(parseFloat(seg.area),2)+" sf"]);
       rows.push(["Wetted perimeter, Pw", fmt(parseFloat(seg.wp),2)+" ft"]);
     }
-    const formulaLines = seg.type==="sheet" ? ["Tt = 0.007(nL)^0.8 / (P2^0.5 \u00d7 s^0.4)"]
-      : seg.type==="shallow" ? ["V = Cp \u00d7 \u221as", "Tt = L / (3600 \u00d7 V)"]
-      : ["r = a / Pw", "V = (1.486/n) \u00d7 r^(2/3) \u00d7 s^0.5", "Tt = L / (3600 \u00d7 V)"];
+    let formulaLines;
+    const f4 = v => fmt(v, 4), f3 = v => fmt(v, 3), f0 = v => fmt(v, 0);
+    if (seg.type === "sheet") {
+      const n_ = parseFloat(seg.n), L_ = parseFloat(seg.L),
+            s_ = parseFloat(seg.s), P2_ = parseFloat(seg.P2);
+      formulaLines = [
+        "Tt = 0.007(n\u00d7L)^0.8 / (P2^0.5 \u00d7 s^0.4)",
+        "Tt = 0.007(" + f3(n_) + "\u00d7" + f0(L_) + ")^0.8 / (" +
+          f3(P2_) + "^0.5 \u00d7 " + f4(s_) + "^0.4) = " + f4(r.tt) + " hr",
+      ];
+    } else if (seg.type === "shallow") {
+      const Cp = (sdc_tr55ShallowCp(seg.surface)||0);
+      const s_ = parseFloat(seg.s), L_ = parseFloat(seg.L);
+      formulaLines = [
+        "V = Cp \u00d7 \u221as  =  " + f3(Cp) + " \u00d7 \u221a" + f4(s_) + " = " + f3(r.V||0) + " fps",
+        "Tt = L / (3600 \u00d7 V)  =  " + f0(L_) + " / (3600 \u00d7 " + f3(r.V||0) + ") = " + f4(r.tt) + " hr",
+      ];
+    } else {
+      const L_ = parseFloat(seg.L), s_ = parseFloat(seg.s),
+            n_ = parseFloat(seg.n);
+      formulaLines = [
+        "r = a / Pw  =  " + f3(parseFloat(seg.area)||0) + " / " + f3(parseFloat(seg.wp)||0) + " = " + f3(r.r||0) + " ft",
+        "V = (1.486/n) \u00d7 r^(2/3) \u00d7 s^0.5  =  (1.486/" + f3(n_) + ") \u00d7 " +
+          f3(r.r||0) + "^(2/3) \u00d7 " + f4(s_) + "^0.5 = " + f3(r.V||0) + " fps",
+        "Tt = L / (3600 \u00d7 V)  =  " + f0(L_) + " / (3600 \u00d7 " + f3(r.V||0) + ") = " + f4(r.tt) + " hr",
+      ];
+    }
     const resultsBody = [csTable(rows), csFormula(formulaLines)];
     if(r.r!=null) resultsBody.push(csResult("r", fmt(r.r,3)+" ft"));
     if(r.V!=null) resultsBody.push(csResult("V", fmt(r.V,3)+" fps"));
@@ -5835,9 +5914,9 @@ function buildHglDetailSheet(stormOverride){
       el("td",{class:"out computed-cell",style:rimStyle},rimPass===null?"—":rimPass?"✓":"✗ FLOOD"),
     ];
   });
-  const title = stormOverride==="25yr"
+  const title = (stormOverride==="25yr"
     ? "HGL — 25-yr Detail"
-    : "HGL — Primary Design Storm Detail";
+    : "HGL — Primary Design Storm Detail") + " — " + hglMethodLabel();
   return makeDetailSheet(title, heads, rows);
 }
 
@@ -5896,6 +5975,20 @@ function printDetailTableSheet(viewId, title){
 }
 
 function printAllDetailSheets(){
+  // Guard: warn if the outlet tables would produce a very large printout.
+  const totalStageRows = state.outletStructures.reduce((sum, os) => {
+    return sum + computeRatingCurve(os.id).rows.length;
+  }, 0);
+  const estimatedPages = Math.ceil(totalStageRows / 50) +
+    state.drainage.length + state.structures.length + state.pipes.length + 4;
+  if (estimatedPages > 30) {
+    const ok = window.confirm(
+      "This print job may produce approximately " + estimatedPages +
+      " pages (the outlet rating-curve tables alone account for " + totalStageRows +
+      " rows).\n\nProceed anyway?"
+    );
+    if (!ok) return;
+  }
   const nodes = [];
   const drain   = buildDrainageDetailSheet();    if(drain)   nodes.push(drain);
   const structs = buildStructuresDetailSheet();  if(structs) nodes.push(structs);
@@ -5980,6 +6073,7 @@ function buildWorkbook(){
     ["Pipe & HGL Design Storm",  rf.pipeStorm||"10yr"],
     ["25-yr Check",              rf.pipe25Check ? "TRUE" : "FALSE"],
     ["Inlet Design Storm",       rf.inletStorm||"2yr"],
+    ["HGL Method",               state.hydraulics.hglMethod==="conservative" ? "Conservative" : "HEC-22"],
     ["Custom NOAA 5-min (in/hr)",  (rf.customNoaa&&rf.customNoaa[5]!=null&&rf.customNoaa[5]!=="")?rf.customNoaa[5]:""],
     ["Custom NOAA 10-min (in/hr)", (rf.customNoaa&&rf.customNoaa[10]!=null&&rf.customNoaa[10]!=="")?rf.customNoaa[10]:""],
     ["Custom NOAA 15-min (in/hr)", (rf.customNoaa&&rf.customNoaa[15]!=null&&rf.customNoaa[15]!=="")?rf.customNoaa[15]:""],
@@ -6148,7 +6242,21 @@ function buildWorkbook(){
       setFormula(wsSt, "P"+row, "=IF("+areaLookup+"=0,0,K"+row+"/("+areaLookup+"))", round(calc.Vout,3));
       setFormula(wsSt, "O"+row, "=N"+row+"*P"+row+"^2/(2*32.2)", round(calc.Hb,4));
       setFormula(wsSt, "R"+row, "=IFERROR(INDEX('Pipe Sizing'!C:C,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),\"\")", (findStructure(calc.outPipe.toStructureId)||{}).structureId || "");
-      setFormula(wsSt, "Q"+row, "=IF(OR(E"+row+"=\"TRUE\",R"+row+"=\"\"),F"+row+",IFERROR(INDEX(Q:Q,MATCH(R"+row+",A:A,0)),F"+row+")+M"+row+"+O"+row+")", round(calc.elevation,3));
+      // Upstream HGL. Under the Conservative method the cached value is the
+      // crown-pinned elevation; the live formula must implement the same pin
+      // (conditional on the Rainfall Settings "HGL Method" row) or Excel's
+      // on-open recalc silently reverts pinned HGLs to the HEC-22 chain —
+      // drifting from the exported intent. The pin is MAX(chain, G-row crown):
+      // MAX matches the app's `hec22Elevation < crown` guard exactly, and it
+      // ignores G when no crown was computed (G holds ""), matching the app's
+      // crown !== null fallback. Under HEC-22 the plain chain formula is
+      // exported unchanged.
+      const hglChain = "IFERROR(INDEX(Q:Q,MATCH(R"+row+",A:A,0)),F"+row+")+M"+row+"+O"+row;
+      const hglMethodLookup = "INDEX('Rainfall Settings'!$B:$B,MATCH(\"HGL Method\",'Rainfall Settings'!$A:$A,0))";
+      const hglFormula = (state.hydraulics && state.hydraulics.hglMethod) === "conservative"
+        ? "IF(OR(E"+row+"=\"TRUE\",R"+row+"=\"\"),F"+row+",IF("+hglMethodLookup+"=\"Conservative\",MAX("+hglChain+",G"+row+"),"+hglChain+"))"
+        : "IF(OR(E"+row+"=\"TRUE\",R"+row+"=\"\"),F"+row+","+hglChain+")";
+      setFormula(wsSt, "Q"+row, "="+hglFormula, round(calc.elevation,3));
     }
     setFormula(wsSt, "S"+row, "=IF(G"+row+"=\"\",\"\",IF(Q"+row+"<=G"+row+"+1,\"OK\",\"EXCEEDS\"))", calc.crownPass===null?"":(calc.crownPass?"OK":"EXCEEDS"));
     setFormula(wsSt, "T"+row, "=IF(H"+row+"=\"\",\"\",IF(Q"+row+"<=H"+row+"-1,\"OK\",\"EXCEEDS\"))", calc.rimPass===null?"":(calc.rimPass?"OK":"EXCEEDS"));
@@ -6406,6 +6514,7 @@ function importExcel(file){
         if (rfMap["Pipe & HGL Design Storm"]) newRf.pipeStorm      = rfMap["Pipe & HGL Design Storm"];
         if (rfMap["25-yr Check"])             newRf.pipe25Check    = rfMap["25-yr Check"] === "TRUE";
         if (rfMap["Inlet Design Storm"])      newRf.inletStorm     = rfMap["Inlet Design Storm"];
+        state.hydraulics.hglMethod = hglMethodFromLabel(rfMap["HGL Method"]);
         [5,10,15,30,60].forEach(d => {
           const v = rfMap["Custom NOAA "+d+"-min (in/hr)"];
           if (v !== "" && v != null) newRf.customNoaa[d] = String(v);
@@ -6738,7 +6847,7 @@ function init(){
 document.addEventListener("DOMContentLoaded", init);
 
 // Exposed for debugging / automated testing only - not used by the UI.
-window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, pipeEffectiveSlope, calcDrainageRow, findStructure, findDrainage, findPipe,
+window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, pipeEffectiveSlope, frictionSlope, calcDrainageRow, findStructure, findDrainage, findPipe,
   circularSegment, orificeOrPipeQ, weirQ, deviceQ, resolveTailwater, generateStageList, computeRatingCurve, computeSplitterSplit, pipeDesignQ,
   findOutletStructure, devicesForOutlet,
   tr55SheetFlowTt, tr55ShallowVelocity, tr55TravelTime, tr55ChannelVelocity, computeTr55, TR55_SHALLOW_CP,
@@ -6747,7 +6856,9 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   computeInletChain, computeRowIntensity, buildInletSpacingSheet,
   resolvedInletFields, resolvedInletLabel,
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
-  defaultRainfallSettings, getTabs,
+  defaultRainfallSettings, getTabs, renderRainfall,
+  hglMethodFromLabel, hglMethodLabel, captureState, restoreState,
+  buildHglRowSheet, buildHglDetailSheet, buildFormulasReferenceSheet,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES,
   kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 
