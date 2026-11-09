@@ -1113,12 +1113,55 @@
       });
     }
 
+    // Drop structures: incoming pipe's DS invert far above outgoing pipe's US invert
+    // (a drop manhole). Advisory only — never mutates data. The HGL walk floors
+    // the incoming pipe at its own crown (free outfall); users must be told.
+    const finNum = (v) => (typeof v === "number" && isFinite(v)) ? v : null;
+    const dropStructures = [];
+    for (const st of structures) {
+      if (st.type === "outfall") continue;
+      const incoming = pipes.filter((p) => p.toId === st.id && finNum(p.dsInvert) != null);
+      const outgoing = pipes.filter((p) => p.fromId === st.id && finNum(p.usInvert) != null);
+      if (!incoming.length || !outgoing.length) continue;
+      const fromInvert = Math.min.apply(null, incoming.map((p) => p.dsInvert));
+      const toInvert = Math.min.apply(null, outgoing.map((p) => p.usInvert));
+      const dropFt = fromInvert - toInvert;
+      if (dropFt > 0.5) {
+        dropStructures.push({
+          id: st.id,
+          dropFt: Math.round(dropFt * 100) / 100,
+          fromInvert: Math.round(fromInvert * 100) / 100,
+          toInvert: Math.round(toInvert * 100) / 100,
+          incomingPipeIds: incoming.map((p) => p.id),
+          outgoingPipeId: outgoing[0].id
+        });
+      }
+    }
+
+    // Slope vs inverts: declared slope disagreeing with (usInvert - dsInvert)/length
+    // is a data-entry smell. Advisory only.
+    const slopeMismatches = [];
+    for (const p of pipes) {
+      const us = finNum(p.usInvert), ds = finNum(p.dsInvert);
+      if (us == null || ds == null || !(p.length > 0) || finNum(p.slope) == null) continue;
+      const computed = (us - ds) / p.length;
+      const declared = p.slope;
+      if (Math.abs(computed - declared) > Math.max(0.002, 0.2 * Math.abs(declared))) {
+        slopeMismatches.push({
+          id: p.id,
+          declared: Math.round(declared * 100000) / 100000,
+          computed: Math.round(computed * 100000) / 100000
+        });
+      }
+    }
+
     // Walk-from candidates: outfalls first, then every other structure (both in import order).
     const walkStarts = [];
     for (const s of structures) if (s.type === "outfall") walkStarts.push({ id: s.id, label: s.label || s.id, type: s.type, group: "outfall" });
     for (const s of structures) if (s.type !== "outfall") walkStarts.push({ id: s.id, label: s.label || s.id, type: s.type, group: "structure" });
 
-    return { outfallIds, defaultWalkStart, splitterIds, primaryPipeByStructureId, missingDesignQ, tr55ByStructureId, walkStarts };
+    return { outfallIds, defaultWalkStart, splitterIds, primaryPipeByStructureId, missingDesignQ,
+      tr55ByStructureId, walkStarts, dropStructures, slopeMismatches };
   }
 
   // ==== import: end ====
@@ -2733,11 +2776,14 @@
     const a = state.analysis;
     const splitterIds = (a && Array.isArray(a.splitterIds)) ? a.splitterIds : [];
     const missingQ = (a && Array.isArray(a.missingDesignQ)) ? a.missingDesignQ : [];
-    const hasWarning = !!(a && !state.ui.warningsDismissed && (splitterIds.length || missingQ.length));
+    const dropStructs = (a && Array.isArray(a.dropStructures)) ? a.dropStructures : [];
+    const slopeMis = (a && Array.isArray(a.slopeMismatches)) ? a.slopeMismatches : [];
+    const hasWarning = !!(a && !state.ui.warningsDismissed
+      && (splitterIds.length || missingQ.length || dropStructs.length || slopeMis.length));
 
     // Skip rebuilding when nothing that affects the banner changed (renderAll runs often).
     const sig = hasWarning
-      ? JSON.stringify([splitterIds, missingQ, warningDetailsOpen, state.ui.warningsDismissed])
+      ? JSON.stringify([splitterIds, missingQ, dropStructs, slopeMis, warningDetailsOpen, state.ui.warningsDismissed])
       : "hidden";
     if (sig === warningSignature) return;
     warningSignature = sig;
@@ -2761,6 +2807,17 @@
     if (missingQ.length > 0) {
       summary.appendChild(el("div", null,
         "No Design Q: " + missingQ.join(", ") + " — friction shown as 0.000 ft"));
+    }
+    for (const d of dropStructs) {
+      summary.appendChild(el("div", null,
+        "Drop structure " + d.id + " — " + d.dropFt.toFixed(2) + " ft drop inside structure (invert "
+        + d.fromInvert.toFixed(2) + " → " + d.toInvert.toFixed(2)
+        + "): incoming pipe treated as free outfall; HGL floored at the pipe crown."));
+    }
+    if (slopeMis.length > 0) {
+      summary.appendChild(el("div", null,
+        "Slope vs inverts: pipe " + slopeMis.map((m) =>
+          m.id + " (declared " + m.declared + ", inverts give " + m.computed + ")").join("; ")));
     }
 
     // --- controls ---
