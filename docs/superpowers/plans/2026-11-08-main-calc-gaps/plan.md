@@ -67,3 +67,24 @@ The full app (~6 741 lines) was audited section by section against `storm-drain-
 - One gap = one commit. Format: `fix(calculator): <slug>` or `test(calculator): <slug>`.
 - **Never add LLM attribution trailers** to commits.
 - Tasks 40-01, 40-02, 40-03 all modify `tests/run-tests.mjs` — serialize these; don't run in parallel.
+
+---
+
+## Follow-ups from final review (out of scope for this pass)
+
+The final code review (APPROVE WITH MINOR) accepted the work but flagged three
+spec-coverage shortfalls inherited from the task scope. Test suite passes 76/76. Track
+these for a future pass:
+
+1. **§C.4 — round-trip does not re-import.** `task-40-03`'s tests read the export back and
+   compare to live state, but never wipe state and re-import via `importExcel` (not exposed
+   on `window`; the app is IIFE-wrapped). A true import round-trip needs the hidden file
+   input's change path driven under jsdom.
+2. **§C.5 — OOXML level-attribute check missing.** `task-40-02` covers "no `t='str'` without
+   a formula" but not the spec's second required check ("no non-standard `level` attribute").
+   That requires unzipping the sheet XML.
+3. **§B.4 — independence.** The OOXML tests hardcode `bookSST:true` rather than exercising
+   the real `exportExcel` call, and read back with a SheetJS implementation (the spec asks
+   for independent verification). A dropped `bookSST` in `exportExcel` would not fail the
+   suite.
+
