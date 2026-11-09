@@ -629,8 +629,7 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
         <button class="btn" id="importBtn" title="Import a previously exported .xlsx file">&#8593;<span class="btn-label"> Import from Excel</span></button>
         <input type="file" id="importFile" accept=".xlsx">
         <button class="btn btn-primary" id="exportBtn" title="Export all tables to a .xlsx file">&#8595;<span class="btn-label"> Export to Excel</span></button>
-        <a href="visualizer.html" target="_blank" rel="noopener"
-           style="margin-left:12px; color:inherit; font-size:13px;">Open HGL Visualizer &rarr;</a>
+        <button class="btn" id="openVisualizerBtn" title="Send the current project to the HGL/EGL visualizer">Open in Visualizer</button>
       </div>
     </div>
 
@@ -6616,6 +6615,54 @@ function encodeVisualizerHandoff(payload){
   return encoded.length <= VISUALIZER_HASH_MAX ? encoded : null;
 }
 
+// Fallback when the payload is too large for a URL hash (or popups are
+// blocked / file:// offline): download the same JSON the visualizer's
+// Import button accepts, so the handoff never dead-ends.
+function downloadVisualizerPayload(payload){
+  const name = (state.project||"storm-drain-project").replace(/[^a-z0-9\-_ ]/gi,"").trim().replace(/\s+/g,"-") || "storm-drain-project";
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name + "-visualizer.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+}
+
+function openInVisualizer(){
+  if(!state.structures.length){
+    toast("Nothing to send yet — add structures first.", true);
+    return;
+  }
+  let payload;
+  try { payload = buildVisualizerPayload(); }
+  catch(err){ console.error(err); toast("Visualizer handoff failed: "+escapeHtml(err.message), true); return; }
+  const encoded = encodeVisualizerHandoff(payload);
+  if(!encoded){
+    downloadVisualizerPayload(payload);
+    toast("Project too large for a one-click link — downloaded the visualizer JSON instead. Import it in the visualizer.");
+    return;
+  }
+  const hashUrl = (base)=> base + "#data=" + encoded;
+  if(location.protocol === "file:"){
+    // Offline: cross-tab load-failure detection is unreliable and file://
+    // cannot be probed synchronously, so always offer the downloaded file
+    // alongside the open attempt (binding simplification in the spec).
+    downloadVisualizerPayload(payload);
+    const w1 = window.open(hashUrl("visualizer.html"), "_blank");
+    if(!w1) window.open(hashUrl("../visualizer/storm-drain-visualizer.html"), "_blank");
+    toast("If the visualizer didn't open, import the downloaded JSON in the visualizer.");
+  } else {
+    const w = window.open(hashUrl("visualizer.html"), "_blank");
+    if(!w){
+      downloadVisualizerPayload(payload);
+      toast("Popup blocked — downloaded the visualizer JSON. Import it in the visualizer.");
+    }
+  }
+}
+
 /* =======================================================================
    Excel Import
 ======================================================================= */
@@ -6940,6 +6987,7 @@ function init(){
   });
 
   document.getElementById("exportBtn").addEventListener("click", exportExcel);
+  document.getElementById("openVisualizerBtn").addEventListener("click", openInVisualizer);
   const fileInput = document.getElementById("importFile");
   document.getElementById("importBtn").addEventListener("click", ()=> fileInput.click());
 
@@ -6997,6 +7045,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   defaultRainfallSettings, getTabs, renderRainfall,
   hglMethodFromLabel, hglMethodLabel, captureState, restoreState,
   buildHglRowSheet, buildHglDetailSheet, buildFormulasReferenceSheet, buildVisualizerPayload, encodeVisualizerHandoff, VISUALIZER_HASH_MAX,
+  openInVisualizer,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES,
   kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 

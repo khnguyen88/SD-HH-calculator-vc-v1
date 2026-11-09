@@ -1447,3 +1447,8 @@ test("buildHglRowSheet: base (outfall) sheet notes EGL = HGL", () => {
   assert.ok(sheet.textContent.includes("no outgoing pipe — EGL = HGL"),
     "base-structure EGL note missing");
 });
+
+test("Open in Visualizer button exists in the built toolbar", () => {
+  assert.ok(window.document.getElementById("openVisualizerBtn"), "openVisualizerBtn missing");
+  assert.equal(window.document.getElementById("openVisualizerBtn").tagName, "BUTTON");
+});
