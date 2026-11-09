@@ -1188,13 +1188,16 @@ test("buildVisualizerPayload passes the visualizer's validateImportedJson", () =
   const payload = sdc.buildVisualizerPayload();
   assert.equal(typeof payload, "object", "payload must be an object");
   const viz = loadVisualizerWindow();
-  const result = viz.validateImportedJson(payload);
-  // deepEqual against [] would fail on cross-realm prototype identity
-  // (errors is an Array of the visualizer's jsdom realm), so check length.
-  assert.ok(Array.isArray(result.errors) && result.errors.length === 0,
-    "schema validation errors: " + result.errors.join("; "));
-  assert.equal(result.valid, true);
-  viz.close();
+  try {
+    const result = viz.validateImportedJson(payload);
+    // deepEqual against [] would fail on cross-realm prototype identity
+    // (errors is an Array of the visualizer's jsdom realm), so check length.
+    assert.ok(Array.isArray(result.errors) && result.errors.length === 0,
+      "schema validation errors: " + result.errors.join("; "));
+    assert.equal(result.valid, true);
+  } finally {
+    viz.close();
+  }
 });
 
 test("payload config maps HGL method to visualizer method names", () => {

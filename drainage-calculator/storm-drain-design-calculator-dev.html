@@ -6561,12 +6561,12 @@ function buildVisualizerPayload(){
       tr55Segments.push({
         drainageAreaId: r.structureId||r.id,
         order: i+1,
-        type: seg.type,
+        type: String(seg.type||"").toLowerCase(),
         n: (seg.type==="sheet"||seg.type==="channel") ? segNum(seg.n) : null,
         L: segNum(seg.L),
         s: segNum(seg.s),
         P2: seg.type==="sheet" ? segNum(seg.P2) : null,
-        surface: seg.type==="shallow" ? (seg.surface||"unpaved") : null,
+        surface: seg.type==="shallow" ? (seg.surface||"unpaved") : "",
         area: seg.type==="channel" ? segNum(seg.area) : null,
         wp: seg.type==="channel" ? segNum(seg.wp) : null
       });
