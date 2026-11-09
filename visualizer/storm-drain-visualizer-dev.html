@@ -633,6 +633,10 @@
       if (p.designQ != null && (typeof p.designQ !== "number" || !isFinite(p.designQ))) {
         push("pipes[" + i + "].designQ must be a finite number");
       }
+      ["usInvert", "dsInvert"].forEach((f) => {
+        if (p[f] != null && (typeof p[f] !== "number" || !isFinite(p[f])))
+          push("pipes[" + i + "]." + f + " must be a finite number");
+      });
       if (p.splitRole != null && typeof p.splitRole !== "string") push("pipes[" + i + "].splitRole must be a string");
     });
 
@@ -894,6 +898,8 @@
         length:     num(r["Length (ft)"] ?? r.length, 0),
         angle:      num(r["Angle (deg)"] ?? r.angle, 0),
         designQ:    pickNum(r["Design Q (cfs)"], r.designQ),
+        usInvert:   pickNum(r["US Invert (ft)"], r.usInvert),
+        dsInvert:   pickNum(r["DS Invert (ft)"], r.dsInvert),
         splitRole:  String(pick(r["Split Role"], r.splitRole) || "").toLowerCase(),
         Hf:         num(r["Hf (ft)"], 0)
       };
