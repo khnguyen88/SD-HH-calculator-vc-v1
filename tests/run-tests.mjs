@@ -1242,11 +1242,17 @@ function curatedImported(imported){
 // needing a jsdom File.
 async function importExportedWorkbook(viz){
   const ab = window.XLSX.write(sdc.buildWorkbook(), { bookType:"xlsx", type:"array", bookSST:true });
-  const fakeFile = { name:"drift.xlsx", arrayBuffer: async ()=> Buffer.from(new Uint8Array(ab)) };
+  // XLSX.write may hand back an ArrayBuffer or a Buffer/Uint8Array depending
+  // on realm; normalize to a true ArrayBuffer so the importer's read path
+  // sees what a real File would provide.
+  const fakeFile = { name:"drift.xlsx", arrayBuffer: async () => new Uint8Array(ab).slice().buffer };
   await viz.importFromXlsxFile(fakeFile);
 }
 
 test("visualizer payload matches xlsx import (drift guard, HEC-22)", async () => {
+  // Pin the method explicitly rather than relying on ambient seed state.
+  const prev = sdc.state.hydraulics.hglMethod;
+  sdc.state.hydraulics.hglMethod = "hec22";
   const viz = loadVisualizerWindow();
   try {
     const payload = sdc.buildVisualizerPayload();
@@ -1257,6 +1263,7 @@ test("visualizer payload matches xlsx import (drift guard, HEC-22)", async () =>
     assert.deepEqual(viaJson, viaXlsx, "JSON payload drifted from the xlsx serialization");
     assert.equal(viaXlsx.config.hglMethod, "hec22");
   } finally {
+    sdc.state.hydraulics.hglMethod = prev;
     viz.close();
   }
 });
