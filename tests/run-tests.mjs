@@ -1077,7 +1077,8 @@ test("Excel export: conservative HGL formula implements the conditional crown pi
   assert.ok(f.includes("G"+row),
     "pin branch must reference this row's crown column G: " + f);
   // HEC-22 chain mechanics must be preserved verbatim inside the wrapper.
-  assert.ok(f.includes("INDEX(Q:Q,MATCH(R"+row+",A:A,0))"),
+  // (S is the Downstream Structure ID column since Upstream EGL took R.)
+  assert.ok(f.includes("INDEX(Q:Q,MATCH(S"+row+",A:A,0))"),
     "downstream HGL INDEX chain must be preserved: " + f);
   assert.ok(f.includes("M"+row) && f.includes("O"+row),
     "Hf (M) and Hb (O) cell references must be preserved: " + f);
@@ -1115,6 +1116,55 @@ test("Excel export: cached HGL value is the pinned 101.00 (conservative) and 100
   v = wb.Sheets["Junction Structure"]["Q"+row].v;
   restore();
   isClose(v, 100.00, 0.001, "HEC-22 cached HGL must stay at the computed chain value 100.00");
+});
+
+// ==================== EGL Excel export ====================
+test("round-trip: exported Upstream EGL matches live computed EGL for every structure", () => {
+  const wb  = sdc.buildWorkbook();
+  const wbCheck = window.XLSX.read(
+    window.XLSX.write(wb, { bookType: "xlsx", type: "array", bookSST: true }),
+    { type: "array", cellFormula: false }
+  );
+  const stWs   = wbCheck.Sheets["Junction Structure"];
+  const stRows = window.XLSX.utils.sheet_to_json(stWs, { header:1, raw:true, defval:"" });
+  const headers = stRows[0];
+  const eglCol  = headers.indexOf("Upstream EGL (ft)");
+  assert.ok(eglCol >= 0, "Upstream EGL (ft) column not found in Junction Structure header");
+  let checked = 0;
+  for (let i = 1; i < stRows.length; i++) {
+    const row   = stRows[i];
+    const label = String(row[0]);
+    const st    = sdc.state.structures.find(s => (s.structureId||s.id) === label);
+    if (!st) continue;
+    const calc  = sdc.computeStructureCalc(st.id);
+    if (!calc || !isFinite(calc.egl)) continue;
+    const exported = parseFloat(row[eglCol]);
+    if (!isFinite(exported)) continue;
+    isClose(exported, calc.egl, 0.001,
+      `EGL mismatch for ${label}: exported=${exported} live=${calc.egl}`);
+    checked++;
+  }
+  assert.ok(checked > 0, "expected at least one structure EGL value to be verified");
+});
+
+test("Excel export: Upstream EGL is a live formula Q+P^2/(2*32.2) on base and chained rows", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const wb = sdc.buildWorkbook();
+  restore();
+  for (const label of ["PIN-OUT", "PIN-ST"]) {
+    const row  = jsStructRowFor(wb, label);
+    const cell = wb.Sheets["Junction Structure"]["R"+row];
+    assert.ok(cell, "Upstream EGL (ft) cell missing for " + label);
+    const f = String(cell.f);
+    assert.ok(f.includes("Q"+row) && f.includes("P"+row+"^2/(2*32.2)"),
+      label + " EGL formula must be =Q+P^2/(2*32.2): " + f);
+  }
+  // Column order in the header must mirror the UI tables: EGL right after HGL.
+  const headers = window.XLSX.utils.sheet_to_json(
+    wb.Sheets["Junction Structure"], { header:1, defval:"" })[0];
+  assert.ok(headers.indexOf("Upstream EGL (ft)") === headers.indexOf("Upstream HGL (ft)") + 1,
+    "Upstream EGL must sit immediately after Upstream HGL");
 });
 
 // Fixture whose Formulas & Examples worked example (section 4 picks the first

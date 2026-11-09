@@ -6176,7 +6176,7 @@ function buildWorkbook(){
 
   // ---- Junction Structure ----
   const stHeader = ["Structure ID","Description","Drainage Area ID","Type","Force Fixed","Fixed-Start Elev (ft)","Pipe Crown (ft)","Rim-Grate Elev (ft)",
-    "Captured Q (cfs)","Q from Pipes (cfs)","Total Flow (cfs)","Outgoing Pipe ID","Hf (ft)","Kb","Hb (ft)","Vout (fps)","Upstream HGL (ft)","Downstream Structure ID","Crown Check","Rim Check",
+    "Captured Q (cfs)","Q from Pipes (cfs)","Total Flow (cfs)","Outgoing Pipe ID","Hf (ft)","Kb","Hb (ft)","Vout (fps)","Upstream HGL (ft)","Upstream EGL (ft)","Downstream Structure ID","Crown Check","Rim Check",
     "Split Method","Split Capacity (cfs)","Split Ratio (0-1)",
     "Structure Mode","Agency","Catalog ID","Category","Shape","Inner Dia (ft)","Inner W (ft)","Inner L (ft)"];
   const stAoa = [stHeader];
@@ -6185,7 +6185,7 @@ function buildWorkbook(){
     const calcForCrown = computeStructureCalc(s.id);
     stAoa.push([s.structureId||s.id, s.desc||"", daLabel, s.type, s.forceElev?"TRUE":"FALSE", (s.startElev===""||s.startElev==null)?"":num(s.startElev),
       (calcForCrown&&calcForCrown.crown!==null)?num(calcForCrown.crown):"", (s.rim===""||s.rim==null)?"":num(s.rim),
-      null,null,null,null,null,null,null,null,null,null,null,null,
+      null,null,null,null,null,null,null,null,null,null,null,null,null,
       s.type==="splitter"?(s.splitMethod||"capacity"):"", s.type==="splitter"?num(s.splitCapacity):"", s.type==="splitter"?num(s.splitRatio,0.5):"",
       s.structureMode||"", s.agency||"", s.standardStructureId||"", s.structureCategory||"", s.shape||"",
       (s.innerDiameter===""||s.innerDiameter==null)?"":num(s.innerDiameter),
@@ -6198,9 +6198,9 @@ function buildWorkbook(){
   // Drainage Area: A id B desc C area D C E CA F iOverride G tc H cf I tcMethod J+ Q per storm (static values)
   // Pipe Sizing:   A id B from C to D angle E shape F size G n H usInv I dsInv J slope K len L designQ M area N qfull O vel P status Q splitRole R from|role key
   // Structure:     A id B desc C daId D type E force F startElev G pipeCrown(computed) H rim
-  //                I capturedQ J qFromPipes K totalFlow L outPipeId M Hf N Kb O Hb P Vout Q upstreamHGL R downstreamId S crownChk T rimChk
-  //                U splitMethod V splitCapacity W splitRatio
-  //                X structureMode Y agency Z catalogId AA category AB shape AC innerDia AD innerW AE innerL
+  //                I capturedQ J qFromPipes K totalFlow L outPipeId M Hf N Kb O Hb P Vout Q upstreamHGL R upstreamEGL S downstreamId T crownChk U rimChk
+  //                V splitMethod W splitCapacity X splitRatio
+  //                Y structureMode Z agency AA catalogId AB category AC shape AD innerDia AE innerW AF innerL
 
   // Helper-key lookups (built once per pipe row, reused by both sheets):
   // P{row} = From label & "|" & role (blank role defaults to "primary" so ordinary
@@ -6214,9 +6214,9 @@ function buildWorkbook(){
 
   function xlFromType(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!D:D,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),\"\")"; }
   function xlFromTotal(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!K:K,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),0)"; }
-  function xlFromMethod(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!U:U,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),\"capacity\")"; }
-  function xlFromCap(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!V:V,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),0)"; }
-  function xlFromRatio(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!W:W,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),0.5)"; }
+  function xlFromMethod(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!V:V,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),\"capacity\")"; }
+  function xlFromCap(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!W:W,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),0)"; }
+  function xlFromRatio(fromLabelExpr){ return "IFERROR(INDEX('Junction Structure'!X:X,MATCH("+fromLabelExpr+",'Junction Structure'!A:A,0)),0.5)"; }
 
   state.structures.forEach((s,i)=>{
     const row = i+2;
@@ -6236,7 +6236,8 @@ function buildWorkbook(){
       setFormula(wsSt, "P"+row, "=0", 0);
       wsSt["N"+row] = { t:"n", v: 0 };
       setFormula(wsSt, "Q"+row, "=F"+row, round(calc.elevation,3));
-      setFormula(wsSt, "R"+row, "=\"\"", "");
+      setFormula(wsSt, "R"+row, "=Q"+row+"+P"+row+"^2/(2*32.2)", round(calc.egl,3));
+      setFormula(wsSt, "S"+row, "=\"\"", "");
     } else {
       // Area & equivalent diameter of the outgoing (Primary) pipe, via INDEX/MATCH
       const areaLookup = "IFERROR(INDEX('Pipe Sizing'!M:M,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),0)";
@@ -6251,7 +6252,7 @@ function buildWorkbook(){
       wsSt["N"+row] = { t:"n", v: round(calc.kb==null?0:calc.kb,3) }; // Kb - editable override
       setFormula(wsSt, "P"+row, "=IF("+areaLookup+"=0,0,K"+row+"/("+areaLookup+"))", round(calc.Vout,3));
       setFormula(wsSt, "O"+row, "=N"+row+"*P"+row+"^2/(2*32.2)", round(calc.Hb,4));
-      setFormula(wsSt, "R"+row, "=IFERROR(INDEX('Pipe Sizing'!C:C,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),\"\")", (findStructure(calc.outPipe.toStructureId)||{}).structureId || "");
+      setFormula(wsSt, "S"+row, "=IFERROR(INDEX('Pipe Sizing'!C:C,MATCH(L"+row+",'Pipe Sizing'!A:A,0)),\"\")", (findStructure(calc.outPipe.toStructureId)||{}).structureId || "");
       // Upstream HGL. Under the Conservative method the cached value is the
       // crown-pinned elevation; the live formula must implement the same pin
       // (conditional on the Rainfall Settings "HGL Method" row) or Excel's
@@ -6261,17 +6262,20 @@ function buildWorkbook(){
       // ignores G when no crown was computed (G holds ""), matching the app's
       // crown !== null fallback. Under HEC-22 the plain chain formula is
       // exported unchanged.
-      const hglChain = "IFERROR(INDEX(Q:Q,MATCH(R"+row+",A:A,0)),F"+row+")+M"+row+"+O"+row;
+      const hglChain = "IFERROR(INDEX(Q:Q,MATCH(S"+row+",A:A,0)),F"+row+")+M"+row+"+O"+row;
       const hglMethodLookup = "INDEX('Rainfall Settings'!$B:$B,MATCH(\"HGL Method\",'Rainfall Settings'!$A:$A,0))";
       const hglFormula = (state.hydraulics && state.hydraulics.hglMethod) === "conservative"
-        ? "IF(OR(E"+row+"=\"TRUE\",R"+row+"=\"\"),F"+row+",IF("+hglMethodLookup+"=\"Conservative\",MAX("+hglChain+",G"+row+"),"+hglChain+"))"
-        : "IF(OR(E"+row+"=\"TRUE\",R"+row+"=\"\"),F"+row+","+hglChain+")";
+        ? "IF(OR(E"+row+"=\"TRUE\",S"+row+"=\"\"),F"+row+",IF("+hglMethodLookup+"=\"Conservative\",MAX("+hglChain+",G"+row+"),"+hglChain+"))"
+        : "IF(OR(E"+row+"=\"TRUE\",S"+row+"=\"\"),F"+row+","+hglChain+")";
       setFormula(wsSt, "Q"+row, "="+hglFormula, round(calc.elevation,3));
+      // Upstream EGL = upstream HGL + velocity head (vh = Vout²/2g). Base rows
+      // carry P=0 so this single formula covers them too (EGL = HGL = startElev).
+      setFormula(wsSt, "R"+row, "=Q"+row+"+P"+row+"^2/(2*32.2)", round(calc.egl,3));
     }
-    setFormula(wsSt, "S"+row, "=IF(G"+row+"=\"\",\"\",IF(Q"+row+"<=G"+row+"+1,\"OK\",\"EXCEEDS\"))", calc.crownPass===null?"":(calc.crownPass?"OK":"EXCEEDS"));
-    setFormula(wsSt, "T"+row, "=IF(H"+row+"=\"\",\"\",IF(Q"+row+"<=H"+row+"-1,\"OK\",\"EXCEEDS\"))", calc.rimPass===null?"":(calc.rimPass?"OK":"EXCEEDS"));
+    setFormula(wsSt, "T"+row, "=IF(G"+row+"=\"\",\"\",IF(Q"+row+"<=G"+row+"+1,\"OK\",\"EXCEEDS\"))", calc.crownPass===null?"":(calc.crownPass?"OK":"EXCEEDS"));
+    setFormula(wsSt, "U"+row, "=IF(H"+row+"=\"\",\"\",IF(Q"+row+"<=H"+row+"-1,\"OK\",\"EXCEEDS\"))", calc.rimPass===null?"":(calc.rimPass?"OK":"EXCEEDS"));
   });
-  wsSt["!cols"] = Array(31).fill({wch:13});
+  wsSt["!cols"] = Array(32).fill({wch:13});
   XLSX.utils.book_append_sheet(wb, wsSt, "Junction Structure");
 
   // Fill Pipe Sizing live formulas now that Structure sheet exists
