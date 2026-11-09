@@ -790,3 +790,51 @@ test("round-trip: exported HGL elevation matches live computed value", () => {
   }
   assert.ok(checked > 0, "expected at least one structure HGL value to be verified");
 });
+
+// ==================== HGL method toggle — conservative crown pin ====================
+function pinFixture(outfallElev){
+  const s0 = sdc.state;
+  const saved = { structures: s0.structures, pipes: s0.pipes, hydraulics: s0.hydraulics };
+  s0.structures = [
+    { id:"pin-out", structureId:"PIN-OUT", type:"outfall", forceElev:true,
+      startElev: outfallElev, drainageAreaId:"", rim:"" },
+    { id:"pin-st",  structureId:"PIN-ST",  type:"manhole", forceElev:false,
+      startElev:"", drainageAreaId:"", rim:"" },
+  ];
+  s0.pipes = [
+    { id:"pin-pipe", fromStructureId:"pin-st", toStructureId:"pin-out",
+      angle:0, shape:"circular", size:24, n:0.013, slope:0.01, length:100,
+      upstreamInvert:99, downstreamInvert:98, splitRole:"" },
+  ];
+  return function restore(){ s0.structures = saved.structures; s0.pipes = saved.pipes; s0.hydraulics = saved.hydraulics; };
+}
+
+test("HGL method: conservative pins HGL below crown to crown", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  const calc = sdc.computeStructureCalc("pin-st");
+  restore();
+  assert.ok(calc != null, "calc is null");
+  isClose(calc.hec22Elevation, 100.00, 0.001, "HEC-22 value should stay 100.00");
+  isClose(calc.crown, 101.00, 0.001, "crown should be 99 + 24/12 = 101.00");
+  isClose(calc.elevation, 101.00, 0.001, "HGL must be pinned to crown");
+  assert.equal(calc.pinned, true, "pinned flag must be true");
+});
+
+test("HGL method: HEC-22 leaves below-crown HGL unchanged", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const calc = sdc.computeStructureCalc("pin-st");
+  restore();
+  isClose(calc.elevation, 100.00, 0.001, "HEC-22 HGL must stay at 100.00");
+  assert.equal(calc.pinned, false, "pinned flag must be false under HEC-22");
+});
+
+test("HGL method: conservative leaves above-crown HGL unchanged", () => {
+  const restore = pinFixture(102);
+  sdc.state.hydraulics = { hglMethod: "conservative" };
+  const calc = sdc.computeStructureCalc("pin-st");
+  restore();
+  isClose(calc.elevation, 102.00, 0.001, "HGL above crown must not be lowered");
+  assert.equal(calc.pinned, false, "pinned flag must be false when computed >= crown");
+});

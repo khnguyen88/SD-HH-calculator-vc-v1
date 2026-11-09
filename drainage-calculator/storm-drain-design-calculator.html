@@ -1532,6 +1532,7 @@ const state = {
   inletSpacing: [],
   inletSpacingSettings: defaultInletSpacingSettings(),
   rainfall: defaultRainfallSettings(),
+  hydraulics: { hglMethod: "hec22" },
 };
 
 function defaultOutletFields(){
@@ -1986,7 +1987,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
       outPipe, downstream:null, Sf:0, Hf:0, kbColumn:null, kb:0, Hb:0, Vout:0,
       inflowCount:0, controlling:null, elevation: parseFloat(st.startElev)||0,
       isBase:true, warnings, isSplitter, splitInfo,
-      crown: null, crownAssumed: false,
+      crown: null, crownAssumed: false, pinned: false,
       crownPass: null,
       rimPass: st.rim!==""&&st.rim!=null ? (parseFloat(st.startElev)||0) <= parseFloat(st.rim)-1.0 : null,
     };
@@ -1996,7 +1997,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
     warnings.push("Circular structure reference detected \u2014 elevation cannot be resolved.");
     return { structure:st, totalFlow, captured:totalFlowInfo.captured, inflow:totalFlowInfo.inflow, outPipe, downstream:null,
       Sf:0, Hf:0, kbColumn:null, kb:0, Hb:0, Vout:0, inflowCount:0, controlling:null, elevation:NaN, isBase:false, warnings, isSplitter, splitInfo,
-      crown:null, crownAssumed:false, crownPass:null, rimPass:null };
+      crown:null, crownAssumed:false, pinned:false, crownPass:null, rimPass:null };
   }
   seen.add(structureId);
 
@@ -2045,17 +2046,27 @@ function computeStructureCalc(structureId, seen, stormOverride){
   }
   Hb = (kb==null) ? 0 : kb*Vout*Vout/(2*G);
 
-  const elevation = downstreamElev + Hf + Hb;
+  const hec22Elevation = downstreamElev + Hf + Hb;
   const invSt = pipeInvertState(outPipe);
   const crownAssumed = invSt.assumed;
   const crown = (geo && invSt.usInvert !== null) ? invSt.usInvert + geo.equivDiamIn/12 : null;
   const rim = (st.rim!==""&&st.rim!=null) ? parseFloat(st.rim) : null;
 
+  // Conservative HGL method: pin the upstream HGL to the outgoing pipe's
+  // upstream crown so the profile never falls below the pipe soffit.
+  // Base/forceElev structures never reach this code (early return above).
+  let elevation = hec22Elevation;
+  let pinned = false;
+  if ((state.hydraulics && state.hydraulics.hglMethod) === "conservative" && crown !== null && hec22Elevation < crown) {
+    elevation = crown;
+    pinned = true;
+  }
+
   return {
     structure: st, totalFlow, captured: totalFlowInfo.captured, inflow: totalFlowInfo.inflow,
     outPipe, outPipeFlow, downstream, downstreamElev, Sf, Hf, kbColumn, kb, Hb, Vout,
     inflowCount: inflowPipes.length, inflowPipes, controlling, useCatalogKah,
-    elevation, isBase:false, warnings, isSplitter, splitInfo,
+    elevation, hec22Elevation, pinned, isBase:false, warnings, isSplitter, splitInfo,
     crown, crownAssumed,
     crownPass: crown!==null ? elevation<=crown+1.0 : null,
     rimPass: rim!==null ? elevation<=rim-1.0 : null,
