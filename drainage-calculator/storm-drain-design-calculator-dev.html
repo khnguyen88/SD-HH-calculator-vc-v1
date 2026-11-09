@@ -6462,6 +6462,131 @@ function exportExcel(){
 }
 
 /* =======================================================================
+   Visualizer handoff (one-click "Open in Visualizer")
+   ======================================================================= */
+// Second serialization of the same computeStructureCalc / calcPipeRow results
+// the Excel export carries — never a new computation. Field-for-field it
+// mirrors what the visualizer's xlsx importer reads from the exported
+// workbook; the payload-vs-xlsx drift test pins the two together.
+const VISUALIZER_HASH_MAX = 60000; // URL-hash safety guard (~60k chars)
+
+const VISUALIZER_STORM_LABELS = { "1yr":"1-yr","2yr":"2-yr","5yr":"5-yr","10yr":"10-yr",
+  "25yr":"25-yr","50yr":"50-yr","100yr":"100-yr","500yr":"500-yr" };
+
+function buildVisualizerPayload(){
+  const structures = state.structures.map(s=>{
+    const calc = computeStructureCalc(s.id);
+    return {
+      id: s.structureId || s.id,
+      // Mirrors the xlsx importer's label fallback: empty Description falls
+      // back to the Structure ID column.
+      label: s.desc || s.structureId || s.id || "",
+      type: String(s.type || "manhole").toLowerCase(),
+      rim: (s.rim===""||s.rim==null) ? null : num(s.rim),
+      startElev: (s.startElev===""||s.startElev==null) ? null : num(s.startElev),
+      crown: (calc && calc.crown!=null) ? num(calc.crown) : null,
+      forceElev: !!s.forceElev,
+      capturedQ: round(calc ? calc.captured : 0, 4),
+      totalQ: round(calc ? calc.totalFlow : 0, 4),
+      Hb: (calc && calc.isBase) ? 0 : round(calc ? calc.Hb : 0, 4),
+      elevation: round(calc ? calc.elevation : 0, 3),
+      outPipeId: (calc && calc.outPipe) ? calc.outPipe.id : ""
+    };
+  });
+
+  const pipes = state.pipes.map(p=>{
+    const calc = calcPipeRow(p);
+    const fromLabel = (findStructure(p.fromStructureId)||{}).structureId || p.fromStructureId || "";
+    const toLabel = (findStructure(p.toStructureId)||{}).structureId || p.toStructureId || "";
+    return {
+      id: p.id,
+      fromId: fromLabel,
+      toId: toLabel,
+      shape: p.shape,
+      size: p.size||"",
+      n: num(pipeEffectiveN(p), 3),
+      slope: num(p.slope, 4),
+      length: num(p.length),
+      angle: num(p.angle, 0),
+      designQ: round(calc.designQ, 4),
+      usInvert: (p.upstreamInvert===""||p.upstreamInvert==null) ? null : parseFloat(p.upstreamInvert),
+      dsInvert: (p.downstreamInvert===""||p.downstreamInvert==null) ? null : parseFloat(p.downstreamInvert),
+      splitRole: String(p.splitRole||"").toLowerCase(),
+      // The exported Pipe Sizing sheet has no Hf column, so the xlsx import
+      // always yields 0 here; the visualizer recomputes friction itself.
+      Hf: 0
+    };
+  });
+
+  // Outfall + tailwater: mirrors the visualizer's xlsx fallback order exactly
+  // (first outfall-type structure's startElev/rim, else lowest startElev,
+  // with Outlet Structures fixed-TW override).
+  let outfallSid = null, outfallTw = null;
+  const outfallStructs = structures.filter(s=>s.type==="outfall");
+  if (outfallStructs.length > 0) {
+    outfallSid = outfallStructs[0].id;
+    outfallTw = outfallStructs[0].startElev != null ? outfallStructs[0].startElev : outfallStructs[0].rim;
+  } else if (structures.length > 0) {
+    const lowest = structures.slice().sort((a,b)=>((a.startElev||1e9)-(b.startElev||1e9)))[0];
+    outfallSid = lowest.id;
+    outfallTw = lowest.startElev;
+  }
+  for (const os of state.outletStructures) {
+    const linkedLabel = os.twStructureId ? ((findStructure(os.twStructureId)||{}).structureId||"") : "";
+    if (linkedLabel === outfallSid) {
+      const tw = (os.twFixed===""||os.twFixed==null) ? null : num(os.twFixed);
+      if (tw != null) outfallTw = tw;
+    }
+  }
+  const outfall = { structureId: outfallSid || "", tailwaterElev: outfallTw != null ? outfallTw : 100 };
+
+  const drainageAreas = state.drainage.map(r=>{
+    const linked = state.structures.find(s=>s.drainageAreaId===r.id);
+    return {
+      id: r.structureId||r.id,
+      structureId: linked ? (linked.structureId||"") : "",
+      areaAc: num(r.area),
+      C: num(r.C),
+      tc: num(r.tc)
+    };
+  });
+
+  // TR-55: mirrors the exported sheet's per-type blanks (the xlsx importer's
+  // pickNum turns those cells into null).
+  const tr55Segments = [];
+  state.drainage.forEach(r=>{
+    const segs = (r.tr55 && r.tr55.segments) || [];
+    segs.forEach((seg,i)=>{
+      const segNum = (v)=> (v===""||v==null) ? null : num(v);
+      tr55Segments.push({
+        drainageAreaId: r.structureId||r.id,
+        order: i+1,
+        type: seg.type,
+        n: (seg.type==="sheet"||seg.type==="channel") ? segNum(seg.n) : null,
+        L: segNum(seg.L),
+        s: segNum(seg.s),
+        P2: seg.type==="sheet" ? segNum(seg.P2) : null,
+        surface: seg.type==="shallow" ? (seg.surface||"unpaved") : null,
+        area: seg.type==="channel" ? segNum(seg.area) : null,
+        wp: seg.type==="channel" ? segNum(seg.wp) : null
+      });
+    });
+  });
+
+  return {
+    schemaVersion: 1,
+    sourceApp: "storm-drain-design-calculator",
+    structures, pipes, outfall,
+    drainageAreas, tr55Segments,
+    config: {
+      stormLabel: VISUALIZER_STORM_LABELS[state.rainfall.pipeStorm||"10yr"] || (state.rainfall.pipeStorm||""),
+      units: "us-customary",
+      hglMethod: (state.hydraulics && state.hydraulics.hglMethod) === "conservative" ? "legacy-both-crown" : "hec22"
+    }
+  };
+}
+
+/* =======================================================================
    Excel Import
 ======================================================================= */
 // ====== SECTION: Excel Import ======
@@ -6841,7 +6966,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs, renderRainfall,
   hglMethodFromLabel, hglMethodLabel, captureState, restoreState,
-  buildHglRowSheet, buildHglDetailSheet, buildFormulasReferenceSheet,
+  buildHglRowSheet, buildHglDetailSheet, buildFormulasReferenceSheet, buildVisualizerPayload, VISUALIZER_HASH_MAX,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES,
   kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 

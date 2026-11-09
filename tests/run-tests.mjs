@@ -1168,3 +1168,44 @@ test("buildFormulasReferenceSheet: no pin note under HEC-22", () => {
   assert.ok(!sheet.textContent.includes("pinned to pipe crown"),
     "no pin note under HEC-22");
 });
+
+// ==================== Visualizer handoff (transfer spec Feature B) ====================
+
+// Boots the visualizer DEV file headless with the Node xlsx module injected,
+// so its real validateImportedJson/applyImportedJson/importFromXlsxFile run.
+function loadVisualizerWindow(){
+  const vizHtml = readFileSync(new URL("../visualizer/storm-drain-visualizer-dev.html", import.meta.url), "utf8");
+  const vizDom = new JSDOM(vizHtml, {
+    runScripts: "dangerously",
+    resources: "usable",
+    pretendToBeVisual: true,
+    beforeParse(w){ w.XLSX = XLSX_NODE; }
+  });
+  return vizDom.window;
+}
+
+test("buildVisualizerPayload passes the visualizer's validateImportedJson", () => {
+  const payload = sdc.buildVisualizerPayload();
+  assert.equal(typeof payload, "object", "payload must be an object");
+  const viz = loadVisualizerWindow();
+  const result = viz.validateImportedJson(payload);
+  // deepEqual against [] would fail on cross-realm prototype identity
+  // (errors is an Array of the visualizer's jsdom realm), so check length.
+  assert.ok(Array.isArray(result.errors) && result.errors.length === 0,
+    "schema validation errors: " + result.errors.join("; "));
+  assert.equal(result.valid, true);
+  viz.close();
+});
+
+test("payload config maps HGL method to visualizer method names", () => {
+  const prev = sdc.state.hydraulics.hglMethod;
+  try {
+    sdc.state.hydraulics.hglMethod = "hec22";
+    assert.equal(sdc.buildVisualizerPayload().config.hglMethod, "hec22");
+    sdc.state.hydraulics.hglMethod = "conservative";
+    assert.equal(sdc.buildVisualizerPayload().config.hglMethod, "legacy-both-crown",
+      "calculator Conservative must map to legacy-both-crown, never the literal 'conservative'");
+  } finally {
+    sdc.state.hydraulics.hglMethod = prev;
+  }
+});
