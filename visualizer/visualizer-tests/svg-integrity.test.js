@@ -59,6 +59,51 @@ test("SVG cross-view: pipe selected in iso stays highlighted after V-toggle to p
   assert.ok(band, "cursor band for P1 should appear in profile view after toggle");
 });
 
+// Drop network with end inverts (same motivating case as inverts-walk.test.js):
+//   OUT (station 0) <- PA (L 100) <- MH (station 100) <- PB (L 200) <- UP (station 300).
+// With inverts, PB owns TWO station points (ds @100, us @300); the cursor band
+// must span its full extent instead of collapsing to zero width at the ds end.
+const INVERT_SEED = {
+  schemaVersion: 1, sourceApp: "test",
+  structures: [
+    { id: "OUT", type: "outfall", rim: 89, startElev: 89 },
+    { id: "MH",  type: "manhole", rim: 95, crown: 92 },
+    { id: "UP",  type: "manhole", rim: 105 }
+  ],
+  pipes: [
+    { id: "PA", fromId: "MH", toId: "OUT", shape: "circular", size: 24,
+      n: 0.013, slope: 0.01, length: 100, angle: 0, designQ: 9, usInvert: 90, dsInvert: 89 },
+    { id: "PB", fromId: "UP", toId: "MH", shape: "circular", size: 18,
+      n: 0.013, slope: 0.01, length: 200, angle: 0, designQ: 3.4, usInvert: 101, dsInvert: 100 }
+  ],
+  outfall: { structureId: "OUT", tailwaterElev: 89 }
+};
+
+test("SVG profile: cursor band for an invert-bearing pipe spans its full extent", async () => {
+  const { window, document } = loadVisualizer();
+  await boot(window, INVERT_SEED);
+
+  window.state.cursor = { kind: "pipe", id: "PB", pathStack: ["OUT", "PA", "MH", "PB", "UP"] };
+  window.state.ui.view = "profile";
+  window.renderAll();
+
+  const band = document.querySelector('#viewSvg rect[data-kind="pipe"][data-id="PB"]');
+  assert.ok(band, "cursor band for PB must appear (old single-index logic collapsed it to width 0)");
+  const bx = parseFloat(band.getAttribute("x"));
+  const bw = parseFloat(band.getAttribute("width"));
+  assert.ok(bw >= 0.5, "band width must pass the visibility gate");
+
+  // Left edge at PB's ds end (station 100, same x as the MH bar); right edge at
+  // its us end (station 300, same x as the UP bar) — self-consistent vs layout.
+  const mhBar = document.querySelector('#viewSvg line[data-kind="structure"][data-id="MH"]');
+  const upBar = document.querySelector('#viewSvg line[data-kind="structure"][data-id="UP"]');
+  assert.ok(mhBar && upBar, "MH and UP structure bars must render");
+  assert.strictEqual(bx, parseFloat(mhBar.getAttribute("x1")),
+    "band left edge at MH station (PB ds end)");
+  assert.strictEqual(bx + bw, parseFloat(upBar.getAttribute("x1")),
+    "band right edge at UP station (PB us end)");
+});
+
 test("SVG depth-sort: structures render in ascending (x+y) order in DOM", async () => {
   const { window, document } = loadVisualizer();
   await boot(window, SEED);

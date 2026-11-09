@@ -183,6 +183,24 @@ test("profile with inverts: structure stations use derived flowline (MH 90 from 
   viz.dom.window.close();
 });
 
+test("profile with inverts: invert/size reads are override-aware (raw imported stays untouched)", () => {
+  const viz = loadDropNetwork(true);
+  // Same shape applyImportedJson builds when restoring user edits (see roundtrip.test.js).
+  viz.window.state.overrides.byId.PB = { dsInvert: 99, size: 30 };
+  const rows = profileRows(viz);
+  const pb = stPoint(rows, "PB");
+  const pbDs = pb.find((p) => p.kind === "pipe" && p.invert === 99);
+  assert.ok(pbDs, "PB ds point must use overridden dsInvert 99, not the raw imported 100");
+  assert.strictEqual(pbDs.crown, 101.5, "PB ds crown = overridden 99 + overridden size 30 barrel 2.5");
+  assert.ok(!pb.some((p) => p.kind === "pipe" && p.invert === 100),
+    "stale raw dsInvert 100 must not leak into the profile");
+  assert.strictEqual(viz.window.state.imported.pipes.find((p) => p.id === "PB").dsInvert, 100,
+    "imported baseline stays at the original 100");
+  assert.strictEqual(viz.window.state.imported.pipes.find((p) => p.id === "PB").size, 18,
+    "imported baseline size stays 18");
+  viz.dom.window.close();
+});
+
 test("profile without inverts: fallback values match today's single-point-per-pipe behavior", () => {
   const viz = loadDropNetwork(false);
   const rows = profileRows(viz);

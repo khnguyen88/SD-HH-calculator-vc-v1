@@ -1327,9 +1327,14 @@
           : (pipe ? pipe.length : 0);
         const length = Number(rawLength);
         const fromStr = pipe ? imported.structures.find((s) => s.id === pipe.fromId) : null;
-        const dsInv = (pipe && typeof pipe.dsInvert === "number" && isFinite(pipe.dsInvert)) ? pipe.dsInvert : null;
-        const usInv = (pipe && typeof pipe.usInvert === "number" && isFinite(pipe.usInvert)) ? pipe.usInvert : null;
-        const barrel = pipe ? pipeBarrelHeightFt(pipe.shape, pipe.size) : null;
+        // Override-aware reads (same contract as pipeCrownAt/flowlineOf): raw reads
+        // would see stale baselines when applyImportedJson parks edits in overrides.
+        const dsRaw = resolveField(row.id, "dsInvert", imported, overrides);
+        const usRaw = resolveField(row.id, "usInvert", imported, overrides);
+        const dsInv = (typeof dsRaw === "number" && isFinite(dsRaw)) ? dsRaw : null;
+        const usInv = (typeof usRaw === "number" && isFinite(usRaw)) ? usRaw : null;
+        const barrel = pipe ? pipeBarrelHeightFt(resolveField(row.id, "shape", imported, overrides),
+          resolveField(row.id, "size", imported, overrides)) : null;
         // The walk runs downstream -> upstream: the station before marching is
         // this pipe's To-structure station; after marching it's the From-structure.
         if (dsInv != null && barrel != null) {
@@ -1435,11 +1440,21 @@
       }, p.id));
     }
 
-    // Cursor band for pipe selection
+    // Cursor band for pipe selection: spans the pipe's FULL extent. With end
+    // inverts a pipe owns station points at both ends (ds first, then us), and
+    // the point before its first point sits at the same station — so the old
+    // single-index band collapsed to zero width. Span first->last occurrence;
+    // for single-point (non-invert) pipes first == last, preserving old behavior.
     if (s.cursor && s.cursor.kind === "pipe") {
-      const idx = stations.findIndex((p) => p.id === s.cursor.id);
-      if (idx > 0) {
-        const left = stations[idx - 1].station, right = stations[idx].station;
+      let first = -1, last = -1;
+      for (let i = 0; i < stations.length; i++) {
+        if (stations[i].id === s.cursor.id) {
+          if (first < 0) first = i;
+          last = i;
+        }
+      }
+      if (first > 0) {
+        const left = stations[first - 1].station, right = stations[last].station;
         const width = sx(right) - sx(left);
         if (width >= 0.5) {
           svg.appendChild(svgEl("rect", {
