@@ -22,8 +22,17 @@
     display: flex; flex-direction: column;
   }
   .topbar { padding: 8px 12px; background: var(--bg-elev);
-            border-bottom: 1px solid #30363d; display: flex; gap: 12px; align-items: center; }
-  .topbar h1 { font-size: 14px; margin: 0; }
+            border-bottom: 1px solid #30363d; display: flex; gap: 12px; align-items: center;
+            flex-wrap: wrap; row-gap: 6px; }
+  .topbar > * { min-width: 0; }
+  .topbar h1 { font-size: 14px; margin: 0; white-space: nowrap; }
+  #fileName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+  #fileInput { max-width: 220px; }
+  #importHint { white-space: normal; max-width: 340px; }
+  .seg { display: inline-flex; border: 1px solid #30363d; border-radius: 4px; overflow: hidden; }
+  .seg-btn { background: transparent; color: #8b949e; border: none; padding: 2px 10px;
+             font-size: 12px; font-family: var(--mono); cursor: pointer; }
+  .seg-btn.active { background: #21262d; color: #e6edf3; }
   .viewframe { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .viewframe .tools { padding: 6px 12px; background: var(--bg-elev); font-size: 12px;
                        color: var(--fg-dim); border-bottom: 1px solid #30363d; }
@@ -54,14 +63,14 @@
   <h1>Storm Drain HGL/EGL Visualizer</h1>
   <input type="file" id="fileInput" accept=".xlsx,.json">
   <span id="fileName" class="num"></span>
-  <span id="importHint" style="font-size:11px;color:var(--fg-dim);font-family:var(--mono);white-space:nowrap;">Accepts a storm-drain-design-calculator .xlsx export or a visualizer .json file.</span>
+  <span id="importHint" style="font-size:11px;color:var(--fg-dim);font-family:var(--mono);">Accepts a storm-drain-design-calculator .xlsx export or a visualizer .json file.</span>
   <span style="flex:1"></span>
   <button id="modeToggle" type="button">▸ explore</button>
 </div>
 <div id="warningBanner" role="status" style="display:none; padding:6px 12px; background:#ffd60a; color:#1a1a1a; font-size:12px; font-family:var(--mono); border-bottom:1px solid #d4a800;"></div>
 <div class="viewframe">
   <div class="tools">
-    <span id="viewToggle" style="cursor:pointer">[ISO | profile]</span>
+    <span id="viewToggle" class="seg" role="group" aria-label="View"><button type="button" id="viewSegIso" class="seg-btn active">ISO</button><button type="button" id="viewSegProfile" class="seg-btn">profile</button></span>
     <span id="tr55Toggle" style="margin-left: 16px; cursor:pointer; display:none;">[TR-55 | off]</span>
     <span style="margin-left: 16px">cursor: <span id="cursorLabel" class="num">(none)</span></span>
   </div>
@@ -601,7 +610,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
         out.push(Object.assign({}, row, { hgl, hglDn: step.hglDn, hglClamped: step.clamped,
           hglDetail: { V, vh, eglDn: row.before, crownDn, crownUp,
                        hglDnRaw: row.before - vh, hglDn: step.hglDn,
-                       hglUpRaw: step.hglDn + row.delta, hglUp: step.hglUp } }));
+                       hglUpRaw: step.hglDn + row.delta, hglUp: step.hglUp,
+                       hgl: step.hglUp } }));
         continue;
       }
 
@@ -1573,6 +1583,14 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       }, p.id));
     }
 
+    // A fresh import anchors the walk at the outfall only, so the profile has
+    // no pipes to draw yet — explain that instead of rendering a silent dot.
+    if (!stations.some((p) => p.kind === "pipe")) {
+      svg.appendChild(svgEl("text", {
+        x: 10, y: 40, fill: "#8b949e", "font-size": 12, "font-family": "ui-monospace,monospace"
+      }, "Profile follows the upstream walk — press ↑ (arrow up) to add pipes."));
+    }
+
     // Cursor band for pipe selection: spans the pipe's FULL extent. With end
     // inverts a pipe owns station points at both ends (ds first, then us), and
     // the point before its first point sits at the same station — so the old
@@ -1704,8 +1722,10 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       renderProfile(svg, state, annotated);
     }
     // Update toolbar indicator
-    const label = document.getElementById("viewToggle");
-    if (label) label.textContent = state.ui.view === "iso" ? "[ISO | profile]" : "[iso | PROFILE]";
+    const segIso = document.getElementById("viewSegIso");
+    const segProfile = document.getElementById("viewSegProfile");
+    if (segIso) segIso.classList.toggle("active", state.ui.view === "iso");
+    if (segProfile) segProfile.classList.toggle("active", state.ui.view !== "iso");
   }
 
   function toggleView() {
@@ -1762,13 +1782,11 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       el("option", { value: "hec22" }, "HEC-22 EGL"),
       el("option", { value: "legacy-both-crown" }, "Legacy both-crown")
     ]);
-    if (modeToggle) {
-      topbar.insertBefore(label, modeToggle);
-      topbar.insertBefore(select, modeToggle);
-    } else {
-      topbar.appendChild(label);
-      topbar.appendChild(select);
-    }
+    // One flex group so "HGL method:" and its select never split across
+    // topbar wrap rows.
+    const group = el("span", { style: "display:flex; align-items:center; gap:6px;" }, [label, select]);
+    if (modeToggle) topbar.insertBefore(group, modeToggle);
+    else topbar.appendChild(group);
     syncHglSelect();
   })();
 
@@ -2649,7 +2667,9 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
         fmtNum(d.Hf, 3),
         "ft"
       )),
-      csResult("EGL_up = EGL_dn + Hf = " + fmtNum(row.before, 3) + " + " + fmtNum(d.Hf, 3), fmtNum(row.after, 3), "ft")
+      csSection("EGL step", csResult(
+        "EGL_up = EGL_dn + Hf = " + fmtNum(row.before, 3) + " + " + fmtNum(d.Hf, 3),
+        fmtNum(row.after, 3), "ft"))
     ];
     const hglSec = hglCompSection(row);
     if (hglSec) hfKids.push(hglSec);
@@ -2724,8 +2744,13 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     if (typeof renderHfRow === "function" && row.kind === "hf")   return renderHfRow(row);
     if (typeof renderHbRow === "function" && row.kind === "hb") {
       const base = renderHbRow(row);
+      // The EGL step across the structure — pipe rows carry their own
+      // (EGL_up = EGL_dn + Hf); structure rows previously showed only the HGL step.
+      const eglSec = csSection("EGL step", csResult(
+        "EGL_up = EGL_dn + Hb = " + fmtNum(row.before, 3) + " + " + fmtNum(row.delta, 3),
+        fmtNum(row.after, 3), "ft"));
       const hglSec = hglCompSection(row);
-      return hglSec ? el("div", null, [base, hglSec]) : base;
+      return el("div", null, hglSec ? [base, eglSec, hglSec] : [base, eglSec]);
     }
     if (row.kind === "start") {
       const reason = row.detail.boundaryReason || "tailwater";
@@ -3105,9 +3130,16 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     }
   });
 
-  // Toolbar click
-  const toggleLabel = document.getElementById("viewToggle");
-  if (toggleLabel) toggleLabel.addEventListener("click", () => toggleView());
+  // Toolbar click — segmented view buttons switch directly instead of flipping.
+  const setView = (v) => {
+    if (state.ui.view === v) return;
+    state.ui.view = v;
+    renderActiveView();
+  };
+  const segIso = document.getElementById("viewSegIso");
+  const segProfile = document.getElementById("viewSegProfile");
+  if (segIso) segIso.addEventListener("click", () => setView("iso"));
+  if (segProfile) segProfile.addEventListener("click", () => setView("profile"));
   const tr55Label = document.getElementById("tr55Toggle");
   if (tr55Label) tr55Label.addEventListener("click", () => toggleTr55());
   document.getElementById("fileInput").addEventListener("change", async (ev) => {
