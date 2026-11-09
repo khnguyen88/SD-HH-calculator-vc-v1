@@ -188,6 +188,19 @@
     throw new Error("unknown pipe shape: " + shape);
   }
 
+  // Vertical barrel height in ft (soffit rise above invert), for pipe-end
+  // crown floors: circular = diameter/12; elliptical = RISE/12.
+  function pipeBarrelHeightFt(shape, size) {
+    if (shape === "circular") {
+      const d = Number(size);
+      return (isFinite(d) && d > 0) ? d / 12 : null;
+    }
+    // Elliptical "SPANxRISE" (e.g. "38x24") -> RISE/12. Mirrors normalizeSize parsing.
+    const parts = String(size == null ? "" : size).toLowerCase().replace(/[×\s]/g, "").split("x");
+    const rise = parseFloat(parts[1]);
+    return (isFinite(rise) && rise > 0) ? rise / 12 : null;
+  }
+
   // Normalize shape and size strings from imports; mirrors main-app pipeGeometry leniency.
   function normalizeShape(value) {
     return String(value == null ? "" : value).trim().toLowerCase();
@@ -527,6 +540,15 @@
       const crown = resolveField(id, "crown", imp, ovr);
       return (typeof crown === "number" && isFinite(crown)) ? crown : null;
     };
+    // Pipe-end soffit: that end's invert + barrel height (null when absent,
+    // so the caller can fall back to the neighboring structure's crown).
+    const pipeCrownAt = (pipe, end) => {
+      const inv = resolveField(pipe.id, end === "dn" ? "dsInvert" : "usInvert", imp, ovr);
+      if (typeof inv !== "number" || !isFinite(inv)) return null;
+      const h = pipeBarrelHeightFt(resolveField(pipe.id, "shape", imp, ovr),
+        resolveField(pipe.id, "size", imp, ovr));
+      return (h != null) ? inv + h : null;
+    };
 
     const out = [];
     let hgl = null;
@@ -543,12 +565,16 @@
         const q = (typeof d.designQ === "number" && isFinite(d.designQ)) ? d.designQ : 0;
         const V = (d.A > 0) ? (q / d.A) : 0;
         const pipe = imp.pipes.find((p) => p.id === row.id);
-        const step = hglWalkStep(row.before, V,
-          pipe ? crownOf(pipe.toId) : null,
-          pipe ? crownOf(pipe.fromId) : null,
-          row.delta, method);
+        let crownDn = null, crownUp = null;
+        if (pipe) {
+          const pDn = pipeCrownAt(pipe, "dn");
+          const pUp = pipeCrownAt(pipe, "up");
+          crownDn = (pDn != null) ? pDn : crownOf(pipe.toId);
+          crownUp = (pUp != null) ? pUp : crownOf(pipe.fromId);
+        }
+        const step = hglWalkStep(row.before, V, crownDn, crownUp, row.delta, method);
         hgl = step.hglUp;
-        out.push(Object.assign({}, row, { hgl, hglClamped: step.clamped }));
+        out.push(Object.assign({}, row, { hgl, hglDn: step.hglDn, hglClamped: step.clamped }));
         continue;
       }
 
