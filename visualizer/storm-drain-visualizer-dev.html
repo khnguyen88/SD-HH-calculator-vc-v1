@@ -1294,12 +1294,28 @@
       const v = str ? str[field] : null;
       return (typeof v === "number" && isFinite(v)) ? v : fallback;
     };
+    // Derived flowline for a structure: min invert over its outgoing pipes'
+    // usInverts (their soffit seats inside this structure), falling back to
+    // min over incoming pipes' dsInverts. Override-aware via resolveField.
+    const flowlineOf = (id) => {
+      const outInv = imported.pipes
+        .filter((p) => p.fromId === id)
+        .map((p) => resolveField(p.id, "usInvert", imported, overrides))
+        .filter((v) => typeof v === "number" && isFinite(v));
+      if (outInv.length) return Math.min.apply(null, outInv);
+      const inInv = imported.pipes
+        .filter((p) => p.toId === id)
+        .map((p) => resolveField(p.id, "dsInvert", imported, overrides))
+        .filter((v) => typeof v === "number" && isFinite(v));
+      if (inInv.length) return Math.min.apply(null, inInv);
+      return null;
+    };
     for (const row of rows) {
       if (row.kind === "start") {
         const str = imported.structures.find((s) => s.id === row.id);
         stations.push({
           station: 0, kind: "structure", id: row.id,
-          invert: elev(str, "startElev", row.after - 3),
+          invert: (flowlineOf(str.id) != null) ? flowlineOf(str.id) : elev(str, "startElev", row.after - 3),
           crown: elev(str, "crown", row.after),
           rim: elev(str, "rim", row.after + 3),
           egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
@@ -1310,22 +1326,42 @@
           ? overrides.byId[row.id].length
           : (pipe ? pipe.length : 0);
         const length = Number(rawLength);
+        const fromStr = pipe ? imported.structures.find((s) => s.id === pipe.fromId) : null;
+        const dsInv = (pipe && typeof pipe.dsInvert === "number" && isFinite(pipe.dsInvert)) ? pipe.dsInvert : null;
+        const usInv = (pipe && typeof pipe.usInvert === "number" && isFinite(pipe.usInvert)) ? pipe.usInvert : null;
+        const barrel = pipe ? pipeBarrelHeightFt(pipe.shape, pipe.size) : null;
+        // The walk runs downstream -> upstream: the station before marching is
+        // this pipe's To-structure station; after marching it's the From-structure.
+        if (dsInv != null && barrel != null) {
+          stations.push({
+            station, kind: "pipe", id: row.id,
+            invert: dsInv, crown: dsInv + barrel, rim: null,
+            egl: row.before, hgl: row.hglDn != null ? row.hglDn : row.before
+          });
+        }
         // March station forward by this pipe's length (horizontally — profile ignores plan curvature)
         if (isFinite(length) && length > 0) station += length;
-        // Crown and invert at the upstream end of this pipe come from the From structure.
-        const fromStr = pipe ? imported.structures.find((s) => s.id === pipe.fromId) : null;
-        stations.push({
-          station, kind: "pipe", id: row.id,
-          invert: elev(fromStr, "startElev", row.after - 3),
-          crown: elev(fromStr, "crown", row.after),
-          rim: null,
-          egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
-        });
+        if (usInv != null && barrel != null) {
+          stations.push({
+            station, kind: "pipe", id: row.id,
+            invert: usInv, crown: usInv + barrel, rim: null,
+            egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
+          });
+        } else {
+          // Legacy fallback: single From-structure point (today's behavior).
+          stations.push({
+            station, kind: "pipe", id: row.id,
+            invert: elev(fromStr, "startElev", row.after - 3),
+            crown: elev(fromStr, "crown", row.after),
+            rim: null,
+            egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
+          });
+        }
       } else if (row.kind === "hb") {
         const str = imported.structures.find((s) => s.id === row.id);
         stations.push({
           station, kind: "structure", id: row.id,
-          invert: elev(str, "startElev", row.after - 3),
+          invert: (flowlineOf(str.id) != null) ? flowlineOf(str.id) : elev(str, "startElev", row.after - 3),
           crown: elev(str, "crown", row.after),
           rim: elev(str, "rim", row.after + 3),
           egl: row.after, hgl: row.hgl != null ? row.hgl : row.after
