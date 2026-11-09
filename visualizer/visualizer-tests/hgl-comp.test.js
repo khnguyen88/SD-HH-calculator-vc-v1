@@ -65,3 +65,23 @@ test("expanded +Hf row: HGL step result is a number, never 'undefined'", async (
   assert(text.includes("HGL_up = " + m[1] + " ft"),
     "HGL_up result line must repeat the derived value " + m[1]);
 });
+
+test("expanded +Hb row shows the EGL step across the structure", async () => {
+  const { window, document } = loadVisualizer();
+  await bootWithJson(window, SEED);
+  window.state.cursor = { kind: "structure", id: "A", pathStack: ["OUT", "P1", "A"] };
+  window.renderAll();
+
+  window.state.ui.expandedRowId = "A";
+  window.renderAll();
+  const text = document.getElementById("ledger").textContent.replace(/\s+/g, " ");
+
+  // EGL_up = EGL_dn + Hb must appear with before + delta = after consistency.
+  const m = text.match(/EGL_up = EGL_dn \+ Hb = ([\d.-]+) \+ ([\d.-]+) = ([\d.-]+) ft/);
+  assert(m, "structure row must show EGL_up = EGL_dn + Hb, got: " + JSON.stringify(
+    text.slice(text.indexOf("HGL step") - 400, text.indexOf("HGL step"))));
+  // Each term is displayed at 3 decimals, so the sum can differ from the
+  // displayed result by up to one rounding ulp.
+  assert.ok(Math.abs(Number(m[1]) + Number(m[2]) - Number(m[3])) < 2e-3,
+    "EGL step must be internally consistent: " + m[1] + " + " + m[2] + " != " + m[3]);
+});
