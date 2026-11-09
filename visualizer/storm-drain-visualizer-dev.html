@@ -788,6 +788,16 @@
     }
   };
 
+  function loadSample(key) {
+    const entry = SAMPLES[key];
+    if (!entry) throw new Error("Unknown sample: " + key);
+    applyImportedJson(entry.data, entry.label);
+    const nameSpan = document.getElementById("fileName");
+    if (nameSpan) nameSpan.textContent = entry.label;
+    autoLayoutIfNeeded();
+    renderAll();
+  }
+
   // --- xlsx importer (task-06) ---
   async function importFromXlsxFile(file) {
     if (typeof XLSX === "undefined") throw new Error("SheetJS not loaded — did you open the BUILT file?");
