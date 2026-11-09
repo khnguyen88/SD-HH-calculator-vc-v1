@@ -5898,6 +5898,20 @@ function printDetailTableSheet(viewId, title){
 }
 
 function printAllDetailSheets(){
+  // Guard: warn if the outlet tables would produce a very large printout.
+  const totalStageRows = state.outletStructures.reduce((sum, os) => {
+    return sum + computeRatingCurve(os.id).rows.length;
+  }, 0);
+  const estimatedPages = Math.ceil(totalStageRows / 50) +
+    state.drainage.length + state.structures.length + state.pipes.length + 4;
+  if (estimatedPages > 30) {
+    const ok = window.confirm(
+      "This print job may produce approximately " + estimatedPages +
+      " pages (the outlet rating-curve tables alone account for " + totalStageRows +
+      " rows).\n\nProceed anyway?"
+    );
+    if (!ok) return;
+  }
   const nodes = [];
   const drain   = buildDrainageDetailSheet();    if(drain)   nodes.push(drain);
   const structs = buildStructuresDetailSheet();  if(structs) nodes.push(structs);
