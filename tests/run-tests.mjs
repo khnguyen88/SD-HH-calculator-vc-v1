@@ -872,6 +872,7 @@ test("HGL method: pinned elevation propagates upstream", () => {
   // A now computes from B's PINNED elevation: 101.00 < A's crown (100.5 + 12/12 = 101.5)
   isClose(calcA.elevation, 101.50, 0.001, "A pinned to its crown, computed from B's pinned HGL");
   assert.equal(calcA.pinned, true);
+  isClose(calcA.hec22Elevation, 101.00, 0.001, "A must compute from B's PINNED elevation");
 });
 
 test("HGL method: HEC-22 chain unchanged in same fixture", () => {
