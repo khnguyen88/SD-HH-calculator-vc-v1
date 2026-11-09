@@ -947,3 +947,25 @@ test("HGL method: assumed-invert crown is still pinned and flagged", () => {
   isClose(calc.elevation, 100.10, 0.001, "pin to the assumed crown");
   assert.equal(calc.pinned, true);
 });
+
+// ==================== HGL method toggle — UI ====================
+test("renderRainfall: HGL method selector present and bound to state", () => {
+  const s0 = sdc.state;
+  const orig = s0.hydraulics;
+  s0.hydraulics = { hglMethod: "conservative" };
+  try {
+    sdc.renderRainfall();
+    const view = window.document.getElementById("view-rainfall");
+    const sel = view.querySelector('select[data-focus-key="rf:hglMethod"]');
+    assert.ok(sel, "HGL method select missing from Project Rainfall Settings");
+    assert.equal(sel.options.length, 2, "selector must offer exactly two methods");
+    assert.equal(sel.options[0].value, "hec22");
+    assert.equal(sel.options[0].textContent, "HEC-22 (standard)");
+    assert.equal(sel.options[1].value, "conservative");
+    assert.equal(sel.options[1].textContent, "Conservative (crown-pin)");
+    assert.equal(sel.value, "conservative", "selector must reflect current state");
+  } finally {
+    s0.hydraulics = orig;
+    sdc.renderRainfall();
+  }
+});

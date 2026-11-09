@@ -2570,7 +2570,7 @@ function renderOverview(){
 
   const steps = [
     ["1","Overview", "Start here; review the workflow and how the tabs connect before entering data."],
-    ["2","Rainfall & IDF", "Select rainfall source (NOAA Atlas 14 county, MDSHA, or MoCo agency table) and design storms. The Pipe & HGL Storm drives Q in Drainage Area and pipe capacity. The Inlet Storm drives inlet spacing intensity. Optionally enable the 25-yr check tabs for an additional capacity verification. The IDF table shows intensities at standard Tc values."],
+    ["2","Rainfall & IDF", "Select rainfall source (NOAA Atlas 14 county, MDSHA, or MoCo agency table) and design storms. The Pipe & HGL Storm drives Q in Drainage Area and pipe capacity. The Inlet Storm drives inlet spacing intensity. Optionally enable the 25-yr check tabs for an additional capacity verification. The HGL Method setting selects standard HEC-22 or the Conservative option, which pins each structure's upstream HGL to its outgoing pipe crown for submittal-safe profiles. The IDF table shows intensities at standard Tc values."],
     ["3","Drainage Area \u2014 Q = C \u00b7 i \u00b7 A", "Define drainage areas with area (A, acres), runoff coefficient (C), and time of concentration (Tc). Q values are auto-computed from ", "Q = Cf \u00d7 C \u00d7 i \u00d7 A", "."],
     ["4","Junction Structures", "One row per physical structure (inlet, manhole, bend, junction, flow splitter, or outfall). Link a Drainage Area to capture its runoff. ", "Total Flow = Captured Q + \u03a3(Q of every pipe flowing into this structure)", ". Inlet-type structures can be linked to Inlet Spacing rows to auto-fill area, C, and Tc from the associated drainage area."],
     ["5","Inlet Spacing", "Size grate inlets along a curb profile using HEC-22 methods. Pick a Junction Structure to auto-fill area, C, and Tc from its linked drainage area."],
@@ -3958,6 +3958,20 @@ function renderRainfall() {
   });
   pipeStormField.appendChild(pipeSel);
   stRow.appendChild(pipeStormField);
+
+  // HGL method (global project setting — spec: HGL method toggle)
+  const hglField = el("div", {class:"field"});
+  hglField.appendChild(el("label", {}, "HGL Method"));
+  const hglSel = el("select", {class:"cell-input", style:"width:150px;",
+    "data-focus-key":"rf:hglMethod",
+    onchange: (e) => { state.hydraulics.hglMethod = e.target.value; withFocusPreserved(renderAll); }});
+  [["hec22","HEC-22 (standard)"], ["conservative","Conservative (crown-pin)"]].forEach(([v,lab]) => {
+    const o = el("option", {value:v}, lab);
+    if (((state.hydraulics && state.hydraulics.hglMethod) || "hec22") === v) o.selected = true;
+    hglSel.appendChild(o);
+  });
+  hglField.appendChild(hglSel);
+  stRow.appendChild(hglField);
 
   // Inlet storm
   const inletStormField = el("div", {class:"field"});
@@ -6803,7 +6817,7 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   computeInletChain, computeRowIntensity, buildInletSpacingSheet,
   resolvedInletFields, resolvedInletLabel,
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
-  defaultRainfallSettings, getTabs,
+  defaultRainfallSettings, getTabs, renderRainfall,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES,
   kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 
