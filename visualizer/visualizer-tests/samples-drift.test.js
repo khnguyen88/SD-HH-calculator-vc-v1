@@ -52,6 +52,13 @@ function canon(v) {
   return v;
 }
 
+// Inverts: calculator state stores them as numbers or blank strings; the
+// visualizer sample schema wants finite numbers or null.
+const invNum = (v) => {
+  const n = (v === "" || v == null) ? null : Number(v);
+  return (n != null && isFinite(n)) ? n : null;
+};
+
 // Both sides come from different jsdom realms (calculator + visualizer), so
 // deepStrictEqual would reject matching values on prototype identity alone.
 // A JSON round-trip rebuilds both in the Node realm first.
@@ -101,7 +108,9 @@ test("calculator-demo sample matches seedExample() (drift guard)", () => {
       length: p.length,
       angle: p.angle,
       splitRole: p.splitRole || "",
-      designQ
+      designQ,
+      usInvert: invNum(p.upstreamInvert),
+      dsInvert: invNum(p.downstreamInvert)
     };
   });
 
