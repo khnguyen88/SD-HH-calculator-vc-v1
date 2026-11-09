@@ -60,3 +60,31 @@ test("loadSample throws on an unknown key", () => {
   assert.throws(() => viz.fn("loadSample")("nope"), /Unknown sample/);
   viz.dom.window.close();
 });
+
+test("topbar renders the sample select and the import hint", () => {
+  const viz = loadVisualizer();
+  const sel = viz.document.getElementById("sampleSelect");
+  assert.ok(sel, "sampleSelect must exist in the topbar");
+  const opts = Array.from(sel.options).map((o) => ({ value: o.value, text: o.textContent }));
+  assert.deepStrictEqual(opts, [
+    { value: "", text: "Sample ▾" },
+    { value: "calculator-demo", text: "Calculator demo project" },
+    { value: "bburg-simplified", text: "bburg legacy (simplified)" }
+  ]);
+  const hint = viz.document.getElementById("importHint");
+  assert.ok(hint, "importHint must exist");
+  assert.strictEqual(hint.textContent,
+    "Accepts a storm-drain-design-calculator .xlsx export or a visualizer .json file.");
+  viz.dom.window.close();
+});
+
+test("choosing a sample from the select loads it and resets to the placeholder", () => {
+  const viz = loadVisualizer();
+  const sel = viz.document.getElementById("sampleSelect");
+  sel.value = "calculator-demo";
+  sel.dispatchEvent(new viz.window.Event("change"));
+  assert.strictEqual(viz.window.state.imported.structures.length, 6);
+  assert.strictEqual(viz.window.state.ui.fileName, "Calculator demo project");
+  assert.strictEqual(sel.value, "", "select must reset so the same sample can be re-picked");
+  viz.dom.window.close();
+});

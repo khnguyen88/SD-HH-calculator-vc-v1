@@ -54,6 +54,7 @@
   <h1>Storm Drain HGL/EGL Visualizer</h1>
   <input type="file" id="fileInput" accept=".xlsx,.json">
   <span id="fileName" class="num"></span>
+  <span id="importHint" style="font-size:11px;color:var(--fg-dim);font-family:var(--mono);white-space:nowrap;">Accepts a storm-drain-design-calculator .xlsx export or a visualizer .json file.</span>
   <span style="flex:1"></span>
   <button id="modeToggle" type="button">▸ explore</button>
 </div>
@@ -1553,6 +1554,36 @@
       topbar.appendChild(select);
     }
     syncHglSelect();
+  })();
+
+  // Inject the built-in sample loader into the topbar, before the mode toggle.
+  // Mirrors the hglMethodSelect injection pattern above.
+  (function () {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+    const modeToggle = document.getElementById("modeToggle");
+    const select = el("select", {
+      id: "sampleSelect",
+      style: "font-family:var(--mono);font-size:12px;background:var(--bg-elev);" +
+             "color:var(--fg);border:1px solid #30363d;border-radius:3px;padding:2px 4px;",
+      onchange: (ev) => {
+        const key = ev.target.value;
+        ev.target.value = "";
+        if (!key) return;
+        withFocusPreserved(() => {
+          try {
+            loadSample(key);
+          } catch (err) {
+            alert("Sample failed: " + err.message);
+            renderAll();
+          }
+        });
+      }
+    }, [el("option", { value: "" }, "Sample ▾")].concat(
+      Object.keys(SAMPLES).map((k) => el("option", { value: k }, SAMPLES[k].label))
+    ));
+    if (modeToggle) topbar.insertBefore(select, modeToggle);
+    else topbar.appendChild(select);
   })();
   // ==== views: end ====
 
