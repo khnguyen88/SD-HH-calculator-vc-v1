@@ -629,8 +629,7 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
         <button class="btn" id="importBtn" title="Import a previously exported .xlsx file">&#8593;<span class="btn-label"> Import from Excel</span></button>
         <input type="file" id="importFile" accept=".xlsx">
         <button class="btn btn-primary" id="exportBtn" title="Export all tables to a .xlsx file">&#8595;<span class="btn-label"> Export to Excel</span></button>
-        <a href="visualizer.html" target="_blank" rel="noopener"
-           style="margin-left:12px; color:inherit; font-size:13px;">Open HGL Visualizer &rarr;</a>
+        <button class="btn" id="openVisualizerBtn" title="Send the current project to the HGL/EGL visualizer">Open in Visualizer</button>
       </div>
     </div>
 
@@ -1985,6 +1984,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
     return {
       structure: st, totalFlow, captured: totalFlowInfo.captured, inflow: totalFlowInfo.inflow,
       outPipe, downstream:null, Sf:0, Hf:0, kbColumn:null, kb:0, Hb:0, Vout:0,
+      vhOut:0, egl: parseFloat(st.startElev)||0,
       inflowCount:0, controlling:null, elevation: parseFloat(st.startElev)||0,
       isBase:true, warnings, isSplitter, splitInfo,
       crown: null, crownAssumed: false, pinned: false,
@@ -1996,7 +1996,7 @@ function computeStructureCalc(structureId, seen, stormOverride){
   if(seen.has(structureId)){
     warnings.push("Circular structure reference detected \u2014 elevation cannot be resolved.");
     return { structure:st, totalFlow, captured:totalFlowInfo.captured, inflow:totalFlowInfo.inflow, outPipe, downstream:null,
-      Sf:0, Hf:0, kbColumn:null, kb:0, Hb:0, Vout:0, inflowCount:0, controlling:null, elevation:NaN, isBase:false, warnings, isSplitter, splitInfo,
+      Sf:0, Hf:0, kbColumn:null, kb:0, Hb:0, Vout:0, vhOut:0, egl:NaN, inflowCount:0, controlling:null, elevation:NaN, isBase:false, warnings, isSplitter, splitInfo,
       crown:null, crownAssumed:false, pinned:false, crownPass:null, rimPass:null };
   }
   seen.add(structureId);
@@ -2030,6 +2030,11 @@ function computeStructureCalc(structureId, seen, stormOverride){
     const angle = parseFloat(inflowPipes[0].angle)||0;
     kb = kbForAngle(angle);
   } else if(inflowPipes.length===2){
+    // MCDOT Drainage Design Criteria \u00a74.3.2.3 (Junctions), following the
+    // MSHA Highway Drainage Manual: compare each inflow's structure loss
+    // evaluated in the outgoing pipe; the pipe with the SMALLER loss
+    // provides the controlling angle, whose Kb is then applied to the
+    // full merged flow in the outgoing pipe.
     const [p1,p2] = inflowPipes;
     const a1 = parseFloat(p1.angle)||0, a2 = parseFloat(p2.angle)||0;
     const Q1 = pipeDesignQ(p1, null, stormOverride), Q2 = pipeDesignQ(p2, null, stormOverride);
@@ -2062,9 +2067,14 @@ function computeStructureCalc(structureId, seen, stormOverride){
     pinned = true;
   }
 
+  // EGL at the structure = upstream HGL + velocity head in the outgoing pipe.
+  // Under the Conservative method the pinned HGL carries through unchanged.
+  const vhOut = Vout*Vout/(2*G);
+  const egl = elevation + vhOut;
+
   return {
     structure: st, totalFlow, captured: totalFlowInfo.captured, inflow: totalFlowInfo.inflow,
-    outPipe, outPipeFlow, downstream, downstreamElev, Sf, Hf, kbColumn, kb, Hb, Vout,
+    outPipe, outPipeFlow, downstream, downstreamElev, Sf, Hf, kbColumn, kb, Hb, Vout, vhOut, egl,
     inflowCount: inflowPipes.length, inflowPipes, controlling, useCatalogKah,
     elevation, hec22Elevation, pinned, isBase:false, warnings, isSplitter, splitInfo,
     crown, crownAssumed,
@@ -4752,6 +4762,7 @@ function buildHglRowSheet(structureId, stormOverride){
         ? "\u201cForce fixed elevation\u201d is checked for this structure."
         : "No outgoing pipe found \u2014 treated as the system outfall/end point."),
       csResult("Elevation", fmt(calc.elevation,2)+" ft"),
+      csResult("Upstream EGL", fmt(calc.egl,2)+" ft  (no outgoing pipe \u2014 EGL = HGL)"),
     ])));
   } else {
     const outSt = calc.outPipe ? findStructure(calc.outPipe.toStructureId) : null;
@@ -4768,12 +4779,12 @@ function buildHglRowSheet(structureId, stormOverride){
     const structLossBody = [];
     const kLabel = calc.useCatalogKah ? "K\u2090\u2095 (HEC-22 Approx.)" : "Kb";
     const kSourceNote = calc.useCatalogKah
-      ? "Inflow pipe count: "+calc.inflowCount+" \u2014 K\u2090\u2095 from HEC-22 5th Ed. Table 8.5 Approx. Method ("+resolveStructureCategory(st)+")"
+      ? "Inflow pipe count: "+calc.inflowCount+" \u2014 K\u2090\u2095 from HEC-22 4th Ed. \u00a79.1.6.6 Approximate Method, Table 9.4 ("+resolveStructureCategory(st)+")"
       : "Inflow pipe count: "+calc.inflowCount+" \u2014 Kb column: "+(calc.kbColumn||"n/a")+" (legacy Kb table)";
     structLossBody.push(el("div",{class:"cs-note"}, kSourceNote));
     if (calc.useCatalogKah) {
       structLossBody.push(el("div",{class:"cs-note"},
-        "Note: Controlling-angle convention follows HEC-22 \u00a78.5: the angle producing the smaller head loss governs (smaller-loss pipe\u2019s angle selected as controlling angle when 2 inflows present)."));
+        "Note: with two inflow pipes the controlling angle follows MCDOT Drainage Design Criteria \u00a74.3.2.3 (Junctions), per the MSHA Highway Drainage Manual: the pipe with the smaller computed structure loss L\u03c5 provides the controlling angle \u03c5C, and K\u2090\u2095(\u03c5C) is applied to the full merged flow."));
     }
     if(calc.inflowCount===0){
       structLossBody.push(el("div",{class:"cs-note"}, "No piped inflow \u2014 nominal entrance condition, "+kLabel+" evaluated at 0\u00b0."));
@@ -4787,9 +4798,9 @@ function buildHglRowSheet(structureId, stormOverride){
         ["Pipe 2: Q\u2082, \u03c5\u2082", fmt(ctl.Q2,2)+" cfs, "+fmt(ctl.a2,0)+"\u00b0"],
         ["V\u2081/\u2083 = Q\u2081 / A(out)", fmt(ctl.V1_3,2)+" fps"],
         ["V\u2082/\u2083 = Q\u2082 / A(out)", fmt(ctl.V2_3,2)+" fps"],
-        ["Lv\u2081 = "+kShort+"(\u03c5\u2081)\u00d7V\u2081/\u2083\u00b2/2g", fmt(ctl.Lv1,4)+" ft  ("+kShort+"="+fmt(ctl.Kb1,3)+")"],
-        ["Lv\u2082 = "+kShort+"(\u03c5\u2082)\u00d7V\u2082/\u2083\u00b2/2g", fmt(ctl.Lv2,4)+" ft  ("+kShort+"="+fmt(ctl.Kb2,3)+")"],
-        ["Controlling angle \u03c5c", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2? "Lv\u2081 > Lv\u2082 \u2192 use \u03c5\u2082" : "Lv\u2082 \u2265 Lv\u2081 \u2192 use \u03c5\u2081")+")"],
+        ["L\u03c5\u2081 = "+kShort+"(\u03c5\u2081)\u00d7V\u2081/\u2083\u00b2/2g", fmt(ctl.Lv1,4)+" ft  ("+kShort+"="+fmt(ctl.Kb1,3)+")"],
+        ["L\u03c5\u2082 = "+kShort+"(\u03c5\u2082)\u00d7V\u2082/\u2083\u00b2/2g", fmt(ctl.Lv2,4)+" ft  ("+kShort+"="+fmt(ctl.Kb2,3)+")"],
+        ["Controlling angle \u03c5C", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2? "L\u03c5\u2081 > L\u03c5\u2082 \u2192 use \u03c5\u2082" : "L\u03c5\u2082 \u2265 L\u03c5\u2081 \u2192 use \u03c5\u2081")+")"],
       ]));
     } else if(calc.kb==null){
       structLossBody.push(csWarn("More than 2 inflow pipes \u2014 controlling-angle method not applicable. Compute Hb manually."));
@@ -4813,24 +4824,33 @@ function buildHglRowSheet(structureId, stormOverride){
     }
     hglNodes.push(csResult("Upstream HGL", fmt(calc.elevation,2)+" ft"));
     body.push(csSection("Upstream HGL", el("div",{}, hglNodes)));
+    const eglNodes = [
+      csFormula(["Upstream EGL = Upstream HGL + Vout² / 2g"]),
+      csFormula(["Upstream EGL = "+fmt(calc.elevation,2)+" + "+fmt(calc.vhOut,4)]),
+    ];
+    eglNodes.push(csResult("Upstream EGL", fmt(calc.egl,2)+" ft"));
+    body.push(csSection("Upstream EGL (energy grade line)", el("div",{}, eglNodes)));
   }
   const crown = calc.crown;
   const crownAssumed = calc.crownAssumed;
   const rim   = (st.rim  !==""&&st.rim  !=null)?parseFloat(st.rim)  :null;
-  body.push(csSection("Clearance checks", csTable([
-    ["Pipe crown elevation",         crown!=null?fmt(crown,2)+" ft"+(crownAssumed?" * (assumed)":""):"\u2014 not computed"],
-    ["Limit: HGL \u2264 Crown + 1.0 ft", crown!=null?fmt(crown+1,2)+" ft":"\u2014"],
-    ["Result", calc.crownPass===null?"\u2014":(calc.crownPass?"OK":"EXCEEDS LIMIT")],
-    ["Rim / grate elevation",        rim!=null?fmt(rim,2)+" ft":"\u2014 not set"],
-    ["Limit: HGL \u2264 Rim \u2212 1.0 ft",   rim!=null?fmt(rim-1,2)+" ft":"\u2014"],
-    ["Result", calc.rimPass===null?"\u2014":(calc.rimPass?"OK":"EXCEEDS LIMIT")],
+  body.push(csSection("Clearance checks", el("div",{},[
+    csTable([
+      ["Pipe crown elevation",         crown!=null?fmt(crown,2)+" ft"+(crownAssumed?" * (assumed)":""):"\u2014 not computed"],
+      ["Limit: HGL \u2264 Crown + 1.0 ft", crown!=null?fmt(crown+1,2)+" ft":"\u2014"],
+      ["Result", calc.crownPass===null?"\u2014":(calc.crownPass?"OK":"EXCEEDS LIMIT")],
+      ["Rim / grate elevation",        rim!=null?fmt(rim,2)+" ft":"\u2014 not set"],
+      ["Limit: HGL \u2264 Rim \u2212 1.0 ft",   rim!=null?fmt(rim-1,2)+" ft":"\u2014"],
+      ["Result", calc.rimPass===null?"\u2014":(calc.rimPass?"OK":"EXCEEDS LIMIT")],
+    ]),
+    el("div",{class:"cs-note"}, "County criteria (MCDOT Drainage Design Criteria \u00a74.3.2): the hydraulic gradient shall be computed for the 10-year design storm for all pipe sizes and shall take into consideration friction losses in the pipes and losses in the structures caused by differences in velocity, change in direction of flow, incoming volume, entrance, exit and other applicable conditions. All closed systems shall be designed so that the 10-yr hydraulic grade line (HGL) is no higher than 1 foot above the crown of the pipe and at least one foot below the top of any inlet grate or manhole cover."),
   ])));
   if(calc.warnings && calc.warnings.length){
     body.push(csSection("Warnings", el("div",{}, calc.warnings.map(w=>csWarn(w)))));
   }
   return sheetWrapper("hgl",
     "HGL \u2014 "+(st.structureId||st.id)+(stormOverride?" ("+stormOverride+")":""),
-    "Friction loss, structure loss, and upstream HGL \u2014 Method: "+hglMethodLabel(), body);
+    "Friction loss, structure loss, upstream HGL and EGL \u2014 Method: "+hglMethodLabel(), body);
 }
 
 function buildOutletStageSheet(stageResult, os){
@@ -4975,8 +4995,8 @@ function buildFormulasReferenceSheet(){
   let twoInflowSt=null;
   for(const st of s.structures){ if(getIncomingPipes(st.id).length===2){ twoInflowSt=st; break; } }
   const b4 = [];
-  b4.push(csSub("Turbulence loss where flow enters a structure and turns to exit through the outgoing pipe. With two inflow pipes, the controlling-angle method applies: the angle belonging to the SMALLER computed loss governs the merged flow."));
-  b4.push(csFormula(["Single inflow: Kb at that pipe's angle","Two inflow: V1/3=Q1/Aout, V2/3=Q2/Aout","Lv1=Kb(\u03c51)\u00d7V1/3\u00b2/2g, Lv2=Kb(\u03c52)\u00d7V2/3\u00b2/2g","Lv1>Lv2 \u2192 \u03c5c=\u03c52  |  Lv2>Lv1 \u2192 \u03c5c=\u03c51","Hb = Kb(\u03c5c) \u00d7 Vout\u00b2/2g,  Vout = Total Flow/Aout"]));
+  b4.push(csSub("Turbulence loss where flow enters a structure and turns to exit through the outgoing pipe. With two inflow pipes, the controlling-angle method applies per MCDOT Drainage Design Criteria \u00a74.3.2.3 (Junctions): the angle belonging to the SMALLER computed loss governs the merged flow."));
+  b4.push(csFormula(["Single inflow: Kb at that pipe's angle","Two inflow: V1/3=Q1/Aout, V2/3=Q2/Aout","L\u03c51=Kb(\u03c51)\u00d7V1/3\u00b2/2g, L\u03c52=Kb(\u03c52)\u00d7V2/3\u00b2/2g","L\u03c51>L\u03c52 \u2192 \u03c5C=\u03c52  |  L\u03c52>L\u03c51 \u2192 \u03c5C=\u03c51","Hb = Kb(\u03c5C) \u00d7 Vout\u00b2/2g,  Vout = Total Flow/Aout","Upstream EGL = Upstream HGL + Vout\u00b2/2g"]));
   if(twoInflowSt){
     const calc = computeStructureCalc(twoInflowSt.id);
     const ctl = calc.controlling;
@@ -4987,11 +5007,11 @@ function buildFormulasReferenceSheet(){
         ["Pipe 2: Q2, \u03c52",fmt(ctl.Q2,3)+" cfs, "+fmt(ctl.a2,0)+"\u00b0"],
         ["V1/3, V2/3",fmt(ctl.V1_3,3)+" fps, "+fmt(ctl.V2_3,3)+" fps"],
         ["Kb(\u03c51), Kb(\u03c52)",fmt(ctl.Kb1,3)+", "+fmt(ctl.Kb2,3)],
-        ["Lv1, Lv2",fmt(ctl.Lv1,5)+" ft, "+fmt(ctl.Lv2,5)+" ft"],
+        ["L\u03c51, L\u03c52",fmt(ctl.Lv1,5)+" ft, "+fmt(ctl.Lv2,5)+" ft"],
       ]));
-      b4.push(csResult("Controlling angle \u03c5c", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2?"Lv1 > Lv2 \u2192 use \u03c52":"Lv2 > Lv1 \u2192 use \u03c51")+")"));
+      b4.push(csResult("Controlling angle \u03c5C", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2?"L\u03c51 > L\u03c52 \u2192 use \u03c52":"L\u03c52 > L\u03c51 \u2192 use \u03c51")+")"));
     }
-    b4.push(csTable([["Total Flow",fmt(calc.totalFlow,3)+" cfs"],["Vout = Total Flow/Aout",fmt(calc.Vout,3)+" fps"],["Kb(\u03c5c)",fmt(calc.kb,3)]]));
+    b4.push(csTable([["Total Flow",fmt(calc.totalFlow,3)+" cfs"],["Vout = Total Flow/Aout",fmt(calc.Vout,3)+" fps"],["Kb(\u03c5C)",fmt(calc.kb,3)]]));
     b4.push(csFormula(["Hb = "+fmt(calc.kb,3)+" \u00d7 "+fmt(calc.Vout,3)+"\u00b2 / "+(2*G).toFixed(1)]));
     b4.push(csResult("Hb", fmt(calc.Hb,4)+" ft"));
     b4.push(csFormula(["Upstream HGL = Downstream Elev + Hf + Hb = "+fmt(calc.downstreamElev,3)+" + "+fmt(calc.Hf,4)+" + "+fmt(calc.Hb,4)]));
@@ -5000,6 +5020,8 @@ function buildFormulasReferenceSheet(){
         "Conservative method: computed "+fmt(calc.hec22Elevation,2)+" ft → pinned to pipe crown "+fmt(calc.crown,2)+" ft"));
     }
     b4.push(csResult("Upstream HGL", fmt(calc.elevation,3)+" ft"));
+    b4.push(csFormula(["Upstream EGL = Upstream HGL + Vout²/2g = "+fmt(calc.elevation,3)+" + "+fmt(calc.vhOut,4)]));
+    b4.push(csResult("Upstream EGL", fmt(calc.egl,3)+" ft"));
   }
   body.push(csSection("4. Structure Loss \u2014 Controlling-Angle Method (Junction Structures tab)", el("div",{}, b4)));
 
@@ -6479,6 +6501,186 @@ function exportExcel(){
 }
 
 /* =======================================================================
+   Visualizer handoff (one-click "Open in Visualizer")
+   ======================================================================= */
+// Second serialization of the same computeStructureCalc / calcPipeRow results
+// the Excel export carries — never a new computation. Field-for-field it
+// mirrors what the visualizer's xlsx importer reads from the exported
+// workbook; the payload-vs-xlsx drift test pins the two together.
+const VISUALIZER_HASH_MAX = 60000; // URL-hash safety guard (~60k chars)
+
+const VISUALIZER_STORM_LABELS = { "1yr":"1-yr","2yr":"2-yr","5yr":"5-yr","10yr":"10-yr",
+  "25yr":"25-yr","50yr":"50-yr","100yr":"100-yr","500yr":"500-yr" };
+
+function buildVisualizerPayload(){
+  const structures = state.structures.map(s=>{
+    const calc = computeStructureCalc(s.id);
+    return {
+      id: s.structureId || s.id,
+      // Mirrors the xlsx importer's label fallback: empty Description falls
+      // back to the Structure ID column.
+      label: s.desc || s.structureId || s.id || "",
+      type: String(s.type || "manhole").toLowerCase(),
+      rim: (s.rim===""||s.rim==null) ? null : num(s.rim),
+      startElev: (s.startElev===""||s.startElev==null) ? null : num(s.startElev),
+      crown: (calc && calc.crown!=null) ? num(calc.crown) : null,
+      forceElev: !!s.forceElev,
+      capturedQ: round(calc ? calc.captured : 0, 4),
+      totalQ: round(calc ? calc.totalFlow : 0, 4),
+      Hb: (calc && calc.isBase) ? 0 : round(calc ? calc.Hb : 0, 4),
+      elevation: round(calc ? calc.elevation : 0, 3),
+      outPipeId: (calc && calc.outPipe) ? calc.outPipe.id : ""
+    };
+  });
+
+  const pipes = state.pipes.map(p=>{
+    const calc = calcPipeRow(p);
+    const fromLabel = (findStructure(p.fromStructureId)||{}).structureId || p.fromStructureId || "";
+    const toLabel = (findStructure(p.toStructureId)||{}).structureId || p.toStructureId || "";
+    return {
+      id: p.id,
+      fromId: fromLabel,
+      toId: toLabel,
+      shape: p.shape,
+      size: p.size||"",
+      n: num(pipeEffectiveN(p), 3),
+      slope: num(p.slope, 4),
+      length: num(p.length),
+      angle: num(p.angle, 0),
+      designQ: round(calc.designQ, 4),
+      usInvert: (p.upstreamInvert===""||p.upstreamInvert==null) ? null : parseFloat(p.upstreamInvert),
+      dsInvert: (p.downstreamInvert===""||p.downstreamInvert==null) ? null : parseFloat(p.downstreamInvert),
+      splitRole: String(p.splitRole||"").toLowerCase(),
+      // The exported Pipe Sizing sheet has no Hf column, so the xlsx import
+      // always yields 0 here; the visualizer recomputes friction itself.
+      Hf: 0
+    };
+  });
+
+  // Outfall + tailwater: mirrors the visualizer's xlsx fallback order exactly
+  // (first outfall-type structure's startElev/rim, else lowest startElev,
+  // with Outlet Structures fixed-TW override).
+  let outfallSid = null, outfallTw = null;
+  const outfallStructs = structures.filter(s=>s.type==="outfall");
+  if (outfallStructs.length > 0) {
+    outfallSid = outfallStructs[0].id;
+    outfallTw = outfallStructs[0].startElev != null ? outfallStructs[0].startElev : outfallStructs[0].rim;
+  } else if (structures.length > 0) {
+    const lowest = structures.slice().sort((a,b)=>((a.startElev||1e9)-(b.startElev||1e9)))[0];
+    outfallSid = lowest.id;
+    outfallTw = lowest.startElev;
+  }
+  for (const os of state.outletStructures) {
+    const linkedLabel = os.twStructureId ? ((findStructure(os.twStructureId)||{}).structureId||"") : "";
+    if (linkedLabel === outfallSid) {
+      const tw = (os.twFixed===""||os.twFixed==null) ? null : num(os.twFixed);
+      if (tw != null) outfallTw = tw;
+    }
+  }
+  const outfall = { structureId: outfallSid || "", tailwaterElev: outfallTw != null ? outfallTw : 100 };
+
+  const drainageAreas = state.drainage.map(r=>{
+    const linked = state.structures.find(s=>s.drainageAreaId===r.id);
+    return {
+      id: r.structureId||r.id,
+      structureId: linked ? (linked.structureId||"") : "",
+      areaAc: num(r.area),
+      C: num(r.C),
+      tc: num(r.tc)
+    };
+  });
+
+  // TR-55: mirrors the exported sheet's per-type blanks (the xlsx importer's
+  // pickNum turns those cells into null).
+  const tr55Segments = [];
+  state.drainage.forEach(r=>{
+    const segs = (r.tr55 && r.tr55.segments) || [];
+    segs.forEach((seg,i)=>{
+      const segNum = (v)=> (v===""||v==null) ? null : num(v);
+      tr55Segments.push({
+        drainageAreaId: r.structureId||r.id,
+        order: i+1,
+        type: String(seg.type||"").toLowerCase(),
+        n: (seg.type==="sheet"||seg.type==="channel") ? segNum(seg.n) : null,
+        L: segNum(seg.L),
+        s: segNum(seg.s),
+        P2: seg.type==="sheet" ? segNum(seg.P2) : null,
+        surface: seg.type==="shallow" ? (seg.surface||"unpaved") : "",
+        area: seg.type==="channel" ? segNum(seg.area) : null,
+        wp: seg.type==="channel" ? segNum(seg.wp) : null
+      });
+    });
+  });
+
+  return {
+    schemaVersion: 1,
+    sourceApp: "storm-drain-design-calculator",
+    structures, pipes, outfall,
+    drainageAreas, tr55Segments,
+    config: {
+      stormLabel: VISUALIZER_STORM_LABELS[state.rainfall.pipeStorm||"10yr"] || (state.rainfall.pipeStorm||""),
+      units: "us-customary",
+      hglMethod: (state.hydraulics && state.hydraulics.hglMethod) === "conservative" ? "legacy-both-crown" : "hec22"
+    }
+  };
+}
+
+// Encode for the #data= URL-hash protocol. Returns the encoded string, or
+// null when it exceeds the size guard (caller falls back to file download).
+function encodeVisualizerHandoff(payload){
+  const encoded = encodeURIComponent(JSON.stringify(payload));
+  return encoded.length <= VISUALIZER_HASH_MAX ? encoded : null;
+}
+
+// Fallback when the payload is too large for a URL hash (or popups are
+// blocked / file:// offline): download the same JSON the visualizer's
+// Import button accepts, so the handoff never dead-ends.
+function downloadVisualizerPayload(payload){
+  const name = (state.project||"storm-drain-project").replace(/[^a-z0-9\-_ ]/gi,"").trim().replace(/\s+/g,"-") || "storm-drain-project";
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name + "-visualizer.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+}
+
+function openInVisualizer(){
+  if(!state.structures.length){
+    toast("Nothing to send yet — add structures first.", true);
+    return;
+  }
+  let payload;
+  try { payload = buildVisualizerPayload(); }
+  catch(err){ console.error(err); toast("Visualizer handoff failed: "+escapeHtml(err.message), true); return; }
+  const encoded = encodeVisualizerHandoff(payload);
+  if(!encoded){
+    downloadVisualizerPayload(payload);
+    toast("Project too large for a one-click link — downloaded the visualizer JSON instead. Import it in the visualizer.");
+    return;
+  }
+  const hashUrl = (base)=> base + "#data=" + encoded;
+  if(location.protocol === "file:"){
+    // Offline: cross-tab load-failure detection is unreliable and file://
+    // cannot be probed synchronously, so always offer the downloaded file
+    // alongside the open attempt (binding simplification in the spec).
+    downloadVisualizerPayload(payload);
+    const w1 = window.open(hashUrl("visualizer.html"), "_blank");
+    if(!w1) window.open(hashUrl("../visualizer/storm-drain-visualizer.html"), "_blank");
+    toast("If the visualizer didn't open, import the downloaded JSON in the visualizer.");
+  } else {
+    const w = window.open(hashUrl("visualizer.html"), "_blank");
+    if(!w){
+      downloadVisualizerPayload(payload);
+      toast("Popup blocked — downloaded the visualizer JSON. Import it in the visualizer.");
+    }
+  }
+}
+
+/* =======================================================================
    Excel Import
 ======================================================================= */
 // ====== SECTION: Excel Import ======
@@ -6802,6 +7004,7 @@ function init(){
   });
 
   document.getElementById("exportBtn").addEventListener("click", exportExcel);
+  document.getElementById("openVisualizerBtn").addEventListener("click", openInVisualizer);
   const fileInput = document.getElementById("importFile");
   document.getElementById("importBtn").addEventListener("click", ()=> fileInput.click());
 
@@ -6858,7 +7061,8 @@ window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, c
   defaultInletSpacingRow, defaultInletSpacingSettings, availableStorms,
   defaultRainfallSettings, getTabs, renderRainfall,
   hglMethodFromLabel, hglMethodLabel, captureState, restoreState,
-  buildHglRowSheet, buildHglDetailSheet, buildFormulasReferenceSheet,
+  buildHglRowSheet, buildHglDetailSheet, buildFormulasReferenceSheet, buildVisualizerPayload, encodeVisualizerHandoff, VISUALIZER_HASH_MAX,
+  openInVisualizer,
   MDSHA_INTENSITY, MOCO_INTENSITY, NOAA_ATLAS14, NOAA_COUNTY_LIST, INLET_STRUCTURES,
   kAhFromAngle, resolveStructureCategory, STRUCTURE_CATALOG };
 

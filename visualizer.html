@@ -386,6 +386,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     const Lv1 = Kb_a * velocityHead(V1_3);
     const Lv2 = Kb_b * velocityHead(V2_3);
     // CRITICAL: the SMALLER candidate loss picks the controlling angle.
+    // Mandated by MCDOT Drainage Design Criteria §4.3.2.3 (Junctions), steps 5-6.
     const thetaC = (Lv1 > Lv2) ? bAngle : aAngle;
     const Kb = kbAt(thetaC, structureType, kbTable);
     return {
@@ -577,7 +578,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       if (row.kind === "start") {
         const crown = crownOf(row.id);
         hgl = (crown == null) ? row.after : Math.max(row.after, crown);
-        out.push(Object.assign({}, row, { hgl, hglClamped: hgl !== row.after }));
+        out.push(Object.assign({}, row, { hgl, hglClamped: hgl !== row.after,
+          hglDetail: { boundaryEGL: row.after, crown, hgl } }));
         continue;
       }
 
@@ -593,18 +595,24 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
           crownDn = (pDn != null) ? pDn : crownOf(pipe.toId);
           crownUp = (pUp != null) ? pUp : crownOf(pipe.fromId);
         }
+        const vh = velocityHead(V);
         const step = hglWalkStep(row.before, V, crownDn, crownUp, row.delta, method);
         hgl = step.hglUp;
-        out.push(Object.assign({}, row, { hgl, hglDn: step.hglDn, hglClamped: step.clamped }));
+        out.push(Object.assign({}, row, { hgl, hglDn: step.hglDn, hglClamped: step.clamped,
+          hglDetail: { V, vh, eglDn: row.before, crownDn, crownUp,
+                       hglDnRaw: row.before - vh, hglDn: step.hglDn,
+                       hglUpRaw: step.hglDn + row.delta, hglUp: step.hglUp } }));
         continue;
       }
 
       if (row.kind === "hb") {
-        const rawUp = (hgl == null ? row.before : hgl) + row.delta;
+        const prevHgl = (hgl == null ? row.before : hgl);
+        const rawUp = prevHgl + row.delta;
         const crown = crownOf(row.id);
         const up = (legacy && crown != null) ? Math.max(rawUp, crown) : rawUp;
         hgl = up;
-        out.push(Object.assign({}, row, { hgl, hglClamped: up !== rawUp }));
+        out.push(Object.assign({}, row, { hgl, hglClamped: up !== rawUp,
+          hglDetail: { prevHgl, delta: row.delta, crown, rawUp, hgl: up } }));
         continue;
       }
 
@@ -781,6 +789,41 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     state.ui.lastCursorId = null;
   }
 
+  // --- one-click handoff from the calculator (transfer spec Feature B) ---
+  // URL hash protocol: #data=<encodeURIComponent(JSON.stringify(payload))>.
+  // Consumed at boot (before the first render) and on hashchange (visualizer
+  // tab already open). Reuses applyImportedJson — never bypasses validation.
+  function importFromHash() {
+    const HASH_PREFIX = "#data=";
+    const h = window.location.hash || "";
+    if (!h.startsWith(HASH_PREFIX)) return false;
+
+    let payload = null;
+    let parseErr = null;
+    try {
+      payload = JSON.parse(decodeURIComponent(h.slice(HASH_PREFIX.length)));
+    } catch (e) {
+      parseErr = e;
+    }
+    const result = payload
+      ? validateImportedJson(payload)
+      : { valid: false, errors: ["handoff payload is not valid JSON" + (parseErr ? ": " + parseErr.message : "")] };
+
+    // Strip the hash either way so a refresh does not re-import.
+    history.replaceState(null, "", window.location.href.split("#")[0]);
+
+    if (!result.valid) {
+      // Same error surface as a failed file import.
+      alert("Import failed: " + result.errors.join("; "));
+      return true;
+    }
+
+    applyImportedJson(payload, "(from calculator)");
+    const nameSpan = document.getElementById("fileName");
+    if (nameSpan) nameSpan.textContent = "(from calculator)";
+    return true;
+  }
+
   // --- built-in samples (sample-projects) ---
   // Both samples are objects in the visualizer's own JSON import schema and
   // load through applyImportedJson — never assigned to state directly.
@@ -880,6 +923,23 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     const strRows  = sh("Junction Structure");
     const pipeRows = sh("Pipe Sizing");
     const outRows  = sh("Outlet Structures");
+
+    // Rainfall Settings: honor the calculator's HGL method row. The sheet is
+    // a label/value AoA with no header row, so read it as rows. A missing row
+    // or unrecognized value leaves the current method untouched (old exports
+    // behave exactly as before).
+    let hglMethodFromSheet = null;
+    if (wb.Sheets["Rainfall Settings"]) {
+      const rfAoA = XLSX.utils.sheet_to_json(wb.Sheets["Rainfall Settings"], { header: 1, defval: null });
+      for (const row of rfAoA) {
+        if (row && String(row[0]).trim() === "HGL Method") {
+          const v = String(row[1] == null ? "" : row[1]).trim();
+          if (v === "HEC-22") hglMethodFromSheet = "hec22";
+          else if (v === "Conservative") hglMethodFromSheet = "legacy-both-crown";
+        }
+      }
+    }
+    if (hglMethodFromSheet) state.ui.hglMethod = hglMethodFromSheet;
 
     // Build captured-Q lookup: drainage-area row has structureId + computed Q.
     // The main-app export names storm columns "Q_<storm> (cfs)", not "Q (cfs)".
@@ -2420,6 +2480,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     // Header line
     host.appendChild(el("div", { style: "font-weight:700; margin-bottom:8px;" },
       "Energy ledger (" + (state.ui.freeRoam ? "free-roam" : "upstream walk") + ") — HGL method: " + state.ui.hglMethod));
+    host.appendChild(el("div", { style: "font-size:11px; color:#666; margin:0 0 10px 0; max-width:920px;" },
+      "County criteria (MCDOT Drainage Design Criteria §4.3.2): the hydraulic gradient shall be computed for the 10-year design storm for all pipe sizes, taking into consideration friction losses in the pipes and losses in the structures caused by differences in velocity, change in direction of flow, incoming volume, entrance, exit and other applicable conditions. All closed systems shall be designed so that the 10-yr HGL is no higher than 1 foot above the crown of the pipe and at least one foot below the top of any inlet grate or manhole cover."));
 
     // One row per ledger entry. The synthetic end row reuses the last element's
     // id, so it must never be treated as the cursor target (that would expand
@@ -2495,6 +2557,53 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     return JSON.stringify(row);
   }
 
+  // --- HGL comp section: the EGL-to-HGL derivation, shown alongside the
+  // EGL equations so both grade lines have visible computation breakdowns.
+  function hglCompSection(row) {
+    const hd = row.hglDetail;
+    if (!hd) return null;
+    const method = state.ui.hglMethod;
+    const nodes = [];
+    if (row.kind === "hf") {
+      if (hd.crownDn != null && hd.hglDn > hd.hglDnRaw + 1e-12) {
+        nodes.push(csFormula("HGL_dn = max(EGL_dn - V²/(2g), Crown_dn)",
+          "max(" + fmtNum(hd.eglDn, 3) + " - " + fmtNum(hd.vh, 4) + ", " + fmtNum(hd.crownDn, 3) + ")",
+          fmtNum(hd.hglDn, 3), "ft"));
+      } else {
+        nodes.push(csFormula("HGL_dn = EGL_dn - V²/(2g)",
+          fmtNum(hd.eglDn, 3) + " - " + fmtNum(hd.vh, 4),
+          fmtNum(hd.hglDn, 3), "ft"));
+      }
+      if (hd.hglUp > hd.hglUpRaw + 1e-12) {
+        nodes.push(csFormula("HGL_up = max(HGL_dn + Hf, Crown_up)",
+          "max(" + fmtNum(hd.hglDn, 3) + " + " + fmtNum(row.delta, 3) + ", " + fmtNum(hd.crownUp, 3) + ")",
+          fmtNum(hd.hglUp, 3), "ft"));
+      } else {
+        nodes.push(csFormula("HGL_up = HGL_dn + Hf",
+          fmtNum(hd.hglDn, 3) + " + " + fmtNum(row.delta, 3),
+          fmtNum(hd.hglUp, 3), "ft"));
+      }
+    } else if (row.kind === "hb") {
+      if (hd.hgl > hd.rawUp + 1e-12) {
+        nodes.push(csFormula("HGL_up = max(HGL_prev + Hb, Crown)",
+          "max(" + fmtNum(hd.prevHgl, 3) + " + " + fmtNum(hd.delta, 4) + ", " + fmtNum(hd.crown, 3) + ")",
+          fmtNum(hd.hgl, 3), "ft"));
+      } else {
+        nodes.push(csFormula("HGL_up = HGL_prev + Hb",
+          fmtNum(hd.prevHgl, 3) + " + " + fmtNum(hd.delta, 4),
+          fmtNum(hd.hgl, 3), "ft"));
+      }
+    } else if (row.kind === "start") {
+      nodes.push(csFormula("HGL = max(boundary EGL, crown)",
+        "max(" + fmtNum(hd.boundaryEGL, 2) + ", " + (hd.crown != null ? fmtNum(hd.crown, 2) : "—") + ")",
+        fmtNum(hd.hgl, 2), "ft"));
+    } else {
+      return null;
+    }
+    nodes.push(csResult(row.kind === "start" ? "HGL" : "HGL_up", fmtNum(hd.hgl, 3), "ft"));
+    return csSection("HGL step (" + method + ")", el("div", null, nodes));
+  }
+
   // --- Hf row expanded render (task-28) ---
 
   function renderHfRow(row) {
@@ -2515,7 +2624,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       return editableNumber(row.id, "size", state.imported, state.overrides, { step: 3 });
     };
 
-    return el("div", null, [
+    const hfKids = [
       csSection("inputs", el("table", { style: "font-family:ui-monospace,monospace; font-size:12px;" }, [
         el("tr", null, [el("td", { style: "padding:2px 8px;" }, "Q (cfs)"), el("td", null, fmtNum(q, 2))]),
         el("tr", null, [el("td", { style: "padding:2px 8px;" }, "n"), el("td", null, inp("n", "0.001"))]),
@@ -2541,7 +2650,10 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
         "ft"
       )),
       csResult("EGL_up = EGL_dn + Hf = " + fmtNum(row.before, 3) + " + " + fmtNum(d.Hf, 3), fmtNum(row.after, 3), "ft")
-    ]);
+    ];
+    const hglSec = hglCompSection(row);
+    if (hglSec) hfKids.push(hglSec);
+    return el("div", null, hfKids);
   }
 
   // --- Hb row expanded render (task-29) ---
@@ -2610,7 +2722,11 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   // Default expanded renderer — replaced by task-28/29 per row kind.
   function renderExpandedRow(row) {
     if (typeof renderHfRow === "function" && row.kind === "hf")   return renderHfRow(row);
-    if (typeof renderHbRow === "function" && row.kind === "hb")   return renderHbRow(row);
+    if (typeof renderHbRow === "function" && row.kind === "hb") {
+      const base = renderHbRow(row);
+      const hglSec = hglCompSection(row);
+      return hglSec ? el("div", null, [base, hglSec]) : base;
+    }
     if (row.kind === "start") {
       const reason = row.detail.boundaryReason || "tailwater";
       const label = reason === "fixed elevation" ? "Fixed start elevation"
@@ -2618,7 +2734,9 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
                   : reason === "rim boundary" ? "Rim boundary elevation"
                   : reason === "zero boundary" ? "Boundary elevation"
                   : "Tailwater elevation";
-      return csResult(label, fmtNum(row.detail.boundaryEGL, 2), "ft");
+      const boundary = csResult(label, fmtNum(row.detail.boundaryEGL, 2), "ft");
+      const hglSec = hglCompSection(row);
+      return hglSec ? el("div", null, [boundary, hglSec]) : boundary;
     }
     if (row.kind === "end")   return csResult("Total rise over walked path", fmtNum(row.detail.totalRise, 3), "ft");
     return el("div", null, "(no detail)");
@@ -2661,7 +2779,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       csSection("two inflows — controlling-angle method", el("div", { style: "font-size:12px; color:#444; margin-bottom:6px;" }, [
         "Compute Lv = Kb·V²/(2g) for each inflow using that inflow's partial velocity (V_i/3 = Q_i / A_out). ",
         el("b", null, "The SMALLER of the two Lv's picks the controlling angle θc."),
-        " (The counter-intuitive detail: smaller Lv → θc, not larger. Per main spec §1.4.)"
+        " (The counter-intuitive detail: smaller Lv → θc, not larger. Per main spec §1.4; the procedure is mandated verbatim by MCDOT Drainage Design Criteria §4.3.2.3 Junctions, following the MSHA Highway Drainage Manual. HEC-22 4th Ed §9.1.6.7.2 instead flow-weights the angle — the county criteria govern.)"
       ])),
       candTable,
       csSection("controlling angle", csFormula(
@@ -3013,6 +3131,11 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   window.KB_SEED = KB_SEED;
   window.TABLE_4_6 = TABLE_4_6;
   window.SAMPLES = SAMPLES;
+  // One-click handoff: consume a #data= hash before the first render.
+  if (importFromHash()) autoLayoutIfNeeded();
+  window.addEventListener("hashchange", () => {
+    if (importFromHash()) { autoLayoutIfNeeded(); renderAll(); }
+  });
   renderAll();
   // ==== bootstrap: end ====
 </script>
