@@ -868,6 +868,23 @@
     const pipeRows = sh("Pipe Sizing");
     const outRows  = sh("Outlet Structures");
 
+    // Rainfall Settings: honor the calculator's HGL method row. The sheet is
+    // a label/value AoA with no header row, so read it as rows. A missing row
+    // or unrecognized value leaves the current method untouched (old exports
+    // behave exactly as before).
+    let hglMethodFromSheet = null;
+    if (wb.Sheets["Rainfall Settings"]) {
+      const rfAoA = XLSX.utils.sheet_to_json(wb.Sheets["Rainfall Settings"], { header: 1, defval: null });
+      for (const row of rfAoA) {
+        if (row && String(row[0]).trim() === "HGL Method") {
+          const v = String(row[1] == null ? "" : row[1]).trim();
+          if (v === "HEC-22") hglMethodFromSheet = "hec22";
+          else if (v === "Conservative") hglMethodFromSheet = "legacy-both-crown";
+        }
+      }
+    }
+    if (hglMethodFromSheet) state.ui.hglMethod = hglMethodFromSheet;
+
     // Build captured-Q lookup: drainage-area row has structureId + computed Q.
     // The main-app export names storm columns "Q_<storm> (cfs)", not "Q (cfs)".
     // Fallback only: the Junction Structure sheet's own "Captured Q (cfs)" is

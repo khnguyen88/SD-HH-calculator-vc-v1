@@ -199,3 +199,60 @@ test("xlsx import (synthetic): split roles, blank Design Q, DA/TR-55, analysis",
   assert.ok(a.splitterIds.includes("S"), "S detected as splitter");
   assert.strictEqual(a.primaryPipeByStructureId["S"], "P1", "P1 is S primary");
 });
+
+// ==================== HGL Method row (transfer spec Feature A) ====================
+
+function buildWorkbookWithHglMethod(hglValue) {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+    { "Structure ID": "OUT", "Type": "outfall", "Fixed-Start Elev (ft)": 100 },
+    { "Structure ID": "S", "Type": "inlet", "Rim-Grate Elev (ft)": 110 }
+  ]), "Junction Structure");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+    { "ID": "P1", "From Structure": "S", "To Structure": "OUT", "Shape": "circular",
+      "Size (in or SPANxRISE)": 18, "n": 0.013, "Slope (ft-ft)": 0.005, "Length (ft)": 100 }
+  ]), "Pipe Sizing");
+  if (hglValue !== undefined) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Rainfall Source", "noaa"],
+      ["HGL Method", hglValue]
+    ]), "Rainfall Settings");
+  }
+  return wb;
+}
+
+async function importHglWorkbook(window, hglValue) {
+  ensureFileArrayBuffer(window);
+  const arr = XLSX.write(buildWorkbookWithHglMethod(hglValue), { type: "array", bookType: "xlsx", bookSST: true });
+  const blob = new window.Blob([arr], { type: XLSX_TYPE });
+  const file = new window.File([blob], "hgl.xlsx", { type: XLSX_TYPE });
+  await window.importFromXlsxFile(file);
+}
+
+test("xlsx 'HGL Method: Conservative' sets legacy-both-crown", async () => {
+  const { window } = loadVisualizer({ XLSX });
+  await importHglWorkbook(window, "Conservative");
+  assert.strictEqual(window.state.ui.hglMethod, "legacy-both-crown");
+  assert.strictEqual(window.state.imported.config.hglMethod, "legacy-both-crown");
+});
+
+test("xlsx 'HGL Method: HEC-22' sets hec22", async () => {
+  const { window } = loadVisualizer({ XLSX });
+  window.state.ui.hglMethod = "legacy-both-crown"; // must be overridden by the sheet
+  await importHglWorkbook(window, "HEC-22");
+  assert.strictEqual(window.state.ui.hglMethod, "hec22");
+});
+
+test("xlsx with no HGL Method row leaves the current method untouched", async () => {
+  const { window } = loadVisualizer({ XLSX });
+  window.state.ui.hglMethod = "legacy-both-crown";
+  await importHglWorkbook(window, undefined); // no Rainfall Settings sheet at all
+  assert.strictEqual(window.state.ui.hglMethod, "legacy-both-crown");
+});
+
+test("xlsx with unrecognized HGL Method value leaves the current method untouched", async () => {
+  const { window } = loadVisualizer({ XLSX });
+  window.state.ui.hglMethod = "hec22";
+  await importHglWorkbook(window, "Weird Method");
+  assert.strictEqual(window.state.ui.hglMethod, "hec22");
+});
