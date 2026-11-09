@@ -159,7 +159,8 @@ dropFt = min(incoming dsInvert) − outgoing usInvert
 ```
 
 If `dropFt > 0.5`, record
-`{ structureId, dropFt, fromInvert, toInvert, incomingPipeIds, outgoingPipeId }`.
+`{ id, dropFt, fromInvert, toInvert, incomingPipeIds, outgoingPipeId }`
+(the record key is `id`, matching the analysis objects' existing shape).
 
 Banner line, e.g.:
 > *Drop structure MH-1: 10.00 ft drop inside structure (invert 100.00 →
