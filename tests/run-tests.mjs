@@ -608,3 +608,89 @@ test("buildWorkbook: new structure fields present in Junction Structure sheet", 
   const keys = Object.keys(ws).filter(k => k !== "!ref" && k !== "!cols" && k.match(/^[A-Z]+1$/));
   assert.ok(keys.some(k => ws[k] && ws[k].v === "Structure Mode"), "Structure Mode header missing");
 });
+
+// ==================== circularSegment — spec §3.2 boundary verification ====================
+test("circularSegment: h=0 → A=0, hc=0", () => {
+  const r = 1.0;
+  const seg = sdc.circularSegment(0, r);
+  assert.ok(Math.abs(seg.A) < 1e-12, "A at h=0 must be 0");
+  assert.ok(Math.abs(seg.hc) < 1e-12, "hc at h=0 must be 0");
+});
+
+test("circularSegment: h=r (half full) → A = π·r²/2, hc = 4r/(3π)", () => {
+  const r = 1.5;
+  const seg = sdc.circularSegment(r, r);   // h=r → half full
+  const expectedA  = Math.PI * r * r / 2;
+  const expectedHc = 4 * r / (3 * Math.PI);
+  assert.ok(Math.abs(seg.A  - expectedA)  < 1e-9, `A at half-full: got ${seg.A}, expected ${expectedA}`);
+  assert.ok(Math.abs(seg.hc - expectedHc) < 1e-9, `hc at half-full: got ${seg.hc}, expected ${expectedHc}`);
+});
+
+test("circularSegment: h=2r (full) → A = π·r², hc = r", () => {
+  const r = 0.75;
+  const seg = sdc.circularSegment(2 * r, r);
+  const expectedA  = Math.PI * r * r;
+  const expectedHc = r;
+  assert.ok(Math.abs(seg.A  - expectedA)  < 1e-9, `A at full: got ${seg.A}, expected ${expectedA}`);
+  assert.ok(Math.abs(seg.hc - expectedHc) < 1e-9, `hc at full: got ${seg.hc}, expected ${expectedHc}`);
+});
+
+// ==================== frictionSlope — spec §1.4 ====================
+test("frictionSlope: known reference value (Q=1.0, n=0.013, 24-in circular)", () => {
+  // 24-in circular pipe: A = π/4*(2)² = π ft², R = D/4 = 0.5 ft
+  const A = Math.PI;        // sf
+  const R = 0.5;            // ft
+  const n = 0.013;
+  const Q = 1.0;            // cfs
+  const Sf_expected = Math.pow(Q * n / (1.486 * A * Math.pow(R, 2/3)), 2);
+  const Sf_actual   = sdc.frictionSlope(Q, n, A, R);
+  isClose(Sf_actual, Sf_expected, 1e-12, "frictionSlope mismatch");
+});
+
+test("frictionSlope: zero area returns 0", () => {
+  assert.equal(sdc.frictionSlope(5, 0.013, 0, 0.5), 0);
+});
+
+// ==================== TR-55 equations — spec §1B.2 ====================
+test("tr55SheetFlowTt: matches closed-form formula", () => {
+  const n=0.24, L=100, s=0.02, P2=3.5;
+  const expected = 0.007 * Math.pow(n*L, 0.8) / (Math.pow(P2, 0.5) * Math.pow(s, 0.4));
+  isClose(sdc.tr55SheetFlowTt(n, L, s, P2), expected, 1e-10, "sheet flow Tt");
+});
+
+test("tr55SheetFlowTt: returns 0 for zero length", () => {
+  assert.equal(sdc.tr55SheetFlowTt(0.24, 0, 0.02, 3.5), 0);
+});
+
+test("tr55TravelTime (shallow): Tt = L/(3600*V)", () => {
+  const surface = "unpaved";
+  const s = 0.04, L = 500;
+  const V = sdc.tr55ShallowVelocity(surface, s);
+  const Tt = sdc.tr55TravelTime(L, V);
+  const expectedTt = L / (3600 * V);
+  isClose(Tt, expectedTt, 1e-10, "shallow Tt");
+  assert.ok(V > 0, "shallow velocity must be positive");
+});
+
+test("tr55 channel velocity: V = (1.486/n)*R^(2/3)*s^0.5", () => {
+  const n=0.030, area=25, wp=15, s=0.001;
+  const R = area/wp;
+  const expected = (1.486/n) * Math.pow(R, 2/3) * Math.sqrt(s);
+  isClose(sdc.tr55ChannelVelocity(n, area, wp, s), expected, 1e-10, "channel V");
+});
+
+test("computeTr55: multi-segment Tc = sum of segment Tt", () => {
+  const row = {
+    tr55: { segments: [
+      { type:"sheet",   n:0.24, L:100, s:0.02, P2:3.5 },
+      { type:"shallow", surface:"unpaved", L:500, s:0.04 },
+      { type:"channel", n:0.030, area:25, wp:15, s:0.001, L:800 },
+    ]}
+  };
+  const result = sdc.computeTr55(row);
+  assert.equal(result.results.length, 3, "3 segment results");
+  const sumTt = result.results.reduce((a,b) => a + (b.tt||0), 0);
+  isClose(result.totalHr, sumTt, 1e-12, "totalHr = sum of segment Tt");
+  assert.ok(result.totalMin > 0, "totalMin > 0");
+  isClose(result.totalMin, result.totalHr * 60, 1e-10, "totalMin = totalHr*60");
+});
