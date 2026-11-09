@@ -188,6 +188,10 @@ Hf = Sf × L
 
 Structure loss depends on how many pipes flow **into** the structure. The structure's outgoing pipe is the reference — `Aout` is the full area of that outgoing pipe, and `Vout` is the structure's Total Flow divided by `Aout`.
 
+**Governing source:** the controlling-angle junction procedure is specified verbatim by the *MCDOT Drainage Design Criteria for Montgomery County, MD* (10th Revised Final, 2014), §4.3.2.3 "Manhole, Inlet and Field Connection Energy Losses — Junctions" (p. 46), which directs designers to the MSHA Highway Drainage Manual (Storm Drain chapter) with HEC-22 as additional direction. `Hb = Kb × Vf²/2g` is the county's Eq. 4-8, with `Vf` the velocity at the given discharge in the (near-full) outlet pipe. The loss coefficients are the county's Appendix B `Kb` table (editable in-app; seeded defaults are a published AASHTO bend-loss curve — replace with your agency's Appendix B values before submittal).
+
+**Documented difference from current HEC-22:** HEC-22 4th edition (§9.1.6.7.2, Eq 9.21) replaced the controlling-angle procedure in its FHWA structured access-hole method with a *flow-weighted* inflow angle `θw = Σ(Qj·θj)/ΣQj`. The county criteria predate the 4th edition and still mandate the controlling-angle procedure, so the tool follows the county. The Kₐₕ structure-catalog mode uses the HEC-22 4th ed. §9.1.6.6 Approximate Method (Eq 9.10, Table 9.4 coefficients).
+
 ### 5.1 Kb lookup
 
 `Kb(θ)` comes from the editable Angle-vs-Kb table (Kb Coefficients tab), linearly interpolated between rows and clamped at the table's endpoints (5° through 90° as seeded). Separate columns for Inlet / Manhole / Bend. Column use by structure type:

@@ -1306,3 +1306,71 @@ test("hash handoff size guard trips on oversized payloads", () => {
   big.structures[0].label = "x".repeat(70000);
   assert.equal(sdc.encodeVisualizerHandoff(big), null, "oversized payload must return null");
 });
+
+// ==================== Two-inflow junction — controlling angle per MCDOT §4.3.2.3 ====================
+// MCDOT Drainage Design Criteria §4.3.2.3 (Junctions, p. 46), following the
+// MSHA Highway Drainage Manual: evaluate each inflow's structure loss Lυ in
+// the outgoing pipe; the pipe with the SMALLER Lυ provides the controlling
+// angle υC, whose Kb is applied to the full merged flow. Verified against
+// the county manual steps 5–6: "If Lυ1 is greater, υ2 is the controlling
+// angle υC" / "If Lυ2 is greater, υ1 is the controlling angle υC".
+function twoInflowFlowFixture(areaA, areaB, structureMode){
+  const s0 = sdc.state;
+  const saved = { structures: s0.structures, pipes: s0.pipes, drainage: s0.drainage, hydraulics: s0.hydraulics };
+  s0.drainage = [
+    { id:"wf-da-a", structureId:"WF-DA-A", desc:"", area:areaA, C:1.0, iOverride:10, tc:5, cf:1.0, tcMethod:"direct", tr55:{segments:[]} },
+    { id:"wf-da-b", structureId:"WF-DA-B", desc:"", area:areaB, C:1.0, iOverride:10, tc:5, cf:1.0, tcMethod:"direct", tr55:{segments:[]} },
+  ];
+  const modeFields = structureMode === "standard"
+    ? { structureMode:"standard", agency:"pgder", standardStructureId:"pgder-mh-48",
+        structureCategory:"", shape:"", innerDiameter:"", innerWidth:"", innerLength:"" }
+    : { structureMode:"" };
+  s0.structures = [
+    { id:"wf-out", structureId:"WF-OUT", type:"outfall", forceElev:true, startElev:100, drainageAreaId:"", rim:"" },
+    Object.assign({ id:"wf-j", structureId:"WF-J", type:"manhole", forceElev:false, startElev:"", drainageAreaId:"", rim:"" }, modeFields),
+    { id:"wf-ua", structureId:"WF-UA", type:"inlet", forceElev:false, startElev:"", drainageAreaId:"wf-da-a", rim:"" },
+    { id:"wf-ub", structureId:"WF-UB", type:"inlet", forceElev:false, startElev:"", drainageAreaId:"wf-da-b", rim:"" },
+  ];
+  s0.pipes = [
+    { id:"wf-out-p", fromStructureId:"wf-j", toStructureId:"wf-out", angle:0, shape:"circular", size:24, n:0.013, slope:0.01, length:100, upstreamInvert:"", downstreamInvert:"", splitRole:"" },
+    { id:"wf-in1", fromStructureId:"wf-ua", toStructureId:"wf-j", angle:30, shape:"circular", size:12, n:0.013, slope:0.01, length:50, upstreamInvert:"", downstreamInvert:"", splitRole:"" },
+    { id:"wf-in2", fromStructureId:"wf-ub", toStructureId:"wf-j", angle:90, shape:"circular", size:12, n:0.013, slope:0.01, length:50, upstreamInvert:"", downstreamInvert:"", splitRole:"" },
+  ];
+  s0.hydraulics = { hglMethod: "hec22" };
+  return function restore(){ s0.structures = saved.structures; s0.pipes = saved.pipes; s0.drainage = saved.drainage; s0.hydraulics = saved.hydraulics; };
+}
+
+test("two-inflow junction: minor steep pipe has the smaller Lυ, so its angle controls (MCDOT steps 5-6)", () => {
+  // Q1 = 10 cfs at 30°, Q2 = 1 cfs at 90°, 24-in outgoing pipe (A = 3.14 sf).
+  // Lυ1 = 0.35×(10/3.14)²/64.4 ≈ 0.055 ft; Lυ2 = 0.70×(1/3.14)²/64.4 ≈ 0.0035 ft.
+  // Lυ1 > Lυ2 → controlling angle υC = υ2 = 90° → Kb = 0.70 (manhole column).
+  const restore = twoInflowFlowFixture(1.0, 0.1);
+  const calc = sdc.computeStructureCalc("wf-j");
+  restore();
+  assert.ok(calc.controlling, "controlling block must exist for a two-inflow structure");
+  isClose(calc.controlling.Q1, 10, 0.01, "Q1 (area 1.0, C 1.0, i 10)");
+  isClose(calc.controlling.Q2, 1, 0.01, "Q2 (area 0.1, C 1.0, i 10)");
+  isClose(calc.controlling.Lv1, 0.0551, 0.001, "Lυ1 = Kb(30)·V1/3²/2g");
+  isClose(calc.controlling.Lv2, 0.0011, 0.0005, "Lυ2 = Kb(90)·V2/3²/2g");
+  assert.equal(calc.controlling.vc, 90, "Lυ1 > Lυ2 → controlling angle is pipe 2's 90°");
+  isClose(calc.kb, 0.70, 0.001, "Kb evaluated at the controlling angle (manhole 90° = 0.70)");
+});
+
+test("two-inflow junction: equal flows — the higher-Kb angle has the larger Lυ, so the low angle controls", () => {
+  // Equal Q → V1/3 = V2/3 → Lυ ordering follows Kb: Kb(90)=0.70 > Kb(30)=0.35
+  // → Lυ2 > Lυ1 → controlling angle υC = υ1 = 30° → Kb = 0.35.
+  const restore = twoInflowFlowFixture(1.0, 1.0);
+  const calc = sdc.computeStructureCalc("wf-j");
+  restore();
+  assert.equal(calc.controlling.vc, 30, "Lυ2 > Lυ1 → controlling angle is pipe 1's 30°");
+  isClose(calc.kb, 0.35, 0.001, "Kb(30°) = 0.35 from the default manhole column");
+});
+
+test("two-inflow junction: catalog K_ah mode applies the same controlling-angle selection", () => {
+  const restore = twoInflowFlowFixture(1.0, 0.1, "standard");
+  const calc = sdc.computeStructureCalc("wf-j");
+  restore();
+  assert.equal(calc.controlling.vc, 90, "controlling angle in catalog mode");
+  isClose(calc.kb, sdc.kAhFromAngle("access_hole", 90), 0.0001,
+    "K_ah must be evaluated at the controlling angle");
+});

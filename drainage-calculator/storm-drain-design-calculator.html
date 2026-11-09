@@ -2030,6 +2030,11 @@ function computeStructureCalc(structureId, seen, stormOverride){
     const angle = parseFloat(inflowPipes[0].angle)||0;
     kb = kbForAngle(angle);
   } else if(inflowPipes.length===2){
+    // MCDOT Drainage Design Criteria \u00a74.3.2.3 (Junctions), following the
+    // MSHA Highway Drainage Manual: compare each inflow's structure loss
+    // evaluated in the outgoing pipe; the pipe with the SMALLER loss
+    // provides the controlling angle, whose Kb is then applied to the
+    // full merged flow in the outgoing pipe.
     const [p1,p2] = inflowPipes;
     const a1 = parseFloat(p1.angle)||0, a2 = parseFloat(p2.angle)||0;
     const Q1 = pipeDesignQ(p1, null, stormOverride), Q2 = pipeDesignQ(p2, null, stormOverride);
@@ -4768,12 +4773,12 @@ function buildHglRowSheet(structureId, stormOverride){
     const structLossBody = [];
     const kLabel = calc.useCatalogKah ? "K\u2090\u2095 (HEC-22 Approx.)" : "Kb";
     const kSourceNote = calc.useCatalogKah
-      ? "Inflow pipe count: "+calc.inflowCount+" \u2014 K\u2090\u2095 from HEC-22 5th Ed. Table 8.5 Approx. Method ("+resolveStructureCategory(st)+")"
+      ? "Inflow pipe count: "+calc.inflowCount+" \u2014 K\u2090\u2095 from HEC-22 4th Ed. \u00a79.1.6.6 Approximate Method, Table 9.4 ("+resolveStructureCategory(st)+")"
       : "Inflow pipe count: "+calc.inflowCount+" \u2014 Kb column: "+(calc.kbColumn||"n/a")+" (legacy Kb table)";
     structLossBody.push(el("div",{class:"cs-note"}, kSourceNote));
     if (calc.useCatalogKah) {
       structLossBody.push(el("div",{class:"cs-note"},
-        "Note: Controlling-angle convention follows HEC-22 \u00a78.5: the angle producing the smaller head loss governs (smaller-loss pipe\u2019s angle selected as controlling angle when 2 inflows present)."));
+        "Note: with two inflow pipes the controlling angle follows MCDOT Drainage Design Criteria \u00a74.3.2.3 (Junctions), per the MSHA Highway Drainage Manual: the pipe with the smaller computed structure loss L\u03c5 provides the controlling angle \u03c5C, and K\u2090\u2095(\u03c5C) is applied to the full merged flow."));
     }
     if(calc.inflowCount===0){
       structLossBody.push(el("div",{class:"cs-note"}, "No piped inflow \u2014 nominal entrance condition, "+kLabel+" evaluated at 0\u00b0."));
@@ -4787,9 +4792,9 @@ function buildHglRowSheet(structureId, stormOverride){
         ["Pipe 2: Q\u2082, \u03c5\u2082", fmt(ctl.Q2,2)+" cfs, "+fmt(ctl.a2,0)+"\u00b0"],
         ["V\u2081/\u2083 = Q\u2081 / A(out)", fmt(ctl.V1_3,2)+" fps"],
         ["V\u2082/\u2083 = Q\u2082 / A(out)", fmt(ctl.V2_3,2)+" fps"],
-        ["Lv\u2081 = "+kShort+"(\u03c5\u2081)\u00d7V\u2081/\u2083\u00b2/2g", fmt(ctl.Lv1,4)+" ft  ("+kShort+"="+fmt(ctl.Kb1,3)+")"],
-        ["Lv\u2082 = "+kShort+"(\u03c5\u2082)\u00d7V\u2082/\u2083\u00b2/2g", fmt(ctl.Lv2,4)+" ft  ("+kShort+"="+fmt(ctl.Kb2,3)+")"],
-        ["Controlling angle \u03c5c", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2? "Lv\u2081 > Lv\u2082 \u2192 use \u03c5\u2082" : "Lv\u2082 \u2265 Lv\u2081 \u2192 use \u03c5\u2081")+")"],
+        ["L\u03c5\u2081 = "+kShort+"(\u03c5\u2081)\u00d7V\u2081/\u2083\u00b2/2g", fmt(ctl.Lv1,4)+" ft  ("+kShort+"="+fmt(ctl.Kb1,3)+")"],
+        ["L\u03c5\u2082 = "+kShort+"(\u03c5\u2082)\u00d7V\u2082/\u2083\u00b2/2g", fmt(ctl.Lv2,4)+" ft  ("+kShort+"="+fmt(ctl.Kb2,3)+")"],
+        ["Controlling angle \u03c5C", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2? "L\u03c5\u2081 > L\u03c5\u2082 \u2192 use \u03c5\u2082" : "L\u03c5\u2082 \u2265 L\u03c5\u2081 \u2192 use \u03c5\u2081")+")"],
       ]));
     } else if(calc.kb==null){
       structLossBody.push(csWarn("More than 2 inflow pipes \u2014 controlling-angle method not applicable. Compute Hb manually."));
@@ -4975,8 +4980,8 @@ function buildFormulasReferenceSheet(){
   let twoInflowSt=null;
   for(const st of s.structures){ if(getIncomingPipes(st.id).length===2){ twoInflowSt=st; break; } }
   const b4 = [];
-  b4.push(csSub("Turbulence loss where flow enters a structure and turns to exit through the outgoing pipe. With two inflow pipes, the controlling-angle method applies: the angle belonging to the SMALLER computed loss governs the merged flow."));
-  b4.push(csFormula(["Single inflow: Kb at that pipe's angle","Two inflow: V1/3=Q1/Aout, V2/3=Q2/Aout","Lv1=Kb(\u03c51)\u00d7V1/3\u00b2/2g, Lv2=Kb(\u03c52)\u00d7V2/3\u00b2/2g","Lv1>Lv2 \u2192 \u03c5c=\u03c52  |  Lv2>Lv1 \u2192 \u03c5c=\u03c51","Hb = Kb(\u03c5c) \u00d7 Vout\u00b2/2g,  Vout = Total Flow/Aout"]));
+  b4.push(csSub("Turbulence loss where flow enters a structure and turns to exit through the outgoing pipe. With two inflow pipes, the controlling-angle method applies per MCDOT Drainage Design Criteria \u00a74.3.2.3 (Junctions): the angle belonging to the SMALLER computed loss governs the merged flow."));
+  b4.push(csFormula(["Single inflow: Kb at that pipe's angle","Two inflow: V1/3=Q1/Aout, V2/3=Q2/Aout","L\u03c51=Kb(\u03c51)\u00d7V1/3\u00b2/2g, L\u03c52=Kb(\u03c52)\u00d7V2/3\u00b2/2g","L\u03c51>L\u03c52 \u2192 \u03c5C=\u03c52  |  L\u03c52>L\u03c51 \u2192 \u03c5C=\u03c51","Hb = Kb(\u03c5C) \u00d7 Vout\u00b2/2g,  Vout = Total Flow/Aout"]));
   if(twoInflowSt){
     const calc = computeStructureCalc(twoInflowSt.id);
     const ctl = calc.controlling;
@@ -4987,11 +4992,11 @@ function buildFormulasReferenceSheet(){
         ["Pipe 2: Q2, \u03c52",fmt(ctl.Q2,3)+" cfs, "+fmt(ctl.a2,0)+"\u00b0"],
         ["V1/3, V2/3",fmt(ctl.V1_3,3)+" fps, "+fmt(ctl.V2_3,3)+" fps"],
         ["Kb(\u03c51), Kb(\u03c52)",fmt(ctl.Kb1,3)+", "+fmt(ctl.Kb2,3)],
-        ["Lv1, Lv2",fmt(ctl.Lv1,5)+" ft, "+fmt(ctl.Lv2,5)+" ft"],
+        ["L\u03c51, L\u03c52",fmt(ctl.Lv1,5)+" ft, "+fmt(ctl.Lv2,5)+" ft"],
       ]));
-      b4.push(csResult("Controlling angle \u03c5c", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2?"Lv1 > Lv2 \u2192 use \u03c52":"Lv2 > Lv1 \u2192 use \u03c51")+")"));
+      b4.push(csResult("Controlling angle \u03c5C", fmt(ctl.vc,0)+"\u00b0  ("+(ctl.Lv1>ctl.Lv2?"L\u03c51 > L\u03c52 \u2192 use \u03c52":"L\u03c52 > L\u03c51 \u2192 use \u03c51")+")"));
     }
-    b4.push(csTable([["Total Flow",fmt(calc.totalFlow,3)+" cfs"],["Vout = Total Flow/Aout",fmt(calc.Vout,3)+" fps"],["Kb(\u03c5c)",fmt(calc.kb,3)]]));
+    b4.push(csTable([["Total Flow",fmt(calc.totalFlow,3)+" cfs"],["Vout = Total Flow/Aout",fmt(calc.Vout,3)+" fps"],["Kb(\u03c5C)",fmt(calc.kb,3)]]));
     b4.push(csFormula(["Hb = "+fmt(calc.kb,3)+" \u00d7 "+fmt(calc.Vout,3)+"\u00b2 / "+(2*G).toFixed(1)]));
     b4.push(csResult("Hb", fmt(calc.Hb,4)+" ft"));
     b4.push(csFormula(["Upstream HGL = Downstream Elev + Hf + Hb = "+fmt(calc.downstreamElev,3)+" + "+fmt(calc.Hf,4)+" + "+fmt(calc.Hb,4)]));
