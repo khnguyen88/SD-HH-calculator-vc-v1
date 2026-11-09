@@ -1374,3 +1374,76 @@ test("two-inflow junction: catalog K_ah mode applies the same controlling-angle 
   isClose(calc.kb, sdc.kAhFromAngle("access_hole", 90), 0.0001,
     "K_ah must be evaluated at the controlling angle");
 });
+
+// ==== EGL (energy grade line) — EGL = HGL + Vout²/(2g) ====
+
+test("EGL: structure EGL = upstream HGL + velocity head in the outgoing pipe", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const calc = sdc.computeStructureCalc("pin-st");
+  restore();
+  assert.ok(calc != null, "calc is null");
+  assert.ok(Number.isFinite(calc.vhOut), "vhOut must be a finite number");
+  assert.ok(Number.isFinite(calc.egl), "egl must be a finite number");
+  // HEC-22 HGL = 100.00 (outfall 100 + 0 + 0); 24-in circular pipe A = π sf.
+  // Total flow 0 → Vout = 0 → EGL = HGL.
+  isClose(calc.vhOut, 0, 1e-9, "zero flow → zero velocity head");
+  isClose(calc.egl, calc.elevation, 1e-9, "EGL = HGL when Vout = 0");
+});
+
+test("EGL: with flow, EGL = HGL + Vout²/(2g)", () => {
+  const restore = twoInflowFlowFixture(1.0, 0.1);
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const calc = sdc.computeStructureCalc("wf-j");
+  restore();
+  // Total flow 11 cfs through the 24-in outgoing pipe: A = π sf, Vout = 11/π.
+  const Vout = 11 / Math.PI;
+  assert.ok(Number.isFinite(calc.vhOut), "vhOut must be a finite number");
+  assert.ok(Number.isFinite(calc.egl), "egl must be a finite number");
+  isClose(calc.Vout, Vout, 0.001, "Vout = Total Flow / Aout");
+  isClose(calc.vhOut, Vout * Vout / (2 * 32.2), 0.0001, "vhOut = Vout²/(2g)");
+  isClose(calc.egl, calc.elevation + calc.vhOut, 1e-9, "EGL = HGL + vhOut");
+});
+
+test("EGL: base (outfall) structure has EGL = fixed elevation, zero velocity head", () => {
+  const restore = twoInflowFlowFixture(1.0, 0.1);
+  const calc = sdc.computeStructureCalc("wf-out");
+  restore();
+  assert.ok(calc.isBase, "outfall must be a base structure");
+  assert.ok(Number.isFinite(calc.vhOut), "vhOut must be a finite number");
+  assert.ok(Number.isFinite(calc.egl), "egl must be a finite number");
+  isClose(calc.vhOut, 0, 1e-9, "base structure has no outgoing pipe → vhOut = 0");
+  isClose(calc.egl, 100, 0.001, "outfall EGL = its fixed start elevation");
+});
+
+test("buildHglRowSheet: EGL comp section shows EGL = HGL + Vout²/2g", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const sheet = sdc.buildHglRowSheet("pin-st");
+  restore();
+  const text = sheet.textContent;
+  assert.ok(text.includes("Upstream EGL (energy grade line)"), "EGL section title missing");
+  assert.ok(text.includes("Upstream EGL = Upstream HGL + Vout"), "EGL formula line missing");
+});
+
+test("buildHglRowSheet: county HGL criteria note in clearance checks", () => {
+  const restore = pinFixture(100);
+  sdc.state.hydraulics = { hglMethod: "hec22" };
+  const sheet = sdc.buildHglRowSheet("pin-st");
+  restore();
+  const text = sheet.textContent;
+  assert.ok(text.includes("MCDOT Drainage Design Criteria §4.3.2"),
+    "county criteria citation missing");
+  assert.ok(text.includes("no higher than 1 foot above the crown of the pipe"),
+    "county crown criterion text missing");
+  assert.ok(text.includes("at least one foot below the top of any inlet grate or manhole cover"),
+    "county rim criterion text missing");
+});
+
+test("buildHglRowSheet: base (outfall) sheet notes EGL = HGL", () => {
+  const restore = twoInflowFlowFixture(1.0, 0.1);
+  const sheet = sdc.buildHglRowSheet("wf-out");
+  restore();
+  assert.ok(sheet.textContent.includes("no outgoing pipe — EGL = HGL"),
+    "base-structure EGL note missing");
+});
