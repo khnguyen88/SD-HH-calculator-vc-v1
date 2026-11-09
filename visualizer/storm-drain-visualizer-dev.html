@@ -1123,8 +1123,14 @@
       const incoming = pipes.filter((p) => p.toId === st.id && finNum(p.dsInvert) != null);
       const outgoing = pipes.filter((p) => p.fromId === st.id && finNum(p.usInvert) != null);
       if (!incoming.length || !outgoing.length) continue;
+      // Min-of-each-side is deliberately conservative: it flags the shallowest
+      // internal drop and never false-positives; a deeper drop on a second
+      // incoming pipe is not separately reported.
       const fromInvert = Math.min.apply(null, incoming.map((p) => p.dsInvert));
-      const toInvert = Math.min.apply(null, outgoing.map((p) => p.usInvert));
+      let toInvert = null, outgoingPipeId = null;
+      for (const p of outgoing) {
+        if (toInvert == null || p.usInvert < toInvert) { toInvert = p.usInvert; outgoingPipeId = p.id; }
+      }
       const dropFt = fromInvert - toInvert;
       if (dropFt > 0.5) {
         dropStructures.push({
@@ -1133,7 +1139,7 @@
           fromInvert: Math.round(fromInvert * 100) / 100,
           toInvert: Math.round(toInvert * 100) / 100,
           incomingPipeIds: incoming.map((p) => p.id),
-          outgoingPipeId: outgoing[0].id
+          outgoingPipeId: outgoingPipeId
         });
       }
     }

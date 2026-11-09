@@ -100,3 +100,29 @@ test("slope banner silent when consistent (computed 0.005 vs declared 0.005)", (
   assert.strictEqual(viz.window.state.analysis.slopeMismatches.length, 0);
   viz.dom.window.close();
 });
+
+test("drop threshold: exactly 0.5 ft is NOT flagged (strict >)", () => {
+  // incoming PB dsInv 100, outgoing PA usInv 99.5 -> drop exactly 0.5 -> excluded
+  const viz = loadNetwork([
+    { id: "PA", fromId: "MH", toId: "OUT", shape: "circular", size: 24, n: 0.013,
+      slope: 0.01, length: 100, angle: 0, splitRole: "", designQ: 9, usInvert: 99.5, dsInvert: 98.5 },
+    { id: "PB", fromId: "UP", toId: "MH", shape: "circular", size: 18, n: 0.013,
+      slope: 0.0025, length: 200, angle: 0, splitRole: "", designQ: 3.4, usInvert: 100.5, dsInvert: 100 },
+  ]);
+  assert.strictEqual(viz.window.state.analysis.dropStructures.length, 0);
+  viz.dom.window.close();
+});
+
+test("slope tolerance: exactly at the tolerance edge is NOT flagged", () => {
+  // declared 0.004, tolerance max(0.002, 0.2*0.004=0.0008) = 0.002.
+  // computed 0.006 -> |diff| = 0.002 exactly -> excluded (strict >).
+  // PB: (103-100)/500 = 0.006; integer inverts/length keep the division exact.
+  const viz = loadNetwork([
+    { id: "PA", fromId: "MH", toId: "OUT", shape: "circular", size: 24, n: 0.013,
+      slope: 0.01, length: 100, angle: 0, splitRole: "", designQ: 9, usInvert: 90, dsInvert: 89 },
+    { id: "PB", fromId: "UP", toId: "MH", shape: "circular", size: 18, n: 0.013,
+      slope: 0.004, length: 500, angle: 0, splitRole: "", designQ: 3.4, usInvert: 103, dsInvert: 100 },
+  ]);
+  assert.strictEqual(viz.window.state.analysis.slopeMismatches.length, 0);
+  viz.dom.window.close();
+});
