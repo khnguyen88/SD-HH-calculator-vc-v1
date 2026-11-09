@@ -22,6 +22,11 @@
 - **Cross-realm pitfall:** values coming out of a jsdom window (e.g. arrays from `fn(...)`) live in the jsdom realm; `assert.deepStrictEqual` against Node-realm literals fails on prototype identity. Use `assert.strictEqual` on scalars/lengths, or round-trip through `JSON.parse(JSON.stringify(v))`.
 - **withFocusPreserved:** every event handler that triggers a render routes through it (enforced by the audit test in dom-events.test.js:174-187). No new handlers in this feature touch that, but keep it in mind if you add any.
 - **No placeholder edits:** every code block below is complete — paste it verbatim.
+- **Corrections discovered in Task 1 (apply to ALL later test code in this plan):**
+  1. `validateImportedJson` requires a top-level `outfall` object — every JSON fixture in Tasks 2-5 must include `outfall: { structureId: <outfall id>, tailwaterElev: <number> }` (in addition to `schemaVersion: 1` and `sourceApp`).
+  2. `applyImportedJson` and `importFromXlsxFile` return **undefined** and **throw** on failure — tests must assert not-throws and then inspect `state`, not a `result.errors` return value.
+  3. `pickNum` maps blank xlsx cells to `null` (the designQ/rim/crown convention), not `undefined`.
+  4. Tests that exercise `importFromXlsxFile` must boot the harness as `loadVisualizer({ XLSX })` (SheetJS injection; see xlsx-import.test.js). JSON-only tests can use plain `loadVisualizer()`.
 
 ## File structure
 
