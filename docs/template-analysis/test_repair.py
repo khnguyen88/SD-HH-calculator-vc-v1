@@ -26,3 +26,19 @@ def test_r3_no_broken_names_remain(repaired_wb):
         d = repaired_wb.defined_names[name]
         val = getattr(d, "value", None) or str(d)
         assert "#REF!" not in val, f"name {name!r} still resolves to #REF!: {val!r}"
+
+
+def test_r4_selectcounty_duplicate_removed(repaired_wb):
+    names = list(repaired_wb.defined_names)
+    assert "SelectCounty" not in names, "SelectCounty duplicate still present"
+    assert "Select_County" in names, "Select_County (canonical) was removed by mistake"
+
+
+def test_r4_no_duplicate_range_names(repaired_wb):
+    seen = {}
+    for name in repaired_wb.defined_names:
+        d = repaired_wb.defined_names[name]
+        val = getattr(d, "value", None) or str(d)
+        seen.setdefault(val, []).append(name)
+    dupes = {rng: names for rng, names in seen.items() if len(names) > 1}
+    assert not dupes, f"duplicate-name ranges remain: {dupes}"
