@@ -1,7 +1,8 @@
 # WIP Template Audit, Repair, and Rulebook Refresh
 
 - **Date:** 2026-11-25
-- **Status:** Draft — awaiting user approval before implementation plan
+- **Status:** Complete — all 19 plan tasks shipped on `main` as of 2026-11-25 (commits `2e295b5` → `c2eb419`). 17/17 pytest tests pass; repaired xlsx has 0 `#REF!`, 0 broken names, 0 duplicate ranges. Manual Excel verification (T14 Step 3) deferred to user.
+- **Next step:** **Spec 2 — Golden rulebook-aligned template.** Brainstorm a new xlsx built from a reproducible builder script, honoring the U1–U7 rulebook refresh landed here (MDSHA/MCDOT vs PG County junction rule, dcv4552 PG DPIE checklist criteria, small-area Tc lookup, weighted composite C). Slot in a `Config` sheet carrying `junctionAngleRule` (default `"smaller-loss"`) and `hglCrownCeilingRule` (default `"crown-plus-1ft"`) for Spec 3 to consume.
 - **Author:** Khiem Hoang Nguyen (via Claude brainstorming)
 - **Scope:** Spec 1 of 3. Follow-on specs (not written yet):
   - Spec 2 — Golden rulebook-aligned template (new xlsx produced by a reproducible builder).
