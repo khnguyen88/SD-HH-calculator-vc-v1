@@ -1935,6 +1935,37 @@ function pipeEffectiveSlope(pipe){
   return pipeInvertState(pipe).slope;
 }
 
+// Ideal minimum longitudinal slope for self-cleansing velocity (user criterion):
+//   equivDiamIn >= 24"  ->  0.005 ft/ft (0.5%)
+//   equivDiamIn <  24"  ->  0.010 ft/ft (1.0%)
+// Returns null when geometry is incomplete. See docs/user-design-criteria.md.
+function pipeIdealMinSlope(pipe){
+  const geo = pipeGeometry(pipe);
+  if(!geo || !isFinite(geo.equivDiamIn) || geo.equivDiamIn<=0) return null;
+  return geo.equivDiamIn >= 24 ? 0.005 : 0.010;
+}
+
+// Crown match at junctions (user criterion): the crown of an incoming pipe at
+// its destination structure must be >= the crown of the outgoing pipe leaving
+// that structure. Prevents backwater/sediment deposition at the junction.
+// For flow splitters, compares against the Primary outgoing pipe.
+// Returns null when the check can't be evaluated (no outgoing pipe, missing
+// geometry, or missing inverts). See docs/user-design-criteria.md.
+function pipeCrownMatchCheck(pipe){
+  if(!pipe || !pipe.toStructureId) return null;
+  const outs = getOutgoingPipes(pipe.toStructureId);
+  if(outs.length===0) return null;
+  const outPipe = outs.find(p=>p.splitRole==="primary") || outs[0];
+  if(outPipe===pipe) return null;
+  const geoIn = pipeGeometry(pipe), geoOut = pipeGeometry(outPipe);
+  if(!geoIn || !geoOut) return null;
+  const invIn = pipeInvertState(pipe), invOut = pipeInvertState(outPipe);
+  if(invIn.dsInvert===null || invOut.usInvert===null) return null;
+  const crownIn  = invIn.dsInvert  + geoIn.equivDiamIn/12;
+  const crownOut = invOut.usInvert + geoOut.equivDiamIn/12;
+  return { crownIn, crownOut, deficit: crownOut - crownIn, ok: crownIn >= crownOut, outPipeId: outPipe.id };
+}
+
 function calcPipeRow(row){
   const geo = pipeGeometry(row);
   const designQ = pipeDesignQ(row);
@@ -3037,10 +3068,26 @@ function renderPipes(){
       (()=>{
         const S = pipeEffectiveSlope(row);
         const slopeAdverse = isFinite(S) && S < 0;
+        const idealMin = pipeIdealMinSlope(row);
+        const slopeBelowIdeal = !slopeAdverse && isFinite(S) && S > 0 && idealMin!==null && S < idealMin;
         const cell = el("td",{class:"computed-cell"});
         cell.appendChild(statusBadge(calc.pass));
         if (slopeAdverse) {
           cell.appendChild(el("span",{style:"color:#f90;font-size:10px;margin-left:4px;",title:"Upstream invert is lower than downstream invert"},"\u2191 adverse slope"));
+        } else if (slopeBelowIdeal) {
+          const geo = pipeGeometry(row);
+          const sizeBand = geo.equivDiamIn >= 24 ? "\u226524\u2033" : "<24\u2033";
+          cell.appendChild(el("span",{
+            style:"color:#f90;font-size:10px;margin-left:4px;",
+            title:"Slope "+fmt(S,4)+" ft/ft is below the ideal minimum "+fmt(idealMin,3)+" ft/ft for "+sizeBand+" pipe (self-cleansing). See docs/user-design-criteria.md."
+          },"\u2193 flat slope"));
+        }
+        const crownChk = pipeCrownMatchCheck(row);
+        if (crownChk && !crownChk.ok) {
+          cell.appendChild(el("span",{
+            style:"color:#f90;font-size:10px;margin-left:4px;",
+            title:"Upstream pipe crown ("+fmt(crownChk.crownIn,2)+" ft) sits "+fmt(crownChk.deficit,2)+" ft below the outgoing pipe "+crownChk.outPipeId+" crown ("+fmt(crownChk.crownOut,2)+" ft) at structure "+(row.toStructureId||"?")+". At junctions, u/s crown must be \u2265 d/s crown. See docs/user-design-criteria.md."
+          },"\u26a0 low crown"));
         }
         return cell;
       })(),
@@ -7059,7 +7106,7 @@ function init(){
 document.addEventListener("DOMContentLoaded", init);
 
 // Exposed for debugging / automated testing only - not used by the UI.
-window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, pipeEffectiveSlope, frictionSlope, calcDrainageRow, findStructure, findDrainage, findPipe,
+window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, pipeEffectiveSlope, pipeIdealMinSlope, pipeCrownMatchCheck, frictionSlope, calcDrainageRow, findStructure, findDrainage, findPipe,
   circularSegment, orificeOrPipeQ, weirQ, deviceQ, resolveTailwater, generateStageList, computeRatingCurve, computeSplitterSplit, pipeDesignQ,
   findOutletStructure, devicesForOutlet,
   tr55SheetFlowTt, tr55ShallowVelocity, tr55TravelTime, tr55ChannelVelocity, computeTr55, TR55_SHALLOW_CP,
