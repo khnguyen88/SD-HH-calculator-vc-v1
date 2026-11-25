@@ -26,6 +26,33 @@ GitHub Pages serves from the `gh-pages` branch, root (`/`). The branch contains:
 
 No build step, no Actions workflow, no Jekyll. Pages serves the raw files at the site root.
 
+## The `gh-pages` Worktree
+
+Deploys use a **permanent** git worktree checked out at `../gh-pages-deploy`
+(sibling of the main checkout), pinned to the `gh-pages` branch. All redeploy
+commands below use `git -C ../gh-pages-deploy ...` and stay on `main` in the
+primary checkout.
+
+Why a persistent worktree and not an in-place `git checkout gh-pages`:
+- The visualizer's built `storm-drain-visualizer.html` is **not** committed to
+  `main` — only the dev source is tracked. A branch switch would hide it, and
+  `rm`-style cleanup on `gh-pages` could discard it. A separate worktree keeps
+  `main`'s working tree untouched.
+- Faster than creating/removing a temp worktree each deploy.
+- Preserves `.claude/` and other local tooling state.
+
+Current worktrees can be listed with `git worktree list`.
+
+First-time setup on a fresh clone (one-time, from the repo root):
+
+```bash
+git fetch origin gh-pages:gh-pages
+git worktree add ../gh-pages-deploy gh-pages
+```
+
+After this, `../gh-pages-deploy` always holds the `gh-pages` tip. Never
+`git worktree remove` it as part of a routine deploy.
+
 ## Redeploy Calculator
 
 Run from the repo root on `main`. Always run the build first — `storm-drain-design-calculator.html` is generated from `storm-drain-design-calculator-dev.html` and must not be hand-edited.
@@ -36,65 +63,58 @@ git checkout main && git pull
 node drainage-calculator/build.js
 git add drainage-calculator/storm-drain-design-calculator.html
 git diff --cached --quiet || git commit -m "build: rebuild dist from dev file"
-# Deploy to gh-pages
-git checkout gh-pages
-git checkout main -- drainage-calculator/storm-drain-design-calculator.html
-cp drainage-calculator/storm-drain-design-calculator.html index.html
-rm -rf drainage-calculator
-git add index.html && git commit -m "Redeploy calculator from main"
-git push origin gh-pages
-git checkout main
+git push origin main
+# Deploy into the persistent gh-pages worktree
+cp drainage-calculator/storm-drain-design-calculator.html ../gh-pages-deploy/index.html
+git -C ../gh-pages-deploy add index.html
+git -C ../gh-pages-deploy diff --cached --quiet || git -C ../gh-pages-deploy commit -m "Redeploy calculator from main"
+git -C ../gh-pages-deploy push origin gh-pages
 ```
 
 Notes:
-- Always run `node drainage-calculator/build.js` before deploying. The built file must be committed to `main` before being copied to `gh-pages`.
-- `git checkout main -- drainage-calculator/storm-drain-design-calculator.html` stages main's built version into `gh-pages`'s index/worktree without switching branches' file state beyond that path.
-- `rm -rf drainage-calculator` removes the directory if a prior redeploy left it behind; harmless if absent.
+- The calculator's built file **is** committed to `main` (unlike the visualizer). Commit it on `main` before copying to the worktree so the deployed artifact is reproducible from the commit SHA.
+- The `diff --cached --quiet` guard makes the commit a no-op when the built file didn't change (e.g., build was deterministic and nothing semantically changed).
 - The commit on `gh-pages` should be the only change; do not mix unrelated edits.
 
 ## Redeploy Visualizer
 
-Unlike the calculator, the visualizer's built `storm-drain-visualizer.html` is **not** committed to `main` — only the dev source is tracked. Build locally on `main`, then copy the built file into `gh-pages`. A git worktree is used so `main`'s working tree (including `.claude/`, local caches, and the visualizer build artifact) is preserved during the deploy.
+Unlike the calculator, the visualizer's built `storm-drain-visualizer.html` is **not** committed to `main` — only the dev source is tracked. Build locally on `main`, then copy the built file into the gh-pages worktree.
 
 ```bash
 git checkout main && git pull
 # Build the dist file from the dev file (produces visualizer/storm-drain-visualizer.html locally)
 node visualizer/build-visualizer.js
 npm --prefix visualizer/visualizer-tests test   # confirm "fail 0" before deploying
-# Deploy via a temp worktree pinned to gh-pages
-git worktree add ../ghp-visualizer gh-pages
-cp visualizer/storm-drain-visualizer.html ../ghp-visualizer/visualizer.html
-git -C ../ghp-visualizer add visualizer.html
-git -C ../ghp-visualizer commit -m "Redeploy visualizer from main"
-git -C ../ghp-visualizer push origin gh-pages
-git worktree remove ../ghp-visualizer
+# Deploy into the persistent gh-pages worktree
+cp visualizer/storm-drain-visualizer.html ../gh-pages-deploy/visualizer.html
+git -C ../gh-pages-deploy add visualizer.html
+git -C ../gh-pages-deploy diff --cached --quiet || git -C ../gh-pages-deploy commit -m "Redeploy visualizer from main"
+git -C ../gh-pages-deploy push origin gh-pages
 ```
 
 Notes:
 - Always run `node visualizer/build-visualizer.js` before copying. The built file is self-contained (SheetJS inlined, no CDN).
 - The visualizer's test suite (`visualizer/visualizer-tests`) must pass; a red suite blocks deployment.
 - The dev source (`visualizer/storm-drain-visualizer-dev.html`) is committed to `main`; the built artifact is not.
-- The worktree approach keeps the current branch's working tree intact — do **not** `git checkout gh-pages` in-place for this app, or you'll lose the local build artifact and have to re-run `build-visualizer.js`.
-- If `../ghp-visualizer` already exists from a prior run, `git worktree remove --force ../ghp-visualizer` first.
+- If the build is deterministic and the dev source didn't change, the `diff --cached --quiet` guard turns the commit into a no-op.
 
 ## Redeploy Both (combined)
 
-If both apps need deploying together, build both first on `main`, then do a single `gh-pages` commit that stages both files. Using the worktree pattern (safe for the uncommitted visualizer artifact):
+If both apps need deploying together, build both first on `main`, then do a single `gh-pages` commit that stages both files:
 
 ```bash
 git checkout main && git pull
 node drainage-calculator/build.js
 git add drainage-calculator/storm-drain-design-calculator.html
 git diff --cached --quiet || git commit -m "build: rebuild dist from dev file"
+git push origin main
 node visualizer/build-visualizer.js
 npm --prefix visualizer/visualizer-tests test
-git worktree add ../ghp-combined gh-pages
-cp drainage-calculator/storm-drain-design-calculator.html ../ghp-combined/index.html
-cp visualizer/storm-drain-visualizer.html ../ghp-combined/visualizer.html
-git -C ../ghp-combined add index.html visualizer.html
-git -C ../ghp-combined commit -m "Redeploy calculator and visualizer from main"
-git -C ../ghp-combined push origin gh-pages
-git worktree remove ../ghp-combined
+cp drainage-calculator/storm-drain-design-calculator.html ../gh-pages-deploy/index.html
+cp visualizer/storm-drain-visualizer.html ../gh-pages-deploy/visualizer.html
+git -C ../gh-pages-deploy add index.html visualizer.html
+git -C ../gh-pages-deploy diff --cached --quiet || git -C ../gh-pages-deploy commit -m "Redeploy calculator and visualizer from main"
+git -C ../gh-pages-deploy push origin gh-pages
 ```
 
 ## One-Time Pages Setup
@@ -116,23 +136,19 @@ If the Actions build is red or curl returns old content, wait 30s and re-check (
 
 ## Rollback
 
-Two options, from the repo root:
+Two options, both run against the persistent `../gh-pages-deploy` worktree so `main`'s working tree is never touched:
 
 ```bash
 # Option A: revert the latest redeploy commit
-git checkout gh-pages
-git revert <commit-sha>
-git push origin gh-pages
-git checkout main
+git -C ../gh-pages-deploy revert <commit-sha>
+git -C ../gh-pages-deploy push origin gh-pages
 ```
 
 ```bash
-# Option B: check out a known-good prior index.html
-git checkout gh-pages
-git checkout <known-good-commit> -- index.html
-git commit -m "Roll back gh-pages index.html to <known-good-commit>"
-git push origin gh-pages
-git checkout main
+# Option B: check out a known-good prior file
+git -C ../gh-pages-deploy checkout <known-good-commit> -- index.html
+git -C ../gh-pages-deploy commit -m "Roll back gh-pages index.html to <known-good-commit>"
+git -C ../gh-pages-deploy push origin gh-pages
 ```
 
 `<commit-sha>` is the SHA of the redeploy commit to undo. `<known-good-commit>` is any prior `gh-pages` commit whose target file (`index.html` or `visualizer.html`) rendered correctly. For a single-file rollback, replace `index.html` in Option B with `visualizer.html` as needed.
