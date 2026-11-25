@@ -188,7 +188,7 @@ Hf = Sf × L
 
 Structure loss depends on how many pipes flow **into** the structure. The structure's outgoing pipe is the reference — `Aout` is the full area of that outgoing pipe, and `Vout` is the structure's Total Flow divided by `Aout`.
 
-**Governing source:** the controlling-angle junction procedure is specified verbatim by the *MCDOT Drainage Design Criteria for Montgomery County, MD* (10th Revised Final, 2014), §4.3.2.3 "Manhole, Inlet and Field Connection Energy Losses — Junctions" (p. 46), which directs designers to the MSHA Highway Drainage Manual (Storm Drain chapter) with HEC-22 as additional direction. `Hb = Kb × Vf²/2g` is the county's Eq. 4-8, with `Vf` the velocity at the given discharge in the (near-full) outlet pipe. The loss coefficients are the county's Appendix B `Kb` table (editable in-app; seeded defaults are a published AASHTO bend-loss curve — replace with your agency's Appendix B values before submittal).
+**Governing source:** the controlling-angle junction procedure is specified verbatim in the *MDSHA Drainage Manual*, Chapter 5 "Storm Drain Systems" (p. 5-26, September 2023 edition), which is the primary state-wide reference for Maryland. The *MCDOT Drainage Design Criteria for Montgomery County, MD* (10th Revised Final, 2014), §4.3.2.3 "Manhole, Inlet and Field Connection Energy Losses — Junctions" (p. 46), adopts MDSHA's procedure word-for-word for Montgomery County. `Hb = Kb × Vf²/2g` is MCDOT's Eq. 4-8 (identical to MDSHA Eq. 4-8 cited by reference), with `Vf` the velocity at the given discharge in the (near-full) outlet pipe. The loss coefficients are MCDOT's Appendix B `Kb` table (sourced from MSHA form 61.1-408.0/408.1), editable in-app; seeded defaults are a published AASHTO bend-loss curve — replace with your agency's Appendix B values before submittal.
 
 **Documented difference from current HEC-22:** HEC-22 4th edition (§9.1.6.7.2, Eq 9.21) replaced the controlling-angle procedure in its FHWA structured access-hole method with a *flow-weighted* inflow angle `θw = Σ(Qj·θj)/ΣQj`. The county criteria predate the 4th edition and still mandate the controlling-angle procedure, so the tool follows the county. The Kₐₕ structure-catalog mode uses the HEC-22 4th ed. §9.1.6.6 Approximate Method (Eq 9.10, Table 9.4 coefficients).
 
@@ -251,6 +251,8 @@ Hb = Kb(θc) × Vout² / 2g
 
 **The controlling angle is the smaller loss's angle, not the larger.** This is the key subtlety. The angle that would produce the smaller loss is the one that actually governs the merged flow.
 
+**PG County divergence.** The *PG County Stormwater Management Design Manual*, Chapter 8 "Storm Drain Design Criteria" (p. 8-27, Issue Date September 30, 2014) states the opposite rule in a numbered procedure: *"If H₂ is greater, Θ₂ is the controlling angle. If H₁ is greater, Θ₁ is the controlling angle"* — i.e., the *larger* hypothesized loss's angle controls. Appendix 8-15 Sample Headloss Calculation (DRAFT, July 26 2014) applies the Ch. 8 rule in Example 2 (K₂ = 1.39 used because H₂ > H₁ → Hb = 1.45 ft). Both agencies cite the same upstream MSHA form 61.1-408.0/408.1 Kb table; the divergence is in the *procedure*, not the coefficients. This is a real jurisdictional difference — not a transcription error — and must be honored per the agency reviewing the project. The near-equal Kb values across adjacent angle rows make the arithmetic difference small (~2% in Appendix 8-15 Example 2), but a PG-reviewed project with asymmetric Kb values could see a larger gap. The tool defaults to the MDSHA / MCDOT rule.
+
 **> 2 inflow pipes:** Not supported by this method. The tool **flags it with a warning** ("the controlling-angle method only supports up to 2. Hb not computed; verify manually") and does not compute Hb. It does not guess.
 
 **Validity / notes**
@@ -259,6 +261,19 @@ Hb = Kb(θc) × Vout² / 2g
 - The angle is a property of the *pipe entering the To-structure*, not of the structure itself. A structure with two incoming pipes at different angles uses both angles in the controlling-angle calc.
 
 **Implementation:** `interpKb(columnKey, angleDeg)`, `computeStructureCalc` structure-loss branch (HTML lines ~729–744, 1004–1027).
+
+### 5.3 Jurisdiction toggle (Spec 3)
+
+A project-level setting `junctionAngleRule` selects which rule the structure-loss branch applies to the 2-inflow case. Values:
+
+| Value | Rule | Source |
+|---|---|---|
+| `"smaller-loss"` (default) | The *smaller* of Lv1/Lv2 → its angle is the controlling angle | MDSHA Ch. 5 p. 5-26; MCDOT §4.3.2.3 p. 46 (identical text) |
+| `"larger-loss"` | The *larger* of Lv1/Lv2 → its angle is the controlling angle | PG County SWM Manual Ch. 8 p. 8-27 (Sept 30 2014); example in Appendix 8-15 (DRAFT) |
+
+Scope: single project-level value — never per-structure. Mixing rules inside one project would not pass review. Default stays `"smaller-loss"` regardless of selected county — a county change must not silently alter hydraulics; the toggle stays explicit and auditable. Formulas affected: only the 2-inflow branch of `computeStructureCalc` (Section 5.2 above); the 0-inflow, 1-inflow, and >2-inflow cases are unaffected.
+
+Spec 3 ("Calculator + visualizer two-template compatibility") implements the UI control, project-state field, xlsx round-trip, and calculator branch.
 
 ---
 
