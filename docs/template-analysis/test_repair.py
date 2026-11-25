@@ -117,3 +117,42 @@ def test_r2_inlet_spacing_ak_has_no_ref_errors(repaired_wb):
             assert "#REF!" not in text, (
                 f"INLET SPACING!AK{row} still contains #REF!: {text!r}"
             )
+
+
+def test_r5_acyclic_note_present(repaired_wb):
+    ws = repaired_wb["EQUATIONS + INSTRUCTIONS"]
+    found = False
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and "acyclic pipe network" in cell.value:
+                found = True
+                break
+        if found:
+            break
+    assert found, "R5 acyclic-network note not found on EQUATIONS + INSTRUCTIONS"
+
+
+def test_workbook_has_no_ref_errors_anywhere(repaired_wb):
+    hits = []
+    for ws in repaired_wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                text = v if isinstance(v, str) else getattr(v, "text", None)
+                if isinstance(text, str) and "#REF!" in text:
+                    hits.append(f"{ws.title}!{cell.coordinate}")
+    assert not hits, f"#REF! still present at: {hits[:10]}..."
+
+
+def test_workbook_has_no_external_links(repaired_wb):
+    import re
+    ext_pat = re.compile(r"'?\[[^\]]+\.xls[xmb]?\]")
+    hits = []
+    for ws in repaired_wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                text = v if isinstance(v, str) else getattr(v, "text", None)
+                if isinstance(text, str) and ext_pat.search(text):
+                    hits.append(f"{ws.title}!{cell.coordinate}")
+    assert not hits, f"external workbook links remain: {hits[:10]}..."
