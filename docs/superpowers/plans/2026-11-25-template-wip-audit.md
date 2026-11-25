@@ -657,17 +657,22 @@ def remove_defined_names(wb, names):
 
 
 def rebuild_hgl_25year(wb):
-    # R1: rebuild HGL(25YEAR) mirroring the 10-year HGL XLOOKUP pattern.
-    # Column I (friction slope) pulls STORM DRAIN COMPS $Y:$Y which is the
-    # 10-year Sf. A note in A4 tells the engineer to override column I per
-    # row for a true 25-year Sf.
+    # R1: rebuild ONLY the broken OFFSET-pattern columns on HGL(25YEAR):
+    # A, B, C, D, E, F, H, L. Every other column on the sheet is intact
+    # and must be left untouched:
+    #   G, I, J, K, M = HGL chain (G propagates MAX; I computes 25-year
+    #     friction slope from column U (25-year Q) and V (Manning n); J =
+    #     Hf = H*I; K = upstream HGL floored at U/S crown; M = HGL in
+    #     From Str = K + Hb).
+    #   O = 10-year tailwater pull from HGL!Q.
+    #   Q, R, S, T, U, V = 25-year auxiliary columns (pipe diameter from
+    #     SDC N, A*C total from SDC J, pipe Tc from SDC K, 25-year
+    #     intensity from DATA, 25-year Q = T*R, Manning n from SDC S).
+    # The sheet already implements correct 25-year flow and friction
+    # slope on-sheet, so R1 does not need to substitute a source-sheet
+    # Y column - the existing I-column formula is correct as-is.
     ws = wb["HGL(25YEAR)"]
-    _clear_rows(ws, 7, 91)
-    _write_hgl_formulas(ws, start=7, end=91, friction_slope_col="Y")
-    ws["A4"] = (
-        "25 YEAR STORM - column I defaults to 10-year Sf; override "
-        "per row if a true 25-year friction slope is available."
-    )
+    _write_hgl25_broken_columns(ws, start=7, end=91)
 
 
 def fix_inlet_spacing_ak(wb):
@@ -696,16 +701,13 @@ def update_equations_instructions(wb):
     )
 
 
-def _clear_rows(ws, start, end):
-    for row in range(start, end + 1):
-        for col in range(1, ws.max_column + 1):
-            ws.cell(row=row, column=col).value = None
-
-
-def _write_hgl_formulas(ws, start, end, friction_slope_col):
-    # Mirrors the clean 10-year HGL sheet column-by-column (A-O).
-    # friction_slope_col selects which STORM DRAIN COMPS column feeds
-    # column I (the friction slope).
+def _write_hgl25_broken_columns(ws, start, end):
+    # Overwrites only the 8 broken columns on HGL(25YEAR) with the
+    # XLOOKUP-pattern formulas used by the clean 10-year HGL sheet.
+    # Broken columns: A, B (From/To), C (U/S invert), D (U/S crown), E
+    # (D/S invert), F (D/S crown), H (pipe length), L (structure loss).
+    # Every other column on the sheet is left untouched - the intact
+    # 25-year formulas on G, I, J, K, M, O, Q-V remain in place.
     sdc = "'STORM DRAIN COMPS'"
     q = '""'  # empty-string literal inside a formula
     for r in range(start, end + 1):
@@ -722,35 +724,14 @@ def _write_hgl_formulas(ws, start, end, friction_slope_col):
             f"XLOOKUP(1,({sdc}!$A:$A=$A{r})*({sdc}!$B:$B=$B{r}),{sdc}!$Q:$Q))"
         )
         ws[f"F{r}"] = f"=IF(E{r}={q},{q},{sdc}!N{src}/12+E{r})"
-        ws[f"G{r}"] = (
-            f"=IFERROR(IF(A{r}={q},{q},"
-            f"MAX(F{r},Q{r},MAX(IF($A${start}:$A${end}=$B{r},"
-            f"$M${start}:$M${end})))),{q})"
-        )
         ws[f"H{r}"] = (
             f"=IF(OR(A{r}={q},B{r}={q}),{q},"
             f"XLOOKUP(1,({sdc}!$A:$A=$A{r})*({sdc}!$B:$B=$B{r}),{sdc}!$O:$O))"
         )
-        ws[f"I{r}"] = (
-            f"=IF(OR(A{r}={q},B{r}={q}),{q},"
-            f"XLOOKUP(1,({sdc}!$A:$A=$A{r})*({sdc}!$B:$B=$B{r}),"
-            f"{sdc}!${friction_slope_col}:${friction_slope_col}))"
-        )
-        ws[f"J{r}"] = f"=IF(H{r}={q},{q},IF(I{r}={q},{q},(H{r}*I{r})))"
-        ws[f"K{r}"] = f"=IFERROR(IF(A{r}={q},{q},MAX(D{r},J{r}+G{r})),{q})"
         ws[f"L{r}"] = (
             f"=IF(OR(A{r}={q},B{r}={q}),{q},"
             f"XLOOKUP(1,({sdc}!$A:$A=$A{r})*({sdc}!$B:$B=$B{r}),{sdc}!$AF:$AF))"
         )
-        ws[f"M{r}"] = (
-            f'=IFERROR(IF(L{r}="-",{q},'
-            f"IF(L{r}={q},K{r},K{r}+L{r})),{q})"
-        )
-        ws[f"N{r}"] = (
-            f"=IF(OR(A{r}={q},B{r}={q}),{q},"
-            f"XLOOKUP(1,({sdc}!$A:$A=$A{r})*({sdc}!$B:$B=$B{r}),{sdc}!$AB:$AB))"
-        )
-        ws[f"O{r}"] = f"=IF(N{r}={q},{q},N{r}-K{r})"
 
 
 def main(src, dst):
@@ -893,32 +874,55 @@ def test_r1_no_ref_errors_on_hgl_25year(repaired_wb):
                 )
 
 
-def test_r1_hgl_25year_uses_xlookup_pattern(repaired_wb):
+def test_r1_hgl_25year_broken_columns_use_xlookup(repaired_wb):
+    # Every previously broken column is now an XLOOKUP against SDC.
     ws = repaired_wb["HGL(25YEAR)"]
     c7 = ws["C7"].value
-    assert isinstance(c7, str), f"C7 should be a formula string, got {type(c7).__name__}"
-    assert "XLOOKUP" in c7, f"C7 should use XLOOKUP, got {c7!r}"
-    assert "'STORM DRAIN COMPS'!$P:$P" in c7, (
-        f"C7 should pull U/S invert from STORM DRAIN COMPS $P:$P, got {c7!r}"
-    )
+    assert isinstance(c7, str) and "XLOOKUP" in c7 and "'STORM DRAIN COMPS'!$P:$P" in c7, (
+        f"C7 should XLOOKUP U/S invert from SDC $P, got {c7!r}")
+    e7 = ws["E7"].value
+    assert isinstance(e7, str) and "XLOOKUP" in e7 and "'STORM DRAIN COMPS'!$Q:$Q" in e7, (
+        f"E7 should XLOOKUP D/S invert from SDC $Q, got {e7!r}")
+    h7 = ws["H7"].value
+    assert isinstance(h7, str) and "XLOOKUP" in h7 and "'STORM DRAIN COMPS'!$O:$O" in h7, (
+        f"H7 should XLOOKUP pipe length from SDC $O, got {h7!r}")
+    l7 = ws["L7"].value
+    assert isinstance(l7, str) and "XLOOKUP" in l7 and "'STORM DRAIN COMPS'!$AF:$AF" in l7, (
+        f"L7 should XLOOKUP structure loss from SDC $AF, got {l7!r}")
 
 
-def test_r1_hgl_25year_column_i_cites_friction_slope(repaired_wb):
+def test_r1_hgl_25year_intact_columns_preserved(repaired_wb):
+    # The on-sheet 25-year friction-slope and HGL chain formulas must be
+    # left alone. The spec requires preserving the intact 25-year Sf
+    # formula in column I (which computes Sf from column U = 25-year Q and
+    # column V = Manning n), along with G/J/K/M (HGL chain) and Q-V
+    # (25-year auxiliary data).
     ws = repaired_wb["HGL(25YEAR)"]
     i7 = ws["I7"].value
-    assert isinstance(i7, str)
-    assert "'STORM DRAIN COMPS'!$Y:$Y" in i7, (
-        f"I7 should pull friction slope from STORM DRAIN COMPS $Y:$Y "
-        f"(10-year default per R1 note), got {i7!r}"
-    )
+    assert isinstance(i7, str), f"I7 must still be a formula, got {type(i7).__name__}"
+    # The intact I7 formula recomputes Sf using column U (25-year Q) and
+    # column V (Manning n); it must NOT have been replaced by an SDC Y lookup.
+    assert "U7" in i7 and "V7" in i7, (
+        f"I7 should recompute 25-year Sf from U7 (25-yr Q) and V7 (Manning n), "
+        f"got {i7!r}")
+    assert "'STORM DRAIN COMPS'!$Y:$Y" not in i7, (
+        f"I7 must NOT have been replaced by an SDC $Y (10-year) lookup; "
+        f"got {i7!r}")
+    # Spot-check the 25-year auxiliary columns Q-V still compute on-sheet.
+    for col in ("Q7", "R7", "S7", "T7", "U7", "V7"):
+        v = ws[col].value
+        assert isinstance(v, str) and v.startswith("="), (
+            f"{col} should still carry a formula, got {v!r}")
 
 
-def test_r1_header_note_explains_25year_override(repaired_wb):
+def test_r1_no_header_override_note(repaired_wb):
+    # The earlier-approach override note is no longer appropriate because
+    # the intact I-column computes a true 25-year Sf; verify nothing added
+    # an obsolete "defaults to 10-year Sf" note on A4.
     ws = repaired_wb["HGL(25YEAR)"]
-    a4 = ws["A4"].value or ""
-    assert "25 YEAR" in a4 and "10-year" in a4 and "override" in a4, (
-        f"A4 should carry the 25-year override instruction note, got {a4!r}"
-    )
+    a4 = (ws["A4"].value or "")
+    assert "10-year Sf" not in a4, (
+        f"A4 should not carry a 10-year-default note; got {a4!r}")
 ```
 
 - [ ] **Step 2: Run tests**
@@ -927,7 +931,7 @@ Run:
 ```bash
 pytest docs/template-analysis/test_repair.py -v
 ```
-Expected: all four new tests PASS.
+Expected: all four new R1 tests PASS. Pay special attention to `test_r1_hgl_25year_intact_columns_preserved` — if it fails, `rebuild_hgl_25year` is incorrectly overwriting intact cells.
 
 - [ ] **Step 3: Commit**
 
@@ -1196,10 +1200,12 @@ git commit -m "docs(spec): mirror methodology citation refresh + junctionAngleRu
 
 ---
 
-## Task 17: Rulebook refresh — user-design-criteria.md (U4)
+## Task 17: Rulebook refresh — user-design-criteria.md (U4 + U6)
 
 **Files:**
-- Modify: `docs/user-design-criteria.md` "Pipe slope (longitudinal)" section
+- Modify: `docs/user-design-criteria.md`
+
+### U4 — Add MCDOT §4.3.3(k) cross-reference to the existing pipe-slope section
 
 - [ ] **Step 1: Locate the section**
 
@@ -1214,23 +1220,173 @@ Expected: one match.
 In the "Pipe slope (longitudinal)" section, immediately after the slope rationale paragraph (the one ending `...the agency manual's absolute minimum ... may be lower, but designs should aim for the above when feasible.`), append:
 
 ```markdown
-**Agency cross-reference:** MCDOT Drainage Design Criteria §4.3.3(k) requires "Pipe shall not be designed on a slope less than 0.5 percent. However, to enhance self-cleaning characteristics, 15 and 18 inch diameter pipe are to be designed on an actual slope of 1 percent or greater." Our `< 24"` threshold here is slightly more conservative — it also catches 21" pipe, which MCDOT does not call out explicitly. This is intentional: the user design criterion is a target minimum that reflects firm practice, not a redefinition of the state/county absolute minimum.
+**Agency cross-reference:** MCDOT Drainage Design Criteria §4.3.3(k) requires "Pipe shall not be designed on a slope less than 0.5 percent. However, to enhance self-cleaning characteristics, 15 and 18 inch diameter pipe are to be designed on an actual slope of 1 percent or greater." PG County DPIE Storm Drain & Paving Design Review Checklist §G-6 states the same rule in the generalized form: "Pipes less than 24" shall be designed for a minimum slope of 1% and pipes 24" or greater may be designed with a minimum slope of 0.5%" — matching our rule verbatim. Our `< 24"` threshold here captures both: MCDOT's explicit 15/18-inch rule generalized to also catch 21" pipe (not explicitly named by MCDOT), and PG's exact threshold.
 ```
 
-- [ ] **Step 3: Verify the edit**
+### U6 — Add new sections from PG DPIE Checklist
+
+The PG County DPIE Storm Drain & Paving Design Review Checklist (`docs/dcv4552_design-review-checklist-storm-drain-and-paving-pdf.pdf`, Last Edited June 27, 2013) contains engineering criteria the calculator can honor or flag. Add these new sections to `docs/user-design-criteria.md`, after the existing "Crown matching at junctions" section.
+
+- [ ] **Step 3: Append the PG Citation to the "Crown matching at junctions" section**
+
+At the end of that existing section (just before the "Calculator enforcement" paragraph), append:
+
+```markdown
+**Agency cross-reference:** PG County DPIE Checklist §G-10: "Equal crown or greater in structure for incoming and outgoing pipes" — matches our rule verbatim.
+```
+
+- [ ] **Step 4: Append a new "Minimum pipe size" section**
+
+At the end of the file, append:
+
+```markdown
+## Minimum pipe size
+
+Main-line public storm-drain pipes are **15 inches minimum diameter**. ESD/SWM diversion pipes may be smaller.
+
+Source: PG County DPIE Checklist §C-19. MCDOT §4.3.3(f) carries the same rule.
+
+Calculator enforcement: not currently flagged by the HTML calculator. The user is responsible for selecting an acceptable minimum in the Pipe Sizing table.
+```
+
+- [ ] **Step 5: Append a new "Minimum pipe cover" section**
+
+```markdown
+## Minimum pipe cover (structural)
+
+Vertical cover above the pipe crown:
+
+| Pipe material | Minimum cover | Notes |
+|---|---|---|
+| RCP (rigid) | **1 ft** | Above the crown of the pipe. |
+| Flexible (HDPE, CMP) | **2 ft** | Above the crown of the pipe. |
+
+Source: PG County DPIE Checklist §G-8.
+
+This is **distinct from** the "9 inch below the gravel subbase of the roadway" rule in the "Minimum cover below roadway" section above. The 9-inch rule governs clearance between the pipe crown and the bottom of the subbase layer in a roadway section; the G-8 rule is the general minimum cover above the crown anywhere along the pipe alignment. The more restrictive of the two governs at any given point.
+
+Calculator enforcement: not currently flagged. A future pass could compare proposed crown elevation against proposed grade and emit a warning when cover drops below the above thresholds.
+```
+
+- [ ] **Step 6: Append a new "Minimum drop through structure" section**
+
+```markdown
+## Minimum drop through structure
+
+Through every storm-drain structure, provide **≥ 0.1 ft drop** from U/S invert to D/S invert, or a slope of 1% through the structure — whichever yields the larger drop.
+
+Source: PG County DPIE Checklist §G-9 ("A minimum drop of 0.1 foot shall be provided through the structure"); MCDOT §4.2.4(a) ("A minimum slope of 1 percent or 0.1 ft drop, whichever is greater").
+
+Calculator enforcement: not currently flagged. The calculator tracks U/S and D/S inverts of each pipe; a future pass could compare incoming-pipe D/S invert against outgoing-pipe U/S invert at each structure.
+```
+
+- [ ] **Step 7: Append a new "Maximum access structure spacing" section**
+
+```markdown
+## Maximum access structure spacing
+
+Between manholes or access structures, the pipe run shall be ≤ 400 ft (PG). MCDOT allows longer runs for larger pipe per Table 4-5 below.
+
+| Pipe size | MCDOT Table 4-5 max spacing | PG Checklist C-20 |
+|---|---|---|
+| 15" through 24" | 400 ft | 400 ft |
+| 27" through 42" | 500 ft | 400 ft |
+| ≥ 48" | 600 ft | 400 ft |
+
+Sources: PG County DPIE Checklist §C-20; MCDOT §4.2.4(2) Table 4-5.
+
+The reviewing agency controls. If MoCo reviews, MCDOT's size-based limits apply; if PG reviews, PG's flat 400 ft applies regardless of pipe size.
+
+Calculator enforcement: not currently flagged.
+```
+
+- [ ] **Step 8: Append a new "Pipe entry angle at flat-wall structures" section**
+
+```markdown
+## Pipe entry angle at flat-wall structures
+
+A pipe entering a structure with a flat wall shall deflect no more than **45°** from the outgoing pipe's alignment.
+
+Source: PG County DPIE Checklist §C-21.
+
+This is a geometric clearance constraint for precast structures, not a hydraulic criterion. It constrains layout, not the Hb computation (which runs the controlling-angle method per `engineering-methodology.md` §5).
+
+Calculator enforcement: not currently flagged. The Junction Structure tab already captures pipe deflection angles per `storm-drain-calculator-spec.md` §1.4; a future pass could flag any flat-wall-entering pipe with angle > 45°.
+```
+
+- [ ] **Step 9: Append a new "Last pipe reach to outfall" section**
+
+```markdown
+## Last pipe reach to outfall
+
+The final pipe reach discharging to an outfall shall have **slope ≤ 1%**. Provide drop structures as needed to achieve this.
+
+Source: PG County DPIE Checklist §H-6.
+
+Rationale: a flatter last reach reduces exit velocity, limiting rip-rap requirements and erosion at the outfall.
+
+Calculator enforcement: not currently flagged. The calculator knows which pipe is the outfall (`forceElev = true` on the downstream structure, or the structure with no outgoing pipe); a future pass could check the slope of the pipe immediately upstream of that node.
+```
+
+- [ ] **Step 10: Append a new "Open-channel erosion velocity" section**
+
+```markdown
+## Open-channel erosion velocity
+
+For open-channel segments outside of pipe conveyance:
+
+| Fill type | Threshold | Treatment if exceeded |
+|---|---|---|
+| Cut channel (stable existing material) | **5 fps** | Rip-rap or concrete required. |
+| Fill channel (constructed on fill) | **4 fps** | Rip-rap or concrete required. |
+
+Source: PG County DPIE Checklist §L-4.
+
+Calculator enforcement: out of scope for the conveyance-pipe calculator. Document for completeness; the engineer evaluates open-channel segments separately.
+```
+
+- [ ] **Step 11: Append a new "HGL clearance — jurisdictional note" section**
+
+```markdown
+## HGL clearance — jurisdictional note
+
+| Agency | 10-yr HGL ceiling |
+|---|---|
+| MDSHA Ch. 5 / MCDOT §4.3.1 | `HGL ≤ crown + 1 ft` **AND** `HGL ≤ rim − 1 ft` (both checks). |
+| PG County SWM Ch. 8 / DPIE Checklist §I-2 | `HGL ≤ rim − 12 inches` only. No explicit crown ceiling — pipes may run surcharged within the structure as long as HGL stays ≥ 1 ft below the grate or bottom of curb. |
+
+The HTML calculator currently enforces the MDSHA/MCDOT rule (both checks). The PG rule allows more surcharge above the pipe crown. This divergence is analogous to the `junctionAngleRule` controlling-angle divergence documented in `engineering-methodology.md` §5 — different agencies, different rules in force.
+
+A future Spec 3 may add a project-level `hglCrownCeilingRule` toggle: `"crown-plus-1ft"` (default — MDSHA/MCDOT) vs `"rim-only"` (PG). For now the stricter MDSHA/MCDOT rule is applied uniformly and a PG-reviewed project that fails the MDSHA crown check should document that the PG rim-only rule is the governing criterion.
+
+Calculator enforcement: MDSHA/MCDOT rule only. See `engineering-methodology.md` §6 (HGL propagation) for the clearance checks.
+```
+
+### Verification
+
+- [ ] **Step 12: Verify every edit**
 
 Run:
 ```bash
 grep -n "Agency cross-reference" docs/user-design-criteria.md
 grep -n "4.3.3(k)" docs/user-design-criteria.md
+grep -n "G-10" docs/user-design-criteria.md
+grep -n "^## Minimum pipe size" docs/user-design-criteria.md
+grep -n "^## Minimum pipe cover" docs/user-design-criteria.md
+grep -n "^## Minimum drop through structure" docs/user-design-criteria.md
+grep -n "^## Maximum access structure spacing" docs/user-design-criteria.md
+grep -n "^## Pipe entry angle" docs/user-design-criteria.md
+grep -n "^## Last pipe reach to outfall" docs/user-design-criteria.md
+grep -n "^## Open-channel erosion velocity" docs/user-design-criteria.md
+grep -n "^## HGL clearance" docs/user-design-criteria.md
 ```
-Expected: one match each.
+Expected: one match for each line (11 lines total).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 13: Commit**
 
 ```bash
 git add docs/user-design-criteria.md
-git commit -m "docs(criteria): cross-reference MCDOT §4.3.3(k) for pipe slope rule"
+git commit -m "docs(criteria): add PG DPIE checklist criteria (U4+U6) and cross-refs"
 ```
 
 ---
