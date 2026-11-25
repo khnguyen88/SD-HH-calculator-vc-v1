@@ -105,3 +105,15 @@ def test_r1_no_header_override_note(repaired_wb):
     a4 = (ws["A4"].value or "")
     assert "10-year Sf" not in a4, (
         f"A4 should not carry a 10-year-default note; got {a4!r}")
+
+
+def test_r2_inlet_spacing_ak_has_no_ref_errors(repaired_wb):
+    ws = repaired_wb["INLET SPACING"]
+    for row in range(11, 97):
+        cell = ws.cell(row=row, column=37)  # AK
+        v = cell.value
+        text = v if isinstance(v, str) else getattr(v, "text", None)
+        if isinstance(text, str):
+            assert "#REF!" not in text, (
+                f"INLET SPACING!AK{row} still contains #REF!: {text!r}"
+            )
