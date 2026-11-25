@@ -6,7 +6,11 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 SCRIPT = HERE / "extract.py"
-WIP = HERE.parent / "template_wip_new.xlsx"
+# Extract tests validate that Pass A correctly detects the ORIGINAL broken
+# state of the WIP template (680 #REF! formulas on HGL(25YEAR), 25 orphan
+# defined names, etc.). The repaired live file no longer has those
+# defects, so the right input here is the pre-repair backup snapshot.
+WIP = HERE.parent / "template_wip_new_pre-repair.xlsx"
 OUT = HERE / "pass_a.json"
 
 
