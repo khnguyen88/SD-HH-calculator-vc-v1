@@ -1200,7 +1200,7 @@ git commit -m "docs(spec): mirror methodology citation refresh + junctionAngleRu
 
 ---
 
-## Task 17: Rulebook refresh — user-design-criteria.md (U4 + U6)
+## Task 17: Rulebook refresh — user-design-criteria.md (U4 + U6 + U7)
 
 **Files:**
 - Modify: `docs/user-design-criteria.md`
@@ -1362,9 +1362,56 @@ A future Spec 3 may add a project-level `hglCrownCeilingRule` toggle: `"crown-pl
 Calculator enforcement: MDSHA/MCDOT rule only. See `engineering-methodology.md` §6 (HGL propagation) for the clearance checks.
 ```
 
+### U7 — Small-area Tc lookup and area-weighted composite C
+
+Both MoCo (MCDOT §3.2.1 Table 3-3) and PG County (SWM Ch. 8 §8.2.1 / §8.2.2) allow a C-factor lookup for Tc on drainage areas ≤ 2 acres, and both require area-weighted composite C across subareas.
+
+- [ ] **Step 12: Append "Time of concentration" section**
+
+Append to `docs/user-design-criteria.md`:
+
+```markdown
+## Time of concentration — small drainage areas
+
+For drainage areas **≤ 2.0 acres**, Tc may be selected from a lookup keyed on the drainage area's composite runoff coefficient:
+
+| Composite C | Tc (minutes) |
+|---|---|
+| ≥ 0.80 | 5 |
+| 0.65 – 0.79 | 7 |
+| 0.40 – 0.64 | 10 |
+| ≤ 0.39 | 15 |
+
+Source: MCDOT Drainage Design Criteria §3.2.1 Table 3-3 "Small Drainage Area Time of Concentration". PG County SWM Ch. 8 §8.2.2 carries the same two-track approach (lookup for small areas, segmental TR-55 for larger).
+
+For drainage areas **> 2.0 acres**, compute Tc using TR-55 segmental (sheet flow + shallow concentrated + channel flow) or an equivalent method. MCDOT Eq. 3-1 gives the trailing travel-time segment: `Tc = Tt + (L − 100) / (60 V)`, with `V = 7 fps` for average drainage-area slope ≤ 7 % and `V = 10 fps` for slope > 7 %.
+
+Calculator enforcement: the HTML calculator's Drainage Area tab accepts Tc as either a direct user entry or a TR-55 segmental computation per `engineering-methodology.md` §2. For small areas (≤ 2 acres), the user may enter Tc per the Table 3-3 lookup directly. A future pass could add a Tc-method option that auto-selects the lookup when the entered drainage area is ≤ 2 acres.
+```
+
+- [ ] **Step 13: Append "Weighted composite runoff coefficient" section**
+
+```markdown
+## Weighted composite runoff coefficient (C)
+
+For a drainage area composed of multiple land-use subareas, the composite C used in the Rational Method is the area-weighted average:
+
+```
+C_composite = Σ (Cx × Ax) / Σ Ax
+```
+
+where `Cx` is the tabulated runoff coefficient for subarea x (impervious, lawns, woods, etc.) and `Ax` is its area.
+
+Sources: MCDOT §3.4 "Runoff Coefficients" — states the weighting formula explicitly and provides Table 3-5 of C values by land cover. PG County SWM Ch. 8 §8.2.1 — "C factors for development shall represent a weighted average based upon the proportion of the surface area covered by impervious materials, lawns, or woods." Table 8-1 in PG Ch. 8 lists the Rational Method C values by land use.
+
+The composite C feeds the small-area Tc lookup above and the Rational Method `Q = C i A` (`engineering-methodology.md` §1).
+
+Calculator enforcement: the HTML calculator's Drainage Area tab accepts C as a single value per row. For catchments with multiple land uses, enter the composite C computed per the formula above. The WIP xlsx template (`docs/template_wip_new.xlsx`) implements the composite C computation on its `C_FACTOR` sheet (column M across up to eight land-use subareas). A future pass could add a subarea-breakdown UI to the HTML calculator that computes the composite C automatically.
+```
+
 ### Verification
 
-- [ ] **Step 12: Verify every edit**
+- [ ] **Step 14: Verify every edit**
 
 Run:
 ```bash
@@ -1379,14 +1426,16 @@ grep -n "^## Pipe entry angle" docs/user-design-criteria.md
 grep -n "^## Last pipe reach to outfall" docs/user-design-criteria.md
 grep -n "^## Open-channel erosion velocity" docs/user-design-criteria.md
 grep -n "^## HGL clearance" docs/user-design-criteria.md
+grep -n "^## Time of concentration" docs/user-design-criteria.md
+grep -n "^## Weighted composite runoff" docs/user-design-criteria.md
 ```
-Expected: one match for each line (11 lines total).
+Expected: one match for each line (13 lines total).
 
-- [ ] **Step 13: Commit**
+- [ ] **Step 15: Commit**
 
 ```bash
 git add docs/user-design-criteria.md
-git commit -m "docs(criteria): add PG DPIE checklist criteria (U4+U6) and cross-refs"
+git commit -m "docs(criteria): add PG DPIE checklist criteria + small-area Tc/weighted-C (U4+U6+U7)"
 ```
 
 ---
