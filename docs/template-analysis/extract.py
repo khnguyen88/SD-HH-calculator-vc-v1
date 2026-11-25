@@ -14,6 +14,12 @@ from pathlib import Path
 
 import openpyxl
 
+# Heuristic sheet-ref match. Group 1 catches quoted names (Excel quotes any
+# sheet name with special chars, spaces, or digit-first). Group 2 catches
+# bareword names starting with a letter/underscore. Unquoted digit-leading
+# sheet names (e.g. "25YEAR") slip through, but Excel auto-quotes those in
+# practice. Matches inside string literals are filtered by membership against
+# the actual sheet-name set downstream.
 SHEET_REF_RE = re.compile(r"'([^']+)'!|([A-Za-z_][A-Za-z0-9_ ]*)!")
 
 
@@ -56,6 +62,9 @@ def scan_sheet(ws, all_sheet_names):
 
 def scan_defined_names(wb):
     broken = []
+    # Keyed on the raw value string, so whitespace/absolute-vs-relative
+    # variants of the same range would read as distinct. Sufficient for the
+    # audit's purpose of flagging obvious name collisions.
     duplicates = {}
     for name in wb.defined_names:
         d = wb.defined_names[name]
