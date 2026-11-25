@@ -13,6 +13,9 @@ import sys
 import openpyxl
 
 
+# These are literal defined-name strings. "\0", "\c", etc. are the two
+# character names \0, \c, ... (backslash + letter/digit), NOT escape
+# sequences. In Python source we double the backslash to keep them literal.
 ORPHAN_NAMES = (
     ["\\0", "\\c", "\\e", "\\p", "\\r"]
     + [f"_DUR{i}" for i in range(1, 19)]
@@ -23,9 +26,15 @@ DUPLICATE_NAME_TO_REMOVE = "SelectCounty"  # keep Select_County
 
 def remove_defined_names(wb, names):
     # R3 + R4: remove orphan #REF! names and the SelectCounty duplicate.
+    # Returns the sorted list of names actually removed, so callers (and
+    # tests) can detect silent drift - e.g. if openpyxl surfaces a name
+    # with different escaping than the orphan list expects.
+    removed = []
     for name in list(wb.defined_names):
         if name in names:
             del wb.defined_names[name]
+            removed.append(name)
+    return sorted(removed)
 
 
 def rebuild_hgl_25year(wb):
@@ -62,7 +71,13 @@ def fix_inlet_spacing_ak(wb):
 
 def update_equations_instructions(wb):
     # R5: append a note explaining the acyclic-pipe-network requirement.
+    # Idempotent - if the note is already present (e.g. re-running on an
+    # already-repaired workbook), do nothing.
     ws = wb["EQUATIONS + INSTRUCTIONS"]
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and "acyclic pipe network" in cell.value:
+                return
     note_row = ws.max_row + 2
     ws[f"A{note_row}"] = (
         "NOTE: From/To columns must describe an acyclic pipe network. "
@@ -110,10 +125,18 @@ def main(src, dst):
     wb = openpyxl.load_workbook(src, data_only=False)
     rebuild_hgl_25year(wb)
     fix_inlet_spacing_ak(wb)
-    remove_defined_names(wb, set(ORPHAN_NAMES) | {DUPLICATE_NAME_TO_REMOVE})
+    expected_removals = set(ORPHAN_NAMES) | {DUPLICATE_NAME_TO_REMOVE}
+    removed = remove_defined_names(wb, expected_removals)
+    skipped = sorted(expected_removals - set(removed))
+    if skipped:
+        # Idempotent re-runs legitimately skip already-removed names; only
+        # warn so the first-run output still exits 0.
+        print(f"warning: {len(skipped)} expected defined-name removals "
+              f"were absent from the workbook (likely already removed): "
+              f"{skipped[:5]}{'...' if len(skipped) > 5 else ''}")
     update_equations_instructions(wb)
     wb.save(dst)
-    print(f"wrote {dst}")
+    print(f"wrote {dst}: removed {len(removed)} defined names")
 
 
 if __name__ == "__main__":
