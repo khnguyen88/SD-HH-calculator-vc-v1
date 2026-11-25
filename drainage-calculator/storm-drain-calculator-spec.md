@@ -87,6 +87,14 @@ Structure loss depends on how many pipes flow **into** the structure:
   Vout = TotalFlow / Aout
   Hb = Kb(θc) × Vout² / 2g
   ```
+
+**Citations (mirror of `docs/engineering-methodology.md` §5):**
+
+- Primary source: *MDSHA Drainage Manual*, Ch. 5 "Storm Drain Systems" p. 5-26 (September 2023 edition) — states the smaller-loss-angle rule verbatim.
+- MoCo adoption: *MCDOT Drainage Design Criteria*, §4.3.2.3 "Manhole, Inlet and Field Connection Energy Losses — Junctions" p. 46 (Revised Final, June 2014) — adopts the MDSHA procedure word-for-word.
+- Jurisdictional divergence: *PG County Stormwater Management Design Manual*, Ch. 8 "Storm Drain Design Criteria" p. 8-27 (Issue Date September 30, 2014) — states the opposite larger-loss-angle rule in prose. Appendix 8-15 Sample Headloss Calculation (DRAFT July 26 2014) demonstrates it in Example 2.
+- Toggle: `junctionAngleRule` project setting selects between the two rules. Default `"smaller-loss"`; PG-reviewed projects can set `"larger-loss"`. Implementation lives in Spec 3 (two-template calculator compatibility). The toggle round-trips through the golden template's `Config` sheet (Spec 2); legacy xlsx imports default to `"smaller-loss"`.
+
 - **>2 inflow pipes**: not supported by this method — flag it, don't guess.
 
 `Kb` comes from an editable Angle-vs-Kb lookup table (see 1.6), linearly interpolated, with separate columns for Inlet / Manhole / Bend structure types (a "Junction" type reuses the Bend column).
