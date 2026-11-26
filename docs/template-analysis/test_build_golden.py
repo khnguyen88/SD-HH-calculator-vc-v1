@@ -19,6 +19,7 @@ from build_golden import (
     add_config_sheet,
     add_hgl_crown_ceiling_checks,
     add_u7_small_area_tc_lookup,
+    annotate_equations_sheet,
     annotate_hgl_method,
     rewire_junction_angle_rule,
 )  # noqa: E402
@@ -545,3 +546,95 @@ def test_cfactor_tc_edit_idempotent(wip_src):
     add_u7_small_area_tc_lookup(wb)
     after = [wb["C_FACTOR"][f"W{r}"].value for r in range(CFACTOR_DATA_START, CFACTOR_DATA_END + 1)]
     assert before == after, "C_FACTOR!W column drifted on re-run"
+
+
+# ---------------------------------------------------------------------------
+# Task 6: annotate_equations_sheet
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def equations_wb(wip_src):
+    """In-process fixture: all six edits."""
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
+    add_hgl_crown_ceiling_checks(wb)
+    annotate_hgl_method(wb)
+    add_u7_small_area_tc_lookup(wb)
+    annotate_equations_sheet(wb)
+    return wb
+
+
+TOGGLES_HEADER = "=== Design-Rule Toggles (Config sheet) ==="
+CITATIONS_HEADER = "=== Citation refresh (Spec 1 U1-U7) ==="
+
+
+def _find_text_row(ws, needle):
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value == needle:
+                return cell.row
+    return None
+
+
+def test_equations_toggles_section_header_present(equations_wb):
+    ws = equations_wb["EQUATIONS + INSTRUCTIONS"]
+    assert _find_text_row(ws, TOGGLES_HEADER) is not None, (
+        f"{TOGGLES_HEADER!r} missing from EQUATIONS + INSTRUCTIONS"
+    )
+
+
+def test_equations_citations_section_header_present(equations_wb):
+    ws = equations_wb["EQUATIONS + INSTRUCTIONS"]
+    assert _find_text_row(ws, CITATIONS_HEADER) is not None, (
+        f"{CITATIONS_HEADER!r} missing from EQUATIONS + INSTRUCTIONS"
+    )
+
+
+def test_equations_live_toggle_cells_present(equations_wb):
+    ws = equations_wb["EQUATIONS + INSTRUCTIONS"]
+    found = {"junctionAngleRule": False, "hglCrownCeilingRule": False, "hglMethod": False}
+    for row in ws.iter_rows():
+        for cell in row:
+            v = cell.value
+            if not isinstance(v, str) or not v.startswith("="):
+                continue
+            for name in found:
+                if name in v:
+                    found[name] = True
+    for name, ok in found.items():
+        assert ok, f"no live-reference formula found for {name!r}"
+
+
+def test_equations_pg_citation_appears(equations_wb):
+    ws = equations_wb["EQUATIONS + INSTRUCTIONS"]
+    found = False
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and "PG C I-2" in cell.value:
+                found = True
+    assert found, "PG C I-2 citation (HGL clearance disclosure) missing"
+
+
+def test_equations_annotation_idempotent(wip_src):
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
+    add_hgl_crown_ceiling_checks(wb)
+    annotate_hgl_method(wb)
+    add_u7_small_area_tc_lookup(wb)
+    annotate_equations_sheet(wb)
+    ws = wb["EQUATIONS + INSTRUCTIONS"]
+
+    def snap():
+        return [
+            (cell.coordinate, cell.value)
+            for row in ws.iter_rows(min_row=50, max_row=ws.max_row, max_col=3)
+            for cell in row
+            if cell.value is not None
+        ]
+
+    before = snap()
+    annotate_equations_sheet(wb)
+    after = snap()
+    assert before == after, "EQUATIONS + INSTRUCTIONS annotation drifted on re-run"

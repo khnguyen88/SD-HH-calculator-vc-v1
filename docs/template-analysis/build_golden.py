@@ -364,8 +364,75 @@ def add_u7_small_area_tc_lookup(wb):
         )
 
 
+EQ_SHEET = "EQUATIONS + INSTRUCTIONS"
+EQ_TOGGLES_HEADER = "=== Design-Rule Toggles (Config sheet) ==="
+EQ_CITATIONS_HEADER = "=== Citation refresh (Spec 1 U1-U7) ==="
+EQ_BLOCK_HEIGHT = 36  # Number of rows our block occupies (conservative upper bound)
+
+
+def _eq_find_row(ws, needle, col=1):
+    for r in range(1, ws.max_row + 1):
+        if ws.cell(row=r, column=col).value == needle:
+            return r
+    return None
+
+
 def annotate_equations_sheet(wb):
-    raise NotImplementedError("Task 6")
+    ws = wb[EQ_SHEET]
+
+    start = _eq_find_row(ws, EQ_TOGGLES_HEADER)
+    if start is None:
+        start = ws.max_row + 2  # one blank row spacer
+
+    def write(row_offset, col, value, bold=False):
+        c = ws.cell(row=start + row_offset, column=col, value=value)
+        if bold:
+            c.font = Font(bold=True)
+
+    # Clear EQ_BLOCK_HEIGHT rows below start so a prior longer annotation is
+    # replaced cleanly on idempotent re-run.
+    for r in range(start, start + EQ_BLOCK_HEIGHT):
+        for col in range(1, 4):
+            ws.cell(row=r, column=col).value = None
+
+    # Toggles section.
+    write(0, 1, EQ_TOGGLES_HEADER, bold=True)
+    write(1, 1, "junctionAngleRule =")
+    write(1, 2, "=junctionAngleRule")
+    write(2, 1, "Controlling-angle procedure at 2-inflow junctions.")
+    write(3, 1, "  MDSHA Ch. 5 / MCDOT §4.3.2.3: smaller Lv’s angle controls  [smaller-loss, default]")
+    write(4, 1, "  PG SWM Ch. 8 p. 8-27 (Sept 30 2014): larger H’s angle controls  [larger-loss]")
+    write(5, 1, "  Set on Config!B3. Affects STORM DRAIN COMPS!AD (controlling angle) and downstream Hb.")
+
+    write(7, 1, "hglCrownCeilingRule =")
+    write(7, 2, "=hglCrownCeilingRule")
+    write(8, 1, "HGL vertical-clearance ceiling.")
+    write(9, 1, "  MCDOT §4.3.1: HGL ≤ Crown + 1 ft AND HGL ≤ Rim − 1 ft  [crown-plus-1ft, default]")
+    write(10, 1, "  PG C I-2: HGL ≤ Rim − 12” only (pipes may surcharge within the structure)  [rim-only]")
+    write(11, 1, "  Set on Config!B4. Affects HGL and HGL(25YEAR) “Clearance Governing” column.")
+
+    write(13, 1, "hglMethod =")
+    write(13, 2, "=hglMethod")
+    write(14, 1, "HGL-walk method.")
+    write(15, 1, "  HEC-22 EGL (d/s crown floor) - HEC-22 §7.4 standard  [HEC-22, default]")
+    write(16, 1, "  Legacy both-end crown floor - firm historical convention  [legacy]")
+    write(17, 1, "  Set on Config!B5. Label-only in this template; Spec 3 wires xlsx HGL computation.")
+
+    # Citations section.
+    write(20, 1, EQ_CITATIONS_HEADER, bold=True)
+    write(21, 1, "Junction-loss primary source - MDSHA Drainage Manual Ch. 5 p. 5-26 (Sept 2023), Fig 5-8")
+    write(22, 1, "  (mirrored by MCDOT §4.3.2.3 p. 46, Revised Final June 2014).")
+    write(23, 1, "Pipe slope - MCDOT §4.3.3(k) (15” and 18” ≥ 1.0%); our rule <24” ≥ 1.0% is a touch")
+    write(24, 1, "  more conservative (catches 21” too) - intentional.")
+    write(25, 1, "Time of concentration for small areas (≤ 2 acres) - MCDOT §3.2.1 Table 3-3:")
+    write(26, 1, "  C ≥ 0.80 → 5 min; 0.65-0.79 → 7; 0.40-0.64 → 10; ≤ 0.39 → 15.")
+    write(27, 1, "Composite C - MCDOT §3.4 area-weighted; PG SWM Ch. 8 §8.2.1 same intent.")
+    write(28, 1, "PG DPIE checklist items affecting calculator-visible rules:")
+    write(29, 1, "  C-19 (15” min pipe), G-8 (min cover: 1 ft RCP, 2 ft flexible),")
+    write(30, 1, "  G-9 (0.1 ft min drop through structure), C-20 (400 ft max access spacing),")
+    write(31, 1, "  C-21 (≤ 45° pipe-to-flat-wall), H-6 (last reach to outfall ≤ 1%),")
+    write(32, 1, "  L-4 (channel armoring v > 5 fps cut / 4 fps fill),")
+    write(33, 1, "  I-2 (HGL ≤ Rim − 1 ft; the crown-ceiling toggle disclosure).")
 
 
 def main(src, dst):
