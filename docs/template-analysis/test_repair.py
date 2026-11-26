@@ -132,6 +132,35 @@ def test_r5_acyclic_note_present(repaired_wb):
     assert found, "R5 acyclic-network note not found on EQUATIONS + INSTRUCTIONS"
 
 
+def test_iterative_calculation_enabled(repaired_wb):
+    # The HGL walking formulas require iterate=True on the workbook for
+    # Excel to compute G/K/M on open - Excel's static analyzer conservatively
+    # flags whole-column IF(array) patterns as potentially circular.
+    assert repaired_wb.calculation.iterate is True, (
+        "workbook calculation.iterate must be True so HGL/SDC array formulas "
+        "compute on open"
+    )
+
+
+def test_r5_acyclic_note_mentions_iterative_calc_on(repaired_wb):
+    # The current acyclic-network note explains why iterate=True is set.
+    # Catches the pre-R5-rewrite stale text that said iterate was OFF.
+    ws = repaired_wb["EQUATIONS + INSTRUCTIONS"]
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.startswith(
+                "NOTE: From/To columns must describe an acyclic pipe network."
+            ):
+                assert "Iterative calculation is ON" in cell.value, (
+                    f"acyclic note stale: {cell.value!r}"
+                )
+                assert "Iterative calculation is intentionally OFF" not in cell.value, (
+                    "acyclic note still carries the stale 'intentionally OFF' phrasing"
+                )
+                return
+    raise AssertionError("acyclic-network note not found")
+
+
 def test_workbook_has_no_ref_errors_anywhere(repaired_wb):
     hits = []
     for ws in repaired_wb.worksheets:

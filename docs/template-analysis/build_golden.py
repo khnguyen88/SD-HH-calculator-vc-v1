@@ -435,6 +435,18 @@ def annotate_equations_sheet(wb):
     write(33, 1, "  I-2 (HGL ≤ Rim − 1 ft; the crown-ceiling toggle disclosure).")
 
 
+def enable_iterative_calculation(wb):
+    # Belt-and-suspenders: repair.py also sets this on the WIP, but the
+    # golden builder enforces it so the setting survives any WIP edit
+    # that silently flips it back off. Required because the HGL walking
+    # formulas (G/K/M on HGL, array-IF Tc on STORM DRAIN COMPS!K) use
+    # whole-column IF(array) patterns that Excel's static analyzer flags
+    # as potentially circular - with iterate=False, those cells open blank.
+    wb.calculation.iterate = True
+    wb.calculation.iterateCount = 100
+    wb.calculation.iterateDelta = 0.001
+
+
 def main(src, dst):
     wb = openpyxl.load_workbook(src, data_only=False)
     add_config_sheet(wb)
@@ -443,6 +455,7 @@ def main(src, dst):
     annotate_hgl_method(wb)
     add_u7_small_area_tc_lookup(wb)
     annotate_equations_sheet(wb)
+    enable_iterative_calculation(wb)
     wb.save(dst)
     print(f"wrote {dst}")
 

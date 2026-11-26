@@ -112,39 +112,73 @@ def modernize_k_column_tc_formula(wb):
         )
 
 
+ACYCLIC_NOTE = (
+    "NOTE: From/To columns must describe an acyclic pipe network. "
+    "Iterative calculation is ON (File > Options > Formulas > Enable "
+    "iterative calculation) because the HGL walking formulas in columns "
+    "G/K/M use whole-column IF(array) patterns that Excel's static "
+    "analyzer flags as potentially circular even on a correctly built "
+    "acyclic network. Iterative calc being ON does NOT mean loops in "
+    "From/To are OK - a genuine loop converges to an arbitrary value "
+    "after a few iterations, masking the data-entry error. Check your "
+    "From/To entries if HGL values look off."
+)
+
+K_COLUMN_NOTE = (
+    "NOTE: K-column Tc aggregation uses XLOOKUP, which returns the "
+    "FIRST matching upstream row. For junction structures with 2+ "
+    "inflow pipes, the design Tc may understate the controlling "
+    "inflow's Tc. If a junction has multiple inflows with materially "
+    "different Tc values, manually verify K is set to the MAX of the "
+    "inflows' (K+X) values."
+)
+
+
 def update_equations_instructions(wb):
-    # R5: append a note explaining the acyclic-pipe-network requirement.
-    # Also append a Tc-aggregation note disclosing the XLOOKUP single-match
-    # limitation (set by modernize_k_column_tc_formula).
-    # Idempotent - if the notes are already present, do nothing.
+    # R5: ensure the acyclic-network note and the K-column Tc note are both
+    # present, and that their TEXT matches the current canonical versions
+    # above. Idempotent on content (rewrites a stale note in place rather
+    # than duplicating).
     ws = wb["EQUATIONS + INSTRUCTIONS"]
-    existing_text = "\n".join(
-        str(cell.value) for row in ws.iter_rows() for cell in row
-        if isinstance(cell.value, str)
+
+    def _find_note_row(prefix):
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                if isinstance(v, str) and v.startswith(prefix):
+                    return cell.row
+        return None
+
+    acyclic_row = _find_note_row(
+        "NOTE: From/To columns must describe an acyclic pipe network."
     )
-    need_acyclic = "acyclic pipe network" not in existing_text
-    need_k_note = "K-column Tc aggregation" not in existing_text
-    if not need_acyclic and not need_k_note:
-        return
-    note_row = ws.max_row + 2
-    if need_acyclic:
-        ws[f"A{note_row}"] = (
-            "NOTE: From/To columns must describe an acyclic pipe network. "
-            "Iterative calculation is intentionally OFF - a loop in the data "
-            "will produce #VALUE!, not an iteratively settled answer. Check "
-            "your From/To entries if you see unexpected errors on HGL or "
-            "structure-loss columns."
-        )
-        note_row += 2
-    if need_k_note:
-        ws[f"A{note_row}"] = (
-            "NOTE: K-column Tc aggregation uses XLOOKUP, which returns the "
-            "FIRST matching upstream row. For junction structures with 2+ "
-            "inflow pipes, the design Tc may understate the controlling "
-            "inflow's Tc. If a junction has multiple inflows with materially "
-            "different Tc values, manually verify K is set to the MAX of the "
-            "inflows' (K+X) values."
-        )
+    k_row = _find_note_row("NOTE: K-column Tc aggregation")
+
+    if acyclic_row is not None:
+        ws.cell(row=acyclic_row, column=1).value = ACYCLIC_NOTE
+    else:
+        ws[f"A{ws.max_row + 2}"] = ACYCLIC_NOTE
+
+    if k_row is not None:
+        ws.cell(row=k_row, column=1).value = K_COLUMN_NOTE
+    else:
+        ws[f"A{ws.max_row + 2}"] = K_COLUMN_NOTE
+
+
+def enable_iterative_calculation(wb):
+    # Excel's static analyzer flags the HGL walking formulas (G/K/M on the
+    # HGL sheet and the array-IF Tc aggregation on STORM DRAIN COMPS!K) as
+    # potentially circular even on acyclic networks. With iterate=False the
+    # file opens with G/K/M blank until manual recompute. Enabling iterative
+    # calc on the workbook (and setting conservative convergence defaults)
+    # makes the file compute correctly on open.
+    #
+    # The acyclic-network note on EQUATIONS + INSTRUCTIONS documents that
+    # this is a workaround for Excel's conservative static analysis, NOT a
+    # license to have loops in From/To.
+    wb.calculation.iterate = True
+    wb.calculation.iterateCount = 100
+    wb.calculation.iterateDelta = 0.001
 
 
 def _write_hgl25_broken_columns(ws, start, end):
@@ -195,6 +229,7 @@ def main(src, dst):
               f"{skipped[:5]}{'...' if len(skipped) > 5 else ''}")
     update_equations_instructions(wb)
     modernize_k_column_tc_formula(wb)
+    enable_iterative_calculation(wb)
     wb.save(dst)
     print(f"wrote {dst}: removed {len(removed)} defined names")
 
