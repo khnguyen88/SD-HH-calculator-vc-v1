@@ -2,6 +2,8 @@
 
 Per-tab analysis of `docs/template_wip_new.xlsx` — the new "legacy" reference template for PG / MoCo / DC storm-drain design. Produced as Spec 1 of the three-part series (audit → golden template → calculator compatibility). See `docs/superpowers/specs/2026-11-25-template-wip-audit-design.md` for the design.
 
+> **Golden template:** `docs/template_golden.xlsx` is the Spec-2 output produced by `build_golden.py` from the WIP. It carries a new `Config` sheet (tab 17) with three project-level toggles that Spec 3's calculator/visualizer read on import. See `calculator-import-contract.md`.
+
 ## Dependency diagram
 
 ```
@@ -74,4 +76,9 @@ STORM DRAIN COMPS is the hub for pipe-level data. C_FACTOR is the hub for runoff
 
 - `extract.py` — Pass A automated JSON dump. Committed output: `pass_a.json`.
 - `repair.py` — applies R1–R5 from the Spec-1 design doc. Reads `../template_wip_new_pre-repair.xlsx`, writes `../template_wip_new.xlsx`.
-- `test_extract.py`, `test_repair.py` — pytest suites.
+- `build_golden.py` — Spec-2 builder. Reads `../template_wip_new.xlsx` (SHA-pinned in `conftest.py`), applies six Edits (Config sheet, junction-angle toggle, HGL clearance checks, hglMethod stamp, C_FACTOR Table 3-3 Tc lookup, EQUATIONS annotation), writes `../template_golden.xlsx`.
+- `test_extract.py`, `test_repair.py`, `test_build_golden.py` — pytest suites. Run `python -m pytest` from this directory.
+
+## Contracts
+
+- `calculator-import-contract.md` — Spec 3 read/write contract for both xlsx shapes (WIP + golden).
