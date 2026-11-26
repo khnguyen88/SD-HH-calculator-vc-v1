@@ -16,11 +16,39 @@ import sys
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.worksheet.formula import ArrayFormula
 
 
 CONFIG_SHEET_NAME = "Config"
+
+SDC_SHEET = "STORM DRAIN COMPS"
+SDC_DATA_START = 10
+SDC_DATA_END = 98
+
+# Preferred helper column (first free). WIP's AJ is a Table4 pass-through
+# on every data row, so AJ is not free. BE is the first free column past
+# the active data block (A:BD).
+HELPER_COL_PREFERRED = "BE"
+
+
+def _find_free_column_for_helper(ws, start_col_letter="BE"):
+    # Scan columns right of (inclusive) start_col_letter for one with no
+    # value in any data row. Returns the column letter.
+    start_col = openpyxl.utils.column_index_from_string(start_col_letter)
+    for col in range(start_col, start_col + 16):  # 16-col safety horizon
+        letter = get_column_letter(col)
+        occupied = any(
+            ws.cell(row=r, column=col).value not in (None, "")
+            for r in range(SDC_DATA_START, SDC_DATA_END + 1)
+        )
+        if not occupied:
+            return letter
+    raise RuntimeError(
+        f"no free column found for AR_min helper near {start_col_letter}"
+    )
 
 CONFIG_ROWS = (
     # (name,                    default,                               list_options,                                                               citation)
@@ -116,7 +144,37 @@ def add_config_sheet(wb):
 
 
 def rewire_junction_angle_rule(wb):
-    raise NotImplementedError("Task 2")
+    ws = wb[SDC_SHEET]
+    helper_letter = _find_free_column_for_helper(ws, HELPER_COL_PREFERRED)
+
+    for r in range(SDC_DATA_START, SDC_DATA_END + 1):
+        # AR_min helper: MIN of positive Lv values entering this structure.
+        helper_formula = (
+            f'=IFERROR(MIN(IF(($B${SDC_DATA_START}:$B${SDC_DATA_END}=$A{r})'
+            f'*($AQ${SDC_DATA_START}:$AQ${SDC_DATA_END}>0),'
+            f'$AQ${SDC_DATA_START}:$AQ${SDC_DATA_END})),0)'
+        )
+        helper_coord = f"{helper_letter}{r}"
+        ws[helper_coord] = ArrayFormula(helper_coord, helper_formula)
+
+        # AD: toggle-aware controlling angle.
+        #   smaller-loss (MDSHA): angle of MIN-Lv inflow among positive Lv's.
+        #   larger-loss (PG):     angle of MAX-Lv inflow (= original WIP).
+        ad_coord = f"AD{r}"
+        ad_formula = (
+            f'=IF(AR{r}="","",IF(AR{r}=0,"-",'
+            f'IF(junctionAngleRule="smaller-loss",'
+            f'MAX(IF(($B${SDC_DATA_START}:$B${SDC_DATA_END}=$A{r})'
+            f'*($AQ${SDC_DATA_START}:$AQ${SDC_DATA_END}={helper_letter}{r}),'
+            f'$R${SDC_DATA_START}:$R${SDC_DATA_END})),'
+            f'MAX(IF($AQ${SDC_DATA_START}:$AQ${SDC_DATA_END}=$AR{r},'
+            f'$R${SDC_DATA_START}:$R${SDC_DATA_END})))))'
+        )
+        ws[ad_coord] = ArrayFormula(ad_coord, ad_formula)
+
+    # Also write a header-row note so engineers can see which column is the
+    # helper. Row 8 is the SDC's dynamic label row.
+    ws[f"{helper_letter}8"] = "Lv_min helper (Spec 2, for smaller-loss toggle)"
 
 
 def add_hgl_crown_ceiling_checks(wb):

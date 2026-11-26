@@ -15,7 +15,7 @@ import pytest
 HERE = Path(__file__).parent
 
 sys.path.insert(0, str(HERE))
-from build_golden import add_config_sheet  # noqa: E402
+from build_golden import add_config_sheet, rewire_junction_angle_rule  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -28,6 +28,15 @@ def config_wb(wip_src):
     """
     wb = openpyxl.load_workbook(wip_src, data_only=False)
     add_config_sheet(wb)
+    return wb
+
+
+@pytest.fixture(scope="module")
+def junction_wb(wip_src):
+    """In-process fixture: Task 1 + Task 2 edits only."""
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
     return wb
 
 
@@ -127,3 +136,96 @@ def test_config_tab_color_set(config_wb):
     assert ws.sheet_properties.tabColor is not None, (
         "Config tab color should be set (amber per spec)"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 2: rewire_junction_angle_rule
+# ---------------------------------------------------------------------------
+
+def test_junction_wip_has_max_pattern_originally(wip_src):
+    # Control test: confirms the WIP's AD10 still carries the MAX pattern
+    # before Edit 2 runs. Reads wip_src (snapshot), not repaired_wb, to stay
+    # isolated from Spec-1 fixture side effects.
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    ws = wb["STORM DRAIN COMPS"]
+    ad10 = ws["AD10"].value
+    text = getattr(ad10, "text", None) or (ad10 if isinstance(ad10, str) else None)
+    assert text is not None, f"AD10 unexpected type: {type(ad10)}"
+    assert "MAX(IF($AQ$10:$AQ$98=$AR10,$R$10:$R$98))" in text, (
+        f"WIP AD10 drifted - expected MAX-of-angle-by-max-Lv pattern, got {text!r}"
+    )
+
+
+def test_junction_ad_formula_references_toggle(junction_wb):
+    ws = junction_wb["STORM DRAIN COMPS"]
+    ad10 = ws["AD10"].value
+    text = getattr(ad10, "text", None) or (ad10 if isinstance(ad10, str) else None)
+    assert text is not None and "junctionAngleRule" in text, (
+        f"golden AD10 should pivot on junctionAngleRule, got {text!r}"
+    )
+
+
+def test_junction_ad_formula_has_both_branches(junction_wb):
+    ws = junction_wb["STORM DRAIN COMPS"]
+    text = getattr(ws["AD10"].value, "text", None) or str(ws["AD10"].value)
+    # smaller-loss branch picks the angle matching the MIN of positive Lv.
+    assert "smaller-loss" in text, f"missing smaller-loss branch: {text!r}"
+    # larger-loss branch preserves the original MAX pattern.
+    assert "MAX(IF($AQ$10:$AQ$98=$AR10,$R$10:$R$98))" in text, (
+        f"larger-loss branch should preserve WIP MAX pattern: {text!r}"
+    )
+
+
+def test_junction_ad_formula_applied_all_data_rows(junction_wb):
+    ws = junction_wb["STORM DRAIN COMPS"]
+    # Rows 10-98 all have an AD formula referencing junctionAngleRule.
+    for r in range(10, 99):
+        v = ws.cell(row=r, column=30).value  # AD = col 30
+        text = getattr(v, "text", None) or (v if isinstance(v, str) else None)
+        assert text is not None and "junctionAngleRule" in text, (
+            f"AD{r} missing toggle reference: {text!r}"
+        )
+
+
+def test_junction_ar_min_helper_populated(junction_wb):
+    # The AR_min helper column exists somewhere and carries a MIN-of-positive-
+    # Lv formula on every data row. Default placement is BE if AJ is occupied.
+    ws = junction_wb["STORM DRAIN COMPS"]
+    helper_col = None
+    for col in range(1, ws.max_column + 2):
+        v = ws.cell(row=10, column=col).value
+        text = getattr(v, "text", None) or (v if isinstance(v, str) else None)
+        if isinstance(text, str) and "MIN(IF((" in text and "$AQ$10:$AQ$98>0" in text:
+            helper_col = col
+            break
+    assert helper_col is not None, "AR_min helper column not found on row 10"
+    # Rows 10-98 all carry the helper formula.
+    for r in range(10, 99):
+        v = ws.cell(row=r, column=helper_col).value
+        text = getattr(v, "text", None) or (v if isinstance(v, str) else None)
+        assert text and "MIN" in text, f"helper col row {r} missing MIN: {text!r}"
+
+
+def test_junction_helper_cell_was_empty_in_wip(junction_wb, wip_src):
+    # The chosen helper column must NOT have overwritten a user-typed value
+    # in the WIP. AJ in WIP is a Table4 pass-through formula on every row;
+    # if the builder chose AJ as the helper, something went wrong.
+    gws = junction_wb["STORM DRAIN COMPS"]
+    wip_wb = openpyxl.load_workbook(wip_src, data_only=False)
+    wws = wip_wb["STORM DRAIN COMPS"]
+    helper_col = None
+    for col in range(1, gws.max_column + 2):
+        v = gws.cell(row=10, column=col).value
+        text = getattr(v, "text", None) or (v if isinstance(v, str) else None)
+        if isinstance(text, str) and "MIN(IF((" in text:
+            helper_col = col
+            break
+    assert helper_col is not None
+    for r in range(10, 20):
+        wip_val = wws.cell(row=r, column=helper_col).value
+        wip_text = getattr(wip_val, "text", None) or (wip_val if isinstance(wip_val, str) else None)
+        if wip_text is not None and wip_text != "":
+            raise AssertionError(
+                f"helper column (col {helper_col}) had pre-existing content at row {r}: "
+                f"{wip_text!r} - builder should have chosen a later empty column"
+            )
