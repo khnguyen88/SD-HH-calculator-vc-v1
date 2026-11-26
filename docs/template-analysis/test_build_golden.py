@@ -1,9 +1,6 @@
 # Tests for build_golden.py - applies Spec-2 edits to the repaired WIP
 # template, producing template_golden.xlsx. Shared fixture `golden_built`
 # lives in conftest.py.
-from pathlib import Path
-
-HERE = Path(__file__).parent
 
 
 def test_skeleton_runs_end_to_end(golden_built):
