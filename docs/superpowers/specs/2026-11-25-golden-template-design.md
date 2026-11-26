@@ -276,7 +276,7 @@ One pytest file: `docs/template-analysis/test_build_golden.py`. Shared `conftest
 2. On `Config`, flip `junctionAngleRule` to `larger-loss`. On `STORM DRAIN COMPS` with a 2-inflow structure populated, observe `AD` value change. Flip back.
 3. On `Config`, flip `hglCrownCeilingRule` to `rim-only`. On `HGL`, observe `Clearance Governing` change on a row where `Crown+1ft Check = FAIL` but `Rim−1ft Check = OK`. Flip back.
 4. On `Config`, flip `hglMethod`. Confirm top-of-sheet annotation updates on `HGL`. Confirm HGL numbers themselves do **not** change (label-only in Spec 2).
-5. Populate the 3-pipe sample from `docs/bburg-xlsx-user-guide.md`; confirm all sheets compute cleanly.
+5. Populate any small 3-pipe sample (e.g., copy rows 10–12 from `docs/template_wip_new_pre-repair.xlsx` which carries a pre-populated I-3 → MH-4 → MH-3 chain); confirm all sheets compute cleanly.
 
 ## 9. Acceptance checklist
 

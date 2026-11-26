@@ -1074,7 +1074,7 @@ Manual verification checklist — open `docs/template_wip_new.xlsx` in Excel:
 3. `INLET SPACING` column AK rows 11–96 are blank (no `#REF!`).
 4. Name Manager (Formulas → Name Manager) shows no `#REF!` entries and no `SelectCounty` entry; `Select_County` remains.
 5. `EQUATIONS + INSTRUCTIONS` shows the acyclic-network note appended at the bottom.
-6. Populate the 3-pipe sample project from `docs/bburg-xlsx-user-guide.md`: STORM DRAIN COMPS rows 10–12 take real From/To/area/length/invert/slope values. Confirm columns H, K, M, T, U, Y, AF compute without errors and that HGL rows 7–9 populate end-to-end.
+6. Populate a 3-pipe sample: STORM DRAIN COMPS rows 10–12 take real From/To/area/length/invert/slope values (copy from `docs/template_wip_new_pre-repair.xlsx` — rows 10–12 carry a pre-populated I-3 → MH-4 → MH-3 chain). Confirm columns H, K, M, T, U, Y, AF compute without errors and that HGL rows 7–9 populate end-to-end.
 
 If any step fails, do NOT commit — fix the underlying issue in `repair.py`, re-run Task 14 Step 1, and re-verify.
 
