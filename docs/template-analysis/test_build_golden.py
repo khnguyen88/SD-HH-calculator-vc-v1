@@ -13,20 +13,20 @@ import openpyxl
 import pytest
 
 HERE = Path(__file__).parent
-WIP = HERE.parent / "template_wip_new.xlsx"
 
 sys.path.insert(0, str(HERE))
 from build_golden import add_config_sheet  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def config_wb():
-    """In-process fixture: load WIP, run only add_config_sheet, return wb.
+def config_wb(wip_src):
+    """In-process fixture: load WIP snapshot, run only add_config_sheet, return wb.
 
     Allows test_config_* tests to pass while later tasks are still stubs.
-    Does not write to disk; the returned workbook is in memory only.
+    Uses the session-wide WIP snapshot from conftest.py (wip_src) so Spec-1's
+    repaired_wb fixture can't clobber the bytes mid-session.
     """
-    wb = openpyxl.load_workbook(WIP, data_only=False)
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
     add_config_sheet(wb)
     return wb
 
@@ -47,11 +47,15 @@ def test_config_sheet_exists_and_is_last_tab(config_wb):
     )
 
 
-def test_config_sheet_sixteen_originals_preserved_in_order(config_wb, repaired_wb):
+def test_config_sheet_sixteen_originals_preserved_in_order(config_wb, wip_src):
     # The 16 original tabs appear in their original order, followed by Config.
+    # Read sheet names from the WIP snapshot directly instead of depending on
+    # Spec-1's repaired_wb fixture (which writes to the live WIP file and
+    # conflicts with external file holders).
+    wip_wb = openpyxl.load_workbook(wip_src, data_only=False)
     originals = [n for n in config_wb.sheetnames if n != "Config"]
-    assert originals == repaired_wb.sheetnames, (
-        f"original tab order changed:\n  wip:    {repaired_wb.sheetnames}\n"
+    assert originals == wip_wb.sheetnames, (
+        f"original tab order changed:\n  wip:    {wip_wb.sheetnames}\n"
         f"  golden: {originals}"
     )
 

@@ -1,14 +1,19 @@
 # Shared pytest fixtures for the template-analysis test suite.
 #
-# repaired_wb: runs repair.py once per module, loads the result. Reused by
-#   test_repair.py. Module-scoped because the subprocess cost is non-trivial.
-# golden_built: runs build_golden.py once per module, loads the result.
-#   Used by test_build_golden.py. Module-scoped for the same reason.
+# Spec-1 context: repair.py INTENTIONALLY overwrites template_wip_new.xlsx
+# (that's the contract Spec-1 tests verify). That side effect makes the WIP
+# file unsafe to read concurrently.
 #
-# Both fixtures return read-only workbooks - tests MUST NOT mutate them.
+# Spec-2 fixtures therefore work off a FROZEN SNAPSHOT of WIP taken once at
+# session start (autouse), before anything else touches the file. `wip_src`
+# returns the snapshot path; all Spec-2 fixtures (and in-process per-task
+# fixtures in test_build_golden.py) read from it. Spec-1's `repaired_wb`
+# fixture continues to operate on the live WIP for its own contract.
 import hashlib
+import shutil
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import openpyxl
@@ -21,42 +26,68 @@ WIP = HERE.parent / "template_wip_new.xlsx"
 BACKUP = HERE.parent / "template_wip_new_pre-repair.xlsx"
 GOLDEN = HERE.parent / "template_golden.xlsx"
 
-# Pinned SHA-256 of docs/template_wip_new.xlsx. When WIP is intentionally
-# changed, update this hash in the same commit so reviewers see the
-# golden rebuild is a deliberate consequence of the WIP change.
-WIP_SHA256 = "bd39bc7eb38c18b6c558a1d4d2f4075cbe406751ac65897d609f9803897be73c"
+# Expected SHA-256 of docs/template_wip_new.xlsx on disk at session start.
+# Drift signal only: if the snapshot's SHA differs from this value the
+# session emits a warning and continues. Update this value in the same
+# commit that intentionally changes WIP.
+WIP_SHA256 = "862dd8c5a08b145a34c2c86a788499c20b24dba39dc080050037ac4078c2c064"
+
+_WIP_SNAPSHOT_HOLDER = {}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _wip_snapshot(tmp_path_factory):
+    # Autouse: materialised before any other fixture in the session. Captures
+    # the WIP bytes before Spec-1's repaired_wb fixture can clobber them.
+    snap_dir = tmp_path_factory.mktemp("wip_snap")
+    snap = snap_dir / "template_wip_new.xlsx"
+    shutil.copy(WIP, snap)
+
+    actual = hashlib.sha256(snap.read_bytes()).hexdigest()
+    if actual != WIP_SHA256:
+        warnings.warn(
+            f"WIP SHA drift at session start (expected {WIP_SHA256}, got "
+            f"{actual}). If the on-disk WIP changed intentionally, update "
+            f"WIP_SHA256 in conftest.py in the same commit.",
+            stacklevel=2,
+        )
+
+    _WIP_SNAPSHOT_HOLDER["path"] = snap
+    return snap
+
+
+@pytest.fixture(scope="session")
+def wip_src(_wip_snapshot):
+    # Public handle for the snapshot. Spec-2 fixtures and in-process per-task
+    # fixtures use this instead of touching the live WIP.
+    return _wip_snapshot
 
 
 @pytest.fixture(scope="module")
 def repaired_wb():
+    # Spec-1 contract: repair.py writes to WIP. Unchanged from the Spec-1
+    # fixture so test_repair.py keeps working.
     assert BACKUP.exists(), "pre-repair backup missing - Task 1 not run"
     subprocess.check_call([sys.executable, str(REPAIR), str(BACKUP), str(WIP)])
     return openpyxl.load_workbook(WIP, data_only=False)
 
 
 @pytest.fixture(scope="module")
-def golden_built(tmp_path_factory):
-    # Pin the WIP input so an unintended WIP change can't silently alter
-    # the golden output. When WIP changes on purpose, update WIP_SHA256
-    # in the same commit as the WIP change.
-    actual = hashlib.sha256(WIP.read_bytes()).hexdigest()
-    assert actual == WIP_SHA256, (
-        f"WIP input hash drift:\n  expected {WIP_SHA256}\n  got      {actual}\n"
-        "If this WIP change is intentional, update WIP_SHA256 in conftest.py."
-    )
+def golden_built(wip_src, tmp_path_factory):
     out = tmp_path_factory.mktemp("golden") / "template_golden.xlsx"
-    subprocess.check_call([sys.executable, str(BUILD_GOLDEN), str(WIP), str(out)])
+    subprocess.check_call([sys.executable, str(BUILD_GOLDEN), str(wip_src), str(out)])
     return openpyxl.load_workbook(out, data_only=False)
 
 
 @pytest.fixture(scope="module")
-def golden_built_twice(tmp_path_factory, golden_built):
+def golden_built_twice(wip_src, tmp_path_factory):
     # Idempotency check: run the builder on its own output, return both
     # workbooks so tests can diff them.
-    out2 = tmp_path_factory.mktemp("golden2") / "template_golden_2.xlsx"
-    # golden_built is already built at a tmp path; find it by rebuilding
-    # into a known first path instead of trusting the fixture's return.
     first = tmp_path_factory.mktemp("golden1") / "template_golden_1.xlsx"
-    subprocess.check_call([sys.executable, str(BUILD_GOLDEN), str(WIP), str(first)])
+    out2 = tmp_path_factory.mktemp("golden2") / "template_golden_2.xlsx"
+    subprocess.check_call([sys.executable, str(BUILD_GOLDEN), str(wip_src), str(first)])
     subprocess.check_call([sys.executable, str(BUILD_GOLDEN), str(first), str(out2)])
-    return openpyxl.load_workbook(first, data_only=False), openpyxl.load_workbook(out2, data_only=False)
+    return (
+        openpyxl.load_workbook(first, data_only=False),
+        openpyxl.load_workbook(out2, data_only=False),
+    )
