@@ -69,6 +69,40 @@ def fix_inlet_spacing_ak(wb):
             cell.value = None
 
 
+def modernize_k_column_tc_formula(wb):
+    # Rewrite STORM DRAIN COMPS!K10:K98 using the Excel-365 FILTER + MAX
+    # idiom. Replaces the legacy CSE-array MAX(IF($B$10:$B$98=A{r},
+    # IFERROR($K$10:$K$98+$X$10:$X$98,""))) pattern with a self-documenting
+    # equivalent that does not need CSE entry.
+    #
+    # Semantics (per the pre-repair formula, which was engineered correctly):
+    #   K{r} =
+    #     IF E{r} is blank -> blank
+    #     Let upstream = FILTER( K{r'} + X{r'}  where  B{r'} = A{r} ,
+    #                            fallback = E{r} )
+    #     Then K{r} = MAX(upstream, E{r})
+    #
+    # Idempotent: detects the "LET(upstream,FILTER(" marker and skips any
+    # K cell already carrying it.
+    ws = wb["STORM DRAIN COMPS"]
+    marker = "LET(upstream,FILTER("
+    for r in range(10, 99):
+        cell = ws.cell(row=r, column=11)  # K = col 11
+        existing = cell.value
+        text = getattr(existing, "text", None) or (
+            existing if isinstance(existing, str) else None
+        )
+        if text is None or not text.startswith("="):
+            continue  # don't invent a formula where none existed
+        if marker in text:
+            continue  # already modernized
+        cell.value = (
+            f'=IF(E{r}="","",'
+            f'LET(upstream,FILTER($K$10:$K$98+$X$10:$X$98,'
+            f'$B$10:$B$98=A{r},E{r}),MAX(upstream,E{r})))'
+        )
+
+
 def update_equations_instructions(wb):
     # R5: append a note explaining the acyclic-pipe-network requirement.
     # Idempotent - if the note is already present (e.g. re-running on an
@@ -135,6 +169,7 @@ def main(src, dst):
               f"were absent from the workbook (likely already removed): "
               f"{skipped[:5]}{'...' if len(skipped) > 5 else ''}")
     update_equations_instructions(wb)
+    modernize_k_column_tc_formula(wb)
     wb.save(dst)
     print(f"wrote {dst}: removed {len(removed)} defined names")
 
