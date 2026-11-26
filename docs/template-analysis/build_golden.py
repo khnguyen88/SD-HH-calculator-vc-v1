@@ -313,8 +313,16 @@ def add_hgl_crown_ceiling_checks(wb):
     )
 
 
+HGL_METHOD_STAMP_COORD = "P3"
+
+
 def annotate_hgl_method(wb):
-    raise NotImplementedError("Task 4")
+    for sheet_name in ("HGL", "HGL(25YEAR)"):
+        ws = wb[sheet_name]
+        cell = ws[HGL_METHOD_STAMP_COORD]
+        cell.value = '="HGL method: " & hglMethod'
+        cell.font = Font(bold=True, italic=True)
+        cell.alignment = Alignment(horizontal="right")
 
 
 def add_u7_small_area_tc_lookup(wb):

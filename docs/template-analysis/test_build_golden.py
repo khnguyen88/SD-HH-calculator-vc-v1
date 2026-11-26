@@ -18,6 +18,7 @@ sys.path.insert(0, str(HERE))
 from build_golden import (
     add_config_sheet,
     add_hgl_crown_ceiling_checks,
+    annotate_hgl_method,
     rewire_junction_angle_rule,
 )  # noqa: E402
 
@@ -290,6 +291,17 @@ def hgl_clearance_wb(wip_src):
     return wb
 
 
+@pytest.fixture(scope="module")
+def hgl_method_wb(wip_src):
+    """In-process fixture: Tasks 1 + 2 + 3 + 4 edits only."""
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
+    add_hgl_crown_ceiling_checks(wb)
+    annotate_hgl_method(wb)
+    return wb
+
+
 def _find_clearance_cols(ws, header_row=6):
     found = {}
     for col in range(1, ws.max_column + 2):
@@ -390,3 +402,55 @@ def test_hgl_clearance_idempotent(wip_src):
 
     assert hgl_before == hgl_after, "HGL clearance columns drifted on re-run"
     assert hgl25_before == hgl25_after, "HGL(25YEAR) clearance columns drifted on re-run"
+
+
+# ---------------------------------------------------------------------------
+# Task 4: annotate_hgl_method
+# ---------------------------------------------------------------------------
+
+HGL_METHOD_ANNOTATION_CELL = "P3"
+
+
+def test_hgl_method_annotation_on_hgl(hgl_method_wb):
+    ws = hgl_method_wb["HGL"]
+    v = ws[HGL_METHOD_ANNOTATION_CELL].value
+    assert isinstance(v, str) and v.startswith("=") and "hglMethod" in v, (
+        f"HGL!{HGL_METHOD_ANNOTATION_CELL} should be an hglMethod-referencing "
+        f"formula, got {v!r}"
+    )
+    assert "HGL method:" in v, f"annotation label missing: {v!r}"
+
+
+def test_hgl_method_annotation_on_hgl_25year(hgl_method_wb):
+    ws = hgl_method_wb["HGL(25YEAR)"]
+    v = ws[HGL_METHOD_ANNOTATION_CELL].value
+    assert isinstance(v, str) and v.startswith("=") and "hglMethod" in v, (
+        f"HGL(25YEAR)!{HGL_METHOD_ANNOTATION_CELL} should be an hglMethod-"
+        f"referencing formula, got {v!r}"
+    )
+
+
+def test_hgl_method_annotation_inside_print_area(hgl_method_wb):
+    import re
+    for sheet_name in ("HGL", "HGL(25YEAR)"):
+        ws = hgl_method_wb[sheet_name]
+        m = re.search(r"\$([A-Z]+)\$\d+:\$([A-Z]+)\$\d+", ws.print_area or "")
+        assert m, f"{sheet_name} print_area malformed: {ws.print_area!r}"
+        end_col = column_index_from_string(m.group(2))
+        ann_col = column_index_from_string("P")
+        assert ann_col <= end_col, (
+            f"{sheet_name} annotation col P (idx {ann_col}) outside print area "
+            f"(ends at {m.group(2)}, idx {end_col})"
+        )
+
+
+def test_hgl_method_annotation_idempotent(wip_src):
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
+    add_hgl_crown_ceiling_checks(wb)
+    annotate_hgl_method(wb)
+    before = {name: wb[name]["P3"].value for name in ("HGL", "HGL(25YEAR)")}
+    annotate_hgl_method(wb)
+    after = {name: wb[name]["P3"].value for name in ("HGL", "HGL(25YEAR)")}
+    assert before == after, "P3 annotation drifted on re-run"
