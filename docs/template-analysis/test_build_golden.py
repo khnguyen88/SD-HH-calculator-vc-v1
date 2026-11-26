@@ -15,7 +15,11 @@ import pytest
 HERE = Path(__file__).parent
 
 sys.path.insert(0, str(HERE))
-from build_golden import add_config_sheet, rewire_junction_angle_rule  # noqa: E402
+from build_golden import (
+    add_config_sheet,
+    add_hgl_crown_ceiling_checks,
+    rewire_junction_angle_rule,
+)  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -266,3 +270,123 @@ def test_junction_rewire_idempotent(wip_src):
         assert label != "Lv_min helper (Spec 2, for smaller-loss toggle)", (
             f"stale helper label found at {get_column_letter(col)}8"
         )
+
+
+# ---------------------------------------------------------------------------
+# Task 3: add_hgl_crown_ceiling_checks
+# ---------------------------------------------------------------------------
+from openpyxl.utils import column_index_from_string, get_column_letter  # noqa: E402
+
+CLEARANCE_HEADERS = ("Crown+1ft Check", "Rim-1ft Check", "Clearance Governing")
+
+
+@pytest.fixture(scope="module")
+def hgl_clearance_wb(wip_src):
+    """In-process fixture: Tasks 1 + 2 + 3 edits only."""
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
+    add_hgl_crown_ceiling_checks(wb)
+    return wb
+
+
+def _find_clearance_cols(ws, header_row=6):
+    found = {}
+    for col in range(1, ws.max_column + 2):
+        v = ws.cell(row=header_row, column=col).value
+        if isinstance(v, str) and v in CLEARANCE_HEADERS:
+            found[v] = col
+    return found
+
+
+def test_hgl_clearance_three_columns_added(hgl_clearance_wb):
+    ws = hgl_clearance_wb["HGL"]
+    cols = _find_clearance_cols(ws)
+    for hdr in CLEARANCE_HEADERS:
+        assert hdr in cols, f"HGL missing clearance column {hdr!r}"
+
+
+def test_hgl_25year_clearance_three_columns_added(hgl_clearance_wb):
+    ws = hgl_clearance_wb["HGL(25YEAR)"]
+    cols = _find_clearance_cols(ws)
+    for hdr in CLEARANCE_HEADERS:
+        assert hdr in cols, f"HGL(25YEAR) missing clearance column {hdr!r}"
+
+
+def test_hgl_clearance_governing_references_toggle(hgl_clearance_wb):
+    for sheet_name in ("HGL", "HGL(25YEAR)"):
+        ws = hgl_clearance_wb[sheet_name]
+        cols = _find_clearance_cols(ws)
+        gov_col = cols["Clearance Governing"]
+        v = ws.cell(row=7, column=gov_col).value
+        text = getattr(v, "text", None) or (v if isinstance(v, str) else None)
+        assert text and "hglCrownCeilingRule" in text, (
+            f"{sheet_name} Clearance Governing row 7 missing toggle: {text!r}"
+        )
+
+
+def test_hgl_clearance_formulas_applied_all_data_rows(hgl_clearance_wb):
+    for sheet_name in ("HGL", "HGL(25YEAR)"):
+        ws = hgl_clearance_wb[sheet_name]
+        cols = _find_clearance_cols(ws)
+        for hdr in CLEARANCE_HEADERS:
+            col = cols[hdr]
+            for r in range(7, 92):
+                v = ws.cell(row=r, column=col).value
+                text = getattr(v, "text", None) or (v if isinstance(v, str) else None)
+                assert text and text.startswith("="), (
+                    f"{sheet_name}!{get_column_letter(col)}{r} missing "
+                    f"formula for {hdr!r}: {text!r}"
+                )
+
+
+def test_hgl_print_area_includes_new_columns(hgl_clearance_wb):
+    import re
+    ws = hgl_clearance_wb["HGL"]
+    cols = _find_clearance_cols(ws)
+    last_new_col = max(cols.values())
+    pa = ws.print_area or ""
+    m = re.search(r"\$([A-Z]+)\$\d+:\$([A-Z]+)\$\d+", pa)
+    assert m, f"HGL print_area malformed or unset: {pa!r}"
+    end_col_idx = column_index_from_string(m.group(2))
+    assert end_col_idx >= last_new_col, (
+        f"HGL print_area ends at col {m.group(2)} (idx {end_col_idx}); "
+        f"clearance cols end at {last_new_col}"
+    )
+
+
+def test_hgl_25year_print_area_set(hgl_clearance_wb):
+    ws = hgl_clearance_wb["HGL(25YEAR)"]
+    assert ws.print_area, "HGL(25YEAR) print_area should be set by Edit 3"
+
+
+def test_hgl_clearance_idempotent(wip_src):
+    # Running Edit 3 twice must not add duplicate columns or drift values.
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
+    add_hgl_crown_ceiling_checks(wb)
+
+    def snapshot(ws):
+        cols = _find_clearance_cols(ws)
+        return {
+            hdr: [
+                getattr(ws.cell(row=r, column=col).value, "text", None)
+                or (ws.cell(row=r, column=col).value
+                    if isinstance(ws.cell(row=r, column=col).value, str)
+                    else None)
+                for r in range(7, 92)
+            ]
+            for hdr, col in cols.items()
+        }
+
+    hgl_before = snapshot(wb["HGL"])
+    hgl25_before = snapshot(wb["HGL(25YEAR)"])
+
+    add_hgl_crown_ceiling_checks(wb)
+
+    hgl_after = snapshot(wb["HGL"])
+    hgl25_after = snapshot(wb["HGL(25YEAR)"])
+
+    assert hgl_before == hgl_after, "HGL clearance columns drifted on re-run"
+    assert hgl25_before == hgl25_after, "HGL(25YEAR) clearance columns drifted on re-run"

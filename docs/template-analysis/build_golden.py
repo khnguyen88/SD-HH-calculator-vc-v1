@@ -194,8 +194,123 @@ def rewire_junction_angle_rule(wb):
     ws[f"{helper_letter}8"] = HELPER_LABEL_TEXT
 
 
+HGL_HEADER_ROW = 6
+HGL_DATA_START = 7
+HGL_DATA_END = 91
+
+CLEARANCE_HEADERS = ("Crown+1ft Check", "Rim-1ft Check", "Clearance Governing")
+
+# Column letters on both HGL sheets that this edit reads.
+HGL_COL_UPSTREAM_CROWN = "D"    # U/S (FROM) CROWN
+HGL_COL_HGL_AT_FROM = "M"       # HGL ELEV IN "FROM" STR
+HGL_COL_RIM_IN_PLACE = "N"      # TOP/OPENING ELEV OF "FROM" STR (HGL sheet only)
+
+SDC_LOOKUP_A = "'STORM DRAIN COMPS'!$A:$A"
+SDC_LOOKUP_B = "'STORM DRAIN COMPS'!$B:$B"
+SDC_RIM_RETURN = "'STORM DRAIN COMPS'!$AB:$AB"
+
+
+def _rim_cell_formula_for_hgl_25year(r):
+    # HGL(25YEAR) has no rim column; pull from SDC via (From, To) pair.
+    return (
+        f'IF(OR(A{r}="",B{r}=""),"",'
+        f'XLOOKUP(1,({SDC_LOOKUP_A}=$A{r})*({SDC_LOOKUP_B}=$B{r}),'
+        f'{SDC_RIM_RETURN}))'
+    )
+
+
+def _clear_prior_clearance_cols(ws):
+    # Idempotency: scan the whole header row for cells whose text matches
+    # one of our clearance headers. Clear the full data range and header
+    # cell for any match.
+    from openpyxl.cell.cell import MergedCell as _MergedCell
+    for col in range(1, ws.max_column + 2):
+        cell = ws.cell(row=HGL_HEADER_ROW, column=col)
+        if isinstance(cell, _MergedCell):
+            continue
+        hdr = cell.value
+        if isinstance(hdr, str) and hdr in CLEARANCE_HEADERS:
+            for r in range(HGL_DATA_START, HGL_DATA_END + 1):
+                ws.cell(row=r, column=col).value = None
+            ws.cell(row=HGL_HEADER_ROW, column=col).value = None
+
+
+def _first_empty_column_in_row(ws, row, start_col_letter):
+    from openpyxl.cell.cell import MergedCell as _MergedCell
+    start = openpyxl.utils.column_index_from_string(start_col_letter)
+    for col in range(start, start + 32):
+        cell = ws.cell(row=row, column=col)
+        # Skip slave cells of a merged range — they are read-only and
+        # cannot receive a header value.
+        if isinstance(cell, _MergedCell):
+            continue
+        if cell.value in (None, ""):
+            return col
+    raise RuntimeError(
+        f"no empty column found after {start_col_letter} on {ws.title}"
+    )
+
+
+def _add_checks_to_hgl_sheet(ws, rim_formula_fn, start_search_letter):
+    _clear_prior_clearance_cols(ws)
+    first_empty = _first_empty_column_in_row(ws, HGL_HEADER_ROW, start_search_letter)
+    crown_col = first_empty
+    rim_col = first_empty + 1
+    gov_col = first_empty + 2
+
+    crown_letter = openpyxl.utils.get_column_letter(crown_col)
+    rim_letter = openpyxl.utils.get_column_letter(rim_col)
+    gov_letter = openpyxl.utils.get_column_letter(gov_col)
+
+    ws.cell(row=HGL_HEADER_ROW, column=crown_col, value="Crown+1ft Check")
+    ws.cell(row=HGL_HEADER_ROW, column=rim_col, value="Rim-1ft Check")
+    ws.cell(row=HGL_HEADER_ROW, column=gov_col, value="Clearance Governing")
+
+    for r in range(HGL_DATA_START, HGL_DATA_END + 1):
+        ws.cell(
+            row=r, column=crown_col,
+            value=(
+                f'=IF({HGL_COL_HGL_AT_FROM}{r}="","",'
+                f'IF({HGL_COL_HGL_AT_FROM}{r}-{HGL_COL_UPSTREAM_CROWN}{r}>1,'
+                f'"FAIL","OK"))'
+            ),
+        )
+        rim_expr = rim_formula_fn(r)
+        ws.cell(
+            row=r, column=rim_col,
+            value=(
+                f'=LET(rim,{rim_expr},hgl,{HGL_COL_HGL_AT_FROM}{r},'
+                f'IF(OR(rim="",hgl=""),"",IF(rim-hgl<1,"FAIL","OK")))'
+            ),
+        )
+        ws.cell(
+            row=r, column=gov_col,
+            value=(
+                f'=IF(OR({crown_letter}{r}="",{rim_letter}{r}=""),"",'
+                f'IF(hglCrownCeilingRule="crown-plus-1ft",'
+                f'IF(OR({crown_letter}{r}="FAIL",{rim_letter}{r}="FAIL"),'
+                f'"FAIL","OK"),{rim_letter}{r}))'
+            ),
+        )
+
+    # Extend/set print area to include all three new columns through the
+    # end of the data range.
+    ws.print_area = f"$A$1:${gov_letter}${HGL_DATA_END}"
+
+
 def add_hgl_crown_ceiling_checks(wb):
-    raise NotImplementedError("Task 3")
+    hgl = wb["HGL"]
+    _add_checks_to_hgl_sheet(
+        hgl,
+        rim_formula_fn=lambda r: f"{HGL_COL_RIM_IN_PLACE}{r}",
+        start_search_letter="S",  # Q is user-input, R is a note
+    )
+    hgl25 = wb["HGL(25YEAR)"]
+    _add_checks_to_hgl_sheet(
+        hgl25,
+        rim_formula_fn=_rim_cell_formula_for_hgl_25year,
+        start_search_letter="W",  # Q-V are 25-yr aux columns
+    )
 
 
 def annotate_hgl_method(wb):
