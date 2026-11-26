@@ -129,11 +129,13 @@ Bold, italic, right-aligned. Appears on every printed copy as a top-of-sheet aud
 
 On `C_FACTOR`, for data rows 6–88:
 
-1. **Inspect `I6:I88`.** Blank → add the formula. Pre-existing formula referencing `D`/`M` → treat as "already there," skip silently. Anything else (constant, text, unrelated formula) → skip and append the row index to a warning summary printed by `main`.
+**Column placement — correction vs Spec 1 U7.** Spec-1 U7 stated the WIP already implements a Table 3-3 Tc lookup on column `I`. Empirical check: column `I` is actually "C-Soil Group Impervious Area" (consumed by the composite-C formula in column `M`). Edit 5 places the new lookup on column **`W`** — the first empty column after `V` (authoritative user-typed Tc) — so neither the existing composite-C computation nor `V` is disturbed.
+
+1. **Inspect `W6:W88`.** Blank → add the formula. Pre-existing formula referencing `D`/`M` → treat as "already there," skip silently. Anything else (constant, text, unrelated formula) → skip and append the row index to a warning summary printed by `main`.
 2. **Lookup formula (MCDOT Table 3-3):**
 
 ```excel
-I6 =
+W6 =
   IF( D6="", "",
     IF( D6>2, "",
       IF( M6>=0.80, 5,
@@ -145,9 +147,9 @@ I6 =
 - `M6` — composite C (existing; already prefers user override `R` via `IFERROR` chain).
 - Returns a number for A ≤ 2 acres, blank otherwise.
 
-Column `V` (user-typed Tc) remains the authoritative Tc that `STORM DRAIN COMPS!E` reads via `VLOOKUP(..., col 21)`. Column `I` is **advisory**: engineer sees the Table-3-3 suggestion and types the chosen Tc in `V`. Spec 2 does **not** rewire `STORM DRAIN COMPS!E` to prefer `I` — that's a product decision for later.
+Column `V` (user-typed Tc) remains the authoritative Tc that `STORM DRAIN COMPS!E` reads via `VLOOKUP(..., col 21)`. Column `W` is **advisory**: engineer sees the Table-3-3 suggestion and types the chosen Tc in `V`. Spec 2 does **not** rewire `STORM DRAIN COMPS!E` to prefer `W` — that's a product decision for later.
 
-Column `I` header row gets `"Tc (Table 3-3, small-area)"`.
+Column `W` header row (row 2) gets `"Tc (Table 3-3, small-area)"`.
 
 ### 5.6 `annotate_equations_sheet(wb)`
 
@@ -194,7 +196,7 @@ The `{live cell: =<name>}` entries are *actual* `=junctionAngleRule` / `=hglCrow
 
 | # | Risk | Mitigation |
 |---|---|---|
-| R1 | Spec-1 U7 asserted `C_FACTOR!I` already holds a Table 3-3 Tc lookup; `05-c-factor.md` lists only D/M/O/P/R as formula-bearing. If `I` actually contains user-typed data, Edit 5 would overwrite it. | Edit 5 inspects every `I6:I88`: blank → add formula; pre-existing formula referencing D/M → leave untouched; anything else → skip that row and log. Test accepts either outcome as pass. |
+| R1 | Spec-1 U7 asserted `C_FACTOR!I` already holds a Table 3-3 Tc lookup; empirical check shows column `I` is actually "C-Soil Group Impervious Area" (consumed by the composite-C formula on `M`). Placing the Tc lookup on `I` would corrupt composite-C computation. | Edit 5 places the lookup on column `W` (first empty column after `V`, the authoritative Tc). Edit inspects every `W6:W88`: blank → add formula; pre-existing formula referencing D/M → leave untouched; anything else → skip that row and log. `05-c-factor.md` already documents I as C-soil-group impervious area; the correction here is only vs Spec 1 U7's claim. |
 | R2 | `AJ` column on `STORM DRAIN COMPS` is documented as pass-through `Table4[Column43]` with semantic TBD. If something reads `AJ`, Edit 2's helper clobbers it. | Builder scans `A10:BD98` for formula references to `$AJ` or `AJ10:AJ98`; if any exist, fall back to the first free column after `BD` (likely `BE`). Test doesn't hard-code the letter — asserts the helper cell exists at the chosen column. |
 | R3 | Flipping the default `junctionAngleRule` from WIP's PG-style `MAX` to MDSHA-style `smaller-loss` is a real behavior change. | (a) Config `C3` citation explicitly spells out the prior behavior and how to restore it; (b) `test_wip_has_max_pattern_originally` fails loudly if the WIP's AD formula is ever revised upstream; (c) commit message flags the default flip as **behavior change**. |
 | R4 | Three new columns on `HGL` / `HGL(25YEAR)` could push past the print area; reviewers wouldn't see the clearance verdict on hard copies. | Edit 3 extends `ws.print_area`. `test_print_area_extended` asserts it. Manual verification step 2 prints a sample page. |
@@ -239,7 +241,7 @@ File: `docs/template-analysis/calculator-import-contract.md`. Defines the exact 
 | col `M` (fallback `R`) | `compositeC` |
 | col `V` | `tcMin` (authoritative) |
 
-Golden's new `I` column (Table 3-3 Tc lookup) is **advisory — calculator does not read `I`.** Documented explicitly so Spec 3 never silently prefers it over `V`.
+Golden's new `W` column (Table 3-3 Tc lookup) is **advisory — calculator does not read `W`.** Documented explicitly so Spec 3 never silently prefers it over `V`.
 
 **HGL sheets are not read on import** — calculator computes HGL itself from the imported pipe rows. HGL / HGL(25YEAR) are review artifacts, not persistence.
 
