@@ -69,6 +69,36 @@ def fix_inlet_spacing_ak(wb):
             cell.value = None
 
 
+def fix_k_column_self_exclusion(wb):
+    # R6: rewrite STORM DRAIN COMPS!K10:K98 so each cell's upstream Tc
+    # aggregation excludes its own row from the sum range. Without the
+    # self-exclusion the inner MAX walks over $K$10:$K$98 which includes
+    # the cell being computed - a direct circular reference whenever any
+    # row has B{r}=A{r} (self-loop) or whenever a multi-hop loop exists
+    # in the From/To network.
+    #
+    # Idempotent: detects the self-exclusion marker "ROW($K$10:$K$98)<>ROW()"
+    # and skips any K cell that already carries it.
+    ws = wb["STORM DRAIN COMPS"]
+    marker = "ROW($K$10:$K$98)<>ROW()"
+    for r in range(10, 99):
+        cell = ws.cell(row=r, column=11)  # K = col 11
+        existing = cell.value
+        text = getattr(existing, "text", None) or (
+            existing if isinstance(existing, str) else None
+        )
+        if text is None or not text.startswith("="):
+            continue  # don't invent a formula where none existed
+        if marker in text:
+            continue  # already patched
+        cell.value = (
+            f'=IF(E{r}="","",'
+            f'IF(NOT(ISERROR(MATCH($A{r},$B$10:$B$98,0)))=FALSE,E{r},'
+            f'MAX(MAX(IF(($B$10:$B$98=A{r})*(ROW($K$10:$K$98)<>ROW()),'
+            f'IFERROR($K$10:$K$98+$X$10:$X$98,""))),E{r})))'
+        )
+
+
 def update_equations_instructions(wb):
     # R5: append a note explaining the acyclic-pipe-network requirement.
     # Idempotent - if the note is already present (e.g. re-running on an
@@ -135,6 +165,7 @@ def main(src, dst):
               f"were absent from the workbook (likely already removed): "
               f"{skipped[:5]}{'...' if len(skipped) > 5 else ''}")
     update_equations_instructions(wb)
+    fix_k_column_self_exclusion(wb)
     wb.save(dst)
     print(f"wrote {dst}: removed {len(removed)} defined names")
 

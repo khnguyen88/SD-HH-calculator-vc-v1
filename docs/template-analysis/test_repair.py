@@ -144,6 +144,26 @@ def test_workbook_has_no_ref_errors_anywhere(repaired_wb):
     assert not hits, f"#REF! still present at: {hits[:10]}..."
 
 
+def test_r6_k_column_has_self_exclusion(repaired_wb):
+    # R6: every K{r} formula on STORM DRAIN COMPS must exclude its own row
+    # from the inner $K$10:$K$98 aggregation, so a self-loop (B{r}=A{r}) or
+    # a multi-hop From/To loop doesn't trigger a circular reference.
+    ws = repaired_wb["STORM DRAIN COMPS"]
+    marker = "ROW($K$10:$K$98)<>ROW()"
+    missing = []
+    for r in range(10, 99):
+        v = ws.cell(row=r, column=11).value
+        text = getattr(v, "text", None) or (v if isinstance(v, str) else None)
+        if not isinstance(text, str) or not text.startswith("="):
+            continue  # row has no K formula; skip
+        if marker not in text:
+            missing.append(r)
+    assert not missing, (
+        f"K-column self-exclusion marker missing on rows {missing[:10]}"
+        f"{'...' if len(missing) > 10 else ''}"
+    )
+
+
 def test_workbook_has_no_external_links(repaired_wb):
     import re
     ext_pat = re.compile(r"'?\[[^\]]+\.xls[xmb]?\]")
