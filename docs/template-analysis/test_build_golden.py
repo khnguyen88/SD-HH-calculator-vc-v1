@@ -229,3 +229,40 @@ def test_junction_helper_cell_was_empty_in_wip(junction_wb, wip_src):
                 f"helper column (col {helper_col}) had pre-existing content at row {r}: "
                 f"{wip_text!r} - builder should have chosen a later empty column"
             )
+
+
+def test_junction_rewire_idempotent(wip_src):
+    # Running rewire_junction_angle_rule twice must produce identical output
+    # and leave no orphaned helper columns in the BE-BT horizon.
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
+    ws = wb["STORM DRAIN COMPS"]
+
+    def snap(col):
+        return [
+            (getattr(ws.cell(row=r, column=col).value, "text", None)
+             or (ws.cell(row=r, column=col).value
+                 if isinstance(ws.cell(row=r, column=col).value, str)
+                 else None))
+            for r in range(10, 99)
+        ]
+
+    ad_before = snap(30)   # AD
+    be_before = snap(57)   # BE
+
+    rewire_junction_angle_rule(wb)
+
+    ad_after = snap(30)
+    be_after = snap(57)
+
+    assert ad_before == ad_after, "AD column drifted on re-run"
+    assert be_before == be_after, "BE helper column drifted on re-run"
+
+    # No orphan helpers in BF-BT after re-run.
+    from openpyxl.utils import column_index_from_string, get_column_letter
+    for col in range(column_index_from_string("BF"), column_index_from_string("BT") + 1):
+        label = ws.cell(row=8, column=col).value
+        assert label != "Lv_min helper (Spec 2, for smaller-loss toggle)", (
+            f"stale helper label found at {get_column_letter(col)}8"
+        )

@@ -33,6 +33,10 @@ SDC_DATA_END = 98
 # the active data block (A:BD).
 HELPER_COL_PREFERRED = "BE"
 
+# Row-8 label written by rewire_junction_angle_rule.  Unique to this builder;
+# used by _clear_prior_junction_helper to detect and remove stale helpers.
+HELPER_LABEL_TEXT = "Lv_min helper (Spec 2, for smaller-loss toggle)"
+
 
 def _find_free_column_for_helper(ws, start_col_letter="BE"):
     # Scan columns right of (inclusive) start_col_letter for one with no
@@ -143,8 +147,21 @@ def add_config_sheet(wb):
     ws.column_dimensions["C"].width = 70
 
 
+def _clear_prior_junction_helper(ws):
+    # Idempotency: clear any helper column left by a previous run of this
+    # builder. Detect by matching the row-8 label string, which is unique
+    # to our edit and won't collide with WIP content.
+    start = openpyxl.utils.column_index_from_string(HELPER_COL_PREFERRED)
+    for col in range(start, start + 16):
+        if ws.cell(row=8, column=col).value == HELPER_LABEL_TEXT:
+            for r in range(SDC_DATA_START, SDC_DATA_END + 1):
+                ws.cell(row=r, column=col).value = None
+            ws.cell(row=8, column=col).value = None
+
+
 def rewire_junction_angle_rule(wb):
     ws = wb[SDC_SHEET]
+    _clear_prior_junction_helper(ws)
     helper_letter = _find_free_column_for_helper(ws, HELPER_COL_PREFERRED)
 
     for r in range(SDC_DATA_START, SDC_DATA_END + 1):
@@ -174,7 +191,7 @@ def rewire_junction_angle_rule(wb):
 
     # Also write a header-row note so engineers can see which column is the
     # helper. Row 8 is the SDC's dynamic label row.
-    ws[f"{helper_letter}8"] = "Lv_min helper (Spec 2, for smaller-loss toggle)"
+    ws[f"{helper_letter}8"] = HELPER_LABEL_TEXT
 
 
 def add_hgl_crown_ceiling_checks(wb):
