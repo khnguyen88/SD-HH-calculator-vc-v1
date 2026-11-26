@@ -6,18 +6,30 @@ Status snapshot at the close of the Spec 1 + Spec 2 implementation session. Grou
 
 ## 1. Next big deliverable
 
-### Spec 3 — Calculator + visualizer two-template compatibility
+### Spec 3 — Calculator + visualizer three-shape compatibility
 
-Per `docs/template-analysis/calculator-import-contract.md` (Spec-2 output).
+Per `docs/template-analysis/calculator-import-contract.md` (Spec-2 output). Scope expanded to **three** xlsx shapes:
 
-- HTML calculator (`drainage-calculator/storm-drain-design-calculator-dev.html`) learns to import both shapes:
-  - **Legacy WIP** (`template_wip_new.xlsx`, no `Config` sheet) → apply the three toggle defaults.
-  - **Golden** (`template_golden.xlsx`, `Config` sheet with named ranges) → read actual toggle values.
-- Visualizer parity for the same.
-- **Most important sub-item:** wire `hglMethod` to actual xlsx HGL formulas. In Spec 2 it's **label-only** — the Config sheet stores the setting and the top-of-sheet stamp displays it, but xlsx HGL computation still uses whatever method the pre-repair formulas implemented (legacy both-end crown floor). Spec 3 is where the xlsx HGL walking logic actually honors the toggle.
-- `junctionAngleRule` and `hglCrownCeilingRule` already drive xlsx formulas (Spec 2 Edits 2 and 3) — Spec 3 just needs calculator/visualizer to read them on import and write them on export.
+1. **Calculator's native export format** — whatever the HTML calculator's current `buildWorkbook()` produces on "Export to xlsx." This is the shape the calculator currently round-trips (export → open in Excel → import back). The import side must stay compatible — users with existing project files in this shape must keep working. Review `drainage-calculator/storm-drain-design-calculator-dev.html`'s current export function and document its actual sheet/column layout before touching import logic.
+2. **Legacy WIP** (`template_wip_new.xlsx`, 16 sheets, no `Config`) → apply the three toggle defaults on import.
+3. **Golden** (`template_golden.xlsx`, 17 sheets with `Config` named ranges) → read actual toggle values on import.
+
+Shape detection is via `wb.defined_names`:
+- `junctionAngleRule` present → golden
+- SDC + C_FACTOR layout matches WIP → legacy WIP
+- Otherwise → calculator's native format
+
+Three-way branch with explicit precedence. No heuristic sniffing beyond that.
+
+Visualizer parity for the same three shapes.
+
+**Most important sub-item:** wire `hglMethod` to actual xlsx HGL formulas. In Spec 2 it's **label-only** — the Config sheet stores the setting and the top-of-sheet stamp displays it, but xlsx HGL computation still uses whatever method the pre-repair formulas implemented (legacy both-end crown floor). Spec 3 is where the xlsx HGL walking logic actually honors the toggle.
+
+`junctionAngleRule` and `hglCrownCeilingRule` already drive xlsx formulas (Spec 2 Edits 2 and 3) — Spec 3 just needs calculator/visualizer to read them on import and write them on export.
 
 Needs brainstorming → spec → plan → implementation. Follow the same superpowers flow we used for Spec 1 and Spec 2.
+
+**Before Spec 3 scoping:** audit `storm-drain-design-calculator-dev.html` to understand the calculator's current native export. Specifically — what sheets does it emit? What columns per sheet? What cell layout? Does it carry any named ranges? That audit is Spec-3's precondition — it tells us what "shape 1" actually looks like and whether the calculator-import-contract needs updating to cover it.
 
 ---
 
@@ -39,6 +51,23 @@ Confirmed fix: `iterate=True` is now set on both WIP and golden (committed `113b
 
 Open `template_wip_new.xlsx` in Excel. Compare `HGL` tab values row-by-row against `docs/template-analysis/hgl-reference-values.md` (the pre-repair cache baseline). Any divergence flags a repair/edit that silently changed Excel's answer. Expected: identical — formulas and inputs are preserved verbatim.
 
+### Junction-loss controlling-angle rule — engineering verification
+
+Confirm that STORM DRAIN COMPS and HGL actually implement the junction-loss controlling-angle procedure (per MDSHA Ch. 5 / MCDOT §4.3.2.3) correctly after Spec 2 Edit 2. The Edit-2 behavior change flipped the default from the raw WIP's PG-style (MAX-of-Lv's-angle) to MDSHA's `smaller-loss` (MIN-of-Lv's-angle), and the implementation uses a helper column (`BE`) carrying the MIN hypothesized Lv.
+
+Procedure on `template_wip_new.xlsx` or `template_golden.xlsx`:
+
+1. Pick a structure that has 2 inflow pipes (e.g., `I-2` in the pre-repair sample data — rows where `B = I-2` are `12` and `13`).
+2. Confirm `AD{r}` (controlling angle) at the pipe row **leaving** that junction (A = I-2 → row 14) picks the angle belonging to the smaller `AQ` (hypothesized loss Lv) of the two inflows.
+3. Confirm `AE{r}` (Kb coefficient) and `AF{r}` (Hb = Kb × Vout²/2g) propagate from that angle.
+4. On `Config`, flip `junctionAngleRule` to `larger-loss`. Confirm `AD`, `AE`, `AF` flip to the other inflow's values (angle belonging to the MAX `AQ`).
+5. Confirm HGL `L{r}` (which XLOOKUPs `SDC!AF` by (From, To) pair) reflects the new Hb on the affected rows.
+6. Flip back. Values revert.
+
+Also spot-check against Spec 1 citation sources: MDSHA Drainage Manual Ch. 5 p. 5-26 (Sept 2023) Fig 5-8 worked example, and PG SWM Ch. 8 Appendix 8-15 sample calculation. The template should produce the MDSHA example's numbers under `smaller-loss` and the PG example's under `larger-loss`.
+
+If anything looks off, the fix is in `STORM DRAIN COMPS!AD{r}` (Spec 2 Edit 2) and the `BE` helper column. Re-reading `docs/superpowers/specs/2026-11-25-golden-template-design.md` §5.2 is the entry point.
+
 ---
 
 ## 3. Known limitations (documented; revisit if they bite)
@@ -59,11 +88,22 @@ See Spec 3 above.
 
 ## 4. Template hygiene (optional cleanup)
 
-### DATA2 dead columns
+### DATA2 sheet — purpose, references, and auto-calculation options
 
-- **Columns E–H** carry a duplicate of the Kb-coefficient table. **0 formulas reference them workbook-wide** — the live Kb table is on `DATA!A68:D159`.
-- **Columns J–L** are a re-keyed duplicate of DATA2 A–C (same partial-flow numbers, columns reordered). **0 references.**
-- Both safe to delete. Mostly cosmetic — reduces workbook size and removes maintenance confusion.
+Workbook-wide scan of `DATA2` references (session log):
+
+| Block | What it is | References | Can auto-compute from formulas? |
+|---|---|---|---|
+| **A–C** (active) | Canonical circular-pipe partial-flow table. A = `AR^(2/3)/d₀^(8/3)` (Manning parameter), B = `y/d₀` (depth ratio), C = `A/d₀²` (area ratio). | **178 VLOOKUPs** from `STORM DRAIN COMPS` cols AT–BD (normal-depth and partial-flow area computation per pipe reach). | **Yes** — closed-form geometry given `y/d₀`: half-angle `θ = ACOS(1−2y/d₀)`; `A/d₀² = (2θ−sin(2θ))/8`; `R/d₀ = (A/d₀²)/(P/d₀)`; `AR^(2/3)/d₀^(8/3) = (A/d₀²)·(R/d₀)^(2/3)`. Keep `B` as the 0.01-step input; derive A and C as formulas. |
+| **D** | Unused 4th column (possibly a top-width ratio, undocumented). | **0 references.** | — |
+| **E–H** | Duplicate Kb-coefficient table (angle vs inlet/manhole/`bend-or-junction`). | **0 references.** Live Kb table is on `DATA!A68:D159`. | N/A — safe to delete. |
+| **J–L** | Re-keyed duplicate of A–C: same partial-flow numbers with columns reordered so `y/d₀` is the key (for lookups in the opposite direction). | **0 references.** | Same formulas as A–C. |
+
+**Why A–C are needed:** Manning's equation for a full pipe is `Q = (1.486/n)·A·R^(2/3)·S^(1/2)`. For partial flow, you're given Q and want `y` (normal depth). Rearranging gives `A·R^(2/3)/d₀^(8/3) = Q·n/(1.486·S^(1/2)·d₀^(8/3))` — the left side is a pure function of `y/d₀`, so a lookup table (column A keyed to column B) sidesteps the need for an iterative solver. The VLOOKUP is on A to find the corresponding B, then B times diameter gives real depth.
+
+**Whether to convert A–C to formulas:** trade-off — static values match the canonical published table (Chaudhry, HDS-5, AASHTO drainage) reviewers recognize; formulas are auditable and typo-proof but look "coded" instead of "canonical." No consensus answer; leave as values for now unless you want to change the resolution (0.01 → 0.001 step) or hand-audit the geometry.
+
+**Whether to delete D, E–H, J–L:** D and E–H and J–L are all unreferenced. Safe to delete. Purely cosmetic (reduces workbook size, removes maintenance confusion). If deleted, nothing on `STORM DRAIN COMPS` or any print sheet needs to change (the VLOOKUP range `DATA2!$A$2:$D$101` stays valid even if D has no data, and D is not read by any formula index).
 
 ### Per-tab analysis doc corrections
 
