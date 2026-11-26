@@ -638,3 +638,79 @@ def test_equations_annotation_idempotent(wip_src):
     annotate_equations_sheet(wb)
     after = snap()
     assert before == after, "EQUATIONS + INSTRUCTIONS annotation drifted on re-run"
+
+
+# ---------------------------------------------------------------------------
+# Task 7: Workbook-wide invariants (end-of-file)
+# ---------------------------------------------------------------------------
+
+def test_invariants_zero_ref_errors(golden_built):
+    for ws in golden_built.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                text = v if isinstance(v, str) else getattr(v, "text", None)
+                if isinstance(text, str):
+                    assert "#REF!" not in text, (
+                        f"{ws.title}!{cell.coordinate} contains #REF!: {text!r}"
+                    )
+
+
+def test_invariants_zero_broken_defined_names(golden_built):
+    for name in golden_built.defined_names:
+        dn = golden_built.defined_names[name]
+        val = getattr(dn, "value", None) or str(dn)
+        assert "#REF!" not in val, (
+            f"defined name {name!r} resolves to #REF!: {val!r}"
+        )
+
+
+def test_invariants_seventeen_sheets_config_last(golden_built):
+    assert len(golden_built.sheetnames) == 17
+    assert golden_built.sheetnames[-1] == "Config"
+
+
+def test_invariants_original_sheet_order_preserved(wip_src, golden_built):
+    wip_wb = openpyxl.load_workbook(wip_src, data_only=False)
+    assert [n for n in golden_built.sheetnames if n != "Config"] == wip_wb.sheetnames
+
+
+def test_invariants_no_external_links(golden_built):
+    for ws in golden_built.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                text = v if isinstance(v, str) else getattr(v, "text", None)
+                if isinstance(text, str):
+                    # External workbook refs look like "[filename.xlsx]SheetName!A1".
+                    assert not ("[" in text and ".xlsx]" in text), (
+                        f"{ws.title}!{cell.coordinate} has external link: {text!r}"
+                    )
+
+
+def test_invariants_builder_idempotent(golden_built_twice):
+    first, second = golden_built_twice
+    assert set(first.defined_names) == set(second.defined_names), (
+        "defined-name set changed on re-run"
+    )
+    for sheet in first.sheetnames:
+        ws1 = first[sheet]
+        ws2 = second[sheet]
+        max_r = max(ws1.max_row, ws2.max_row)
+        max_c = max(ws1.max_column, ws2.max_column)
+        for r in range(1, max_r + 1):
+            for c in range(1, max_c + 1):
+                v1 = ws1.cell(row=r, column=c).value
+                v2 = ws2.cell(row=r, column=c).value
+                t1 = v1 if isinstance(v1, str) else getattr(v1, "text", None)
+                t2 = v2 if isinstance(v2, str) else getattr(v2, "text", None)
+                if t1 is not None or t2 is not None:
+                    assert t1 == t2, (
+                        f"idempotency drift on {sheet}!{ws1.cell(row=r,column=c).coordinate}: "
+                        f"{t1!r} vs {t2!r}"
+                    )
+                else:
+                    assert v1 == v2, (
+                        f"idempotency drift on {sheet}!{ws1.cell(row=r,column=c).coordinate}: "
+                        f"{v1!r} vs {v2!r}"
+                    )
