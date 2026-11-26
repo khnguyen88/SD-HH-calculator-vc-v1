@@ -144,23 +144,23 @@ def test_workbook_has_no_ref_errors_anywhere(repaired_wb):
     assert not hits, f"#REF! still present at: {hits[:10]}..."
 
 
-def test_k_column_uses_filter_max_idiom(repaired_wb):
+def test_k_column_uses_xlookup_with_self_exclusion(repaired_wb):
     # Every K{r} formula on STORM DRAIN COMPS rows 10-98 must carry the
-    # FILTER+MAX pattern. Replaces the legacy CSE-array IF(MAX(...))
-    # formula with a self-documenting Excel-365-native equivalent.
+    # XLOOKUP + self-row-exclusion pattern. Replaces the legacy CSE-array
+    # IF(MAX(...)) formula with an Excel-365 XLOOKUP that sidesteps the
+    # circular-reference detector by blanking the current row inside the
+    # lookup array.
     ws = repaired_wb["STORM DRAIN COMPS"]
-    marker_filter = "LET(upstream,FILTER("
-    marker_max = "MAX(upstream,E"
     missing = []
     for r in range(10, 99):
         v = ws.cell(row=r, column=11).value
         text = getattr(v, "text", None) or (v if isinstance(v, str) else None)
         if not isinstance(text, str) or not text.startswith("="):
             continue  # row has no K formula; skip
-        if marker_filter not in text or marker_max not in text:
+        if "XLOOKUP(" not in text or "IF(ROW($B$10:$B$98)=ROW()" not in text:
             missing.append(r)
     assert not missing, (
-        f"K column FILTER+MAX pattern missing on rows {missing[:10]}"
+        f"K column XLOOKUP pattern missing on rows {missing[:10]}"
         f"{'...' if len(missing) > 10 else ''}"
     )
 

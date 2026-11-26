@@ -30,7 +30,7 @@ GOLDEN = HERE.parent / "template_golden.xlsx"
 # Drift signal only: if the snapshot's SHA differs from this value the
 # session emits a warning and continues. Update this value in the same
 # commit that intentionally changes WIP.
-WIP_SHA256 = "6971f1374dc928ddd65808036f3f98490357c5c89e620fe1a685b7439d6fe88f"
+WIP_SHA256 = "9bb95719fea3b58c253da4984bf07e668170236bb70014365584869e572081e8"
 
 _WIP_SNAPSHOT_HOLDER = {}
 

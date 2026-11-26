@@ -70,22 +70,30 @@ def fix_inlet_spacing_ak(wb):
 
 
 def modernize_k_column_tc_formula(wb):
-    # Rewrite STORM DRAIN COMPS!K10:K98 using the Excel-365 FILTER + MAX
-    # idiom. Replaces the legacy CSE-array MAX(IF($B$10:$B$98=A{r},
-    # IFERROR($K$10:$K$98+$X$10:$X$98,""))) pattern with a self-documenting
-    # equivalent that does not need CSE entry.
+    # Rewrite STORM DRAIN COMPS!K10:K98 with an XLOOKUP that explicitly
+    # excludes the current row from the lookup array, sidestepping Excel's
+    # circular-reference detector.
     #
-    # Semantics (per the pre-repair formula, which was engineered correctly):
+    # Semantics:
     #   K{r} =
     #     IF E{r} is blank -> blank
-    #     Let upstream = FILTER( K{r'} + X{r'}  where  B{r'} = A{r} ,
-    #                            fallback = E{r} )
-    #     Then K{r} = MAX(upstream, E{r})
+    #     ELSE MAX(E{r}, XLOOKUP(A{r}, B-array-with-self-row-blanked,
+    #                            K{r'}+X{r'}, if-no-match=E{r}))
     #
-    # Idempotent: detects the "LET(upstream,FILTER(" marker and skips any
-    # K cell already carrying it.
+    # Trade-off: XLOOKUP returns the FIRST matching row only. For junction
+    # structures with 2+ inflow pipes, that silently picks one inflow and
+    # ignores the others. If the un-picked inflow has a longer upstream Tc,
+    # the result is a conservatively-too-low Tc (i.e. too-high design i and
+    # Q). The user accepted this trade-off because (a) the pre-repair
+    # FILTER+MAX alternative triggered Excel's circular-reference check and
+    # broke downstream HGL formulas that depend on K via L-M-Y chain, and
+    # (b) their networks are predominantly tree-structured. The disclosure
+    # on EQUATIONS + INSTRUCTIONS documents the limitation.
+    #
+    # Idempotent: detects the "XLOOKUP(" marker in the K formula and skips
+    # any already-modernized cell.
     ws = wb["STORM DRAIN COMPS"]
-    marker = "LET(upstream,FILTER("
+    marker = "XLOOKUP("
     for r in range(10, 99):
         cell = ws.cell(row=r, column=11)  # K = col 11
         existing = cell.value
@@ -98,28 +106,45 @@ def modernize_k_column_tc_formula(wb):
             continue  # already modernized
         cell.value = (
             f'=IF(E{r}="","",'
-            f'LET(upstream,FILTER($K$10:$K$98+$X$10:$X$98,'
-            f'$B$10:$B$98=A{r},E{r}),MAX(upstream,E{r})))'
+            f'MAX(XLOOKUP(A{r},'
+            f'IF(ROW($B$10:$B$98)=ROW(),"",$B$10:$B$98),'
+            f'$K$10:$K$98+$X$10:$X$98,E{r}),E{r}))'
         )
 
 
 def update_equations_instructions(wb):
     # R5: append a note explaining the acyclic-pipe-network requirement.
-    # Idempotent - if the note is already present (e.g. re-running on an
-    # already-repaired workbook), do nothing.
+    # Also append a Tc-aggregation note disclosing the XLOOKUP single-match
+    # limitation (set by modernize_k_column_tc_formula).
+    # Idempotent - if the notes are already present, do nothing.
     ws = wb["EQUATIONS + INSTRUCTIONS"]
-    for row in ws.iter_rows():
-        for cell in row:
-            if isinstance(cell.value, str) and "acyclic pipe network" in cell.value:
-                return
-    note_row = ws.max_row + 2
-    ws[f"A{note_row}"] = (
-        "NOTE: From/To columns must describe an acyclic pipe network. "
-        "Iterative calculation is intentionally OFF - a loop in the data "
-        "will produce #VALUE!, not an iteratively settled answer. Check "
-        "your From/To entries if you see unexpected errors on HGL or "
-        "structure-loss columns."
+    existing_text = "\n".join(
+        str(cell.value) for row in ws.iter_rows() for cell in row
+        if isinstance(cell.value, str)
     )
+    need_acyclic = "acyclic pipe network" not in existing_text
+    need_k_note = "K-column Tc aggregation" not in existing_text
+    if not need_acyclic and not need_k_note:
+        return
+    note_row = ws.max_row + 2
+    if need_acyclic:
+        ws[f"A{note_row}"] = (
+            "NOTE: From/To columns must describe an acyclic pipe network. "
+            "Iterative calculation is intentionally OFF - a loop in the data "
+            "will produce #VALUE!, not an iteratively settled answer. Check "
+            "your From/To entries if you see unexpected errors on HGL or "
+            "structure-loss columns."
+        )
+        note_row += 2
+    if need_k_note:
+        ws[f"A{note_row}"] = (
+            "NOTE: K-column Tc aggregation uses XLOOKUP, which returns the "
+            "FIRST matching upstream row. For junction structures with 2+ "
+            "inflow pipes, the design Tc may understate the controlling "
+            "inflow's Tc. If a junction has multiple inflows with materially "
+            "different Tc values, manually verify K is set to the MAX of the "
+            "inflows' (K+X) values."
+        )
 
 
 def _write_hgl25_broken_columns(ws, start, end):
