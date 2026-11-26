@@ -18,6 +18,7 @@ sys.path.insert(0, str(HERE))
 from build_golden import (
     add_config_sheet,
     add_hgl_crown_ceiling_checks,
+    add_u7_small_area_tc_lookup,
     annotate_hgl_method,
     rewire_junction_angle_rule,
 )  # noqa: E402
@@ -454,3 +455,93 @@ def test_hgl_method_annotation_idempotent(wip_src):
     annotate_hgl_method(wb)
     after = {name: wb[name]["P3"].value for name in ("HGL", "HGL(25YEAR)")}
     assert before == after, "P3 annotation drifted on re-run"
+
+
+# ---------------------------------------------------------------------------
+# Task 5: add_u7_small_area_tc_lookup
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def cfactor_tc_wb(wip_src):
+    """In-process fixture: Tasks 1-5 edits only."""
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
+    add_hgl_crown_ceiling_checks(wb)
+    annotate_hgl_method(wb)
+    add_u7_small_area_tc_lookup(wb)
+    return wb
+
+
+CFACTOR_TC_COL_LETTER = "W"
+CFACTOR_TC_HEADER_ROW = 2
+CFACTOR_DATA_START = 6
+CFACTOR_DATA_END = 88
+
+
+def test_cfactor_tc_header_on_column_w(cfactor_tc_wb):
+    ws = cfactor_tc_wb["C_FACTOR"]
+    v = ws[f"{CFACTOR_TC_COL_LETTER}{CFACTOR_TC_HEADER_ROW}"].value
+    assert v == "Tc (Table 3-3, small-area)", (
+        f"C_FACTOR!{CFACTOR_TC_COL_LETTER}{CFACTOR_TC_HEADER_ROW} should be "
+        f"the Table 3-3 header, got {v!r}"
+    )
+
+
+def test_cfactor_tc_formula_on_all_data_rows(cfactor_tc_wb):
+    ws = cfactor_tc_wb["C_FACTOR"]
+    for r in range(CFACTOR_DATA_START, CFACTOR_DATA_END + 1):
+        v = ws[f"{CFACTOR_TC_COL_LETTER}{r}"].value
+        assert isinstance(v, str) and v.startswith("="), (
+            f"C_FACTOR!{CFACTOR_TC_COL_LETTER}{r} missing formula, got {v!r}"
+        )
+        assert f"D{r}" in v, (
+            f"C_FACTOR!{CFACTOR_TC_COL_LETTER}{r} should reference D{r}: {v!r}"
+        )
+
+
+def test_cfactor_tc_formula_structure_table_3_3(cfactor_tc_wb):
+    ws = cfactor_tc_wb["C_FACTOR"]
+    v6 = ws[f"{CFACTOR_TC_COL_LETTER}{CFACTOR_DATA_START}"].value
+    for threshold in ("0.8", "0.65", "0.4"):
+        assert threshold in v6, (
+            f"Table 3-3 threshold {threshold!r} missing from W6 formula: {v6!r}"
+        )
+    for tc_val in ("5", "7", "10", "15"):
+        assert tc_val in v6, f"Tc value {tc_val!r} missing from W6 formula: {v6!r}"
+
+
+def test_cfactor_column_v_untouched_by_edit_5(wip_src, cfactor_tc_wb):
+    wip_wb = openpyxl.load_workbook(wip_src, data_only=False)
+    w_wip = wip_wb["C_FACTOR"]
+    w_gold = cfactor_tc_wb["C_FACTOR"]
+    for r in range(CFACTOR_DATA_START, CFACTOR_DATA_END + 1):
+        assert w_wip[f"V{r}"].value == w_gold[f"V{r}"].value, (
+            f"C_FACTOR!V{r} changed: wip={w_wip[f'V{r}'].value!r}, "
+            f"golden={w_gold[f'V{r}'].value!r}"
+        )
+
+
+def test_cfactor_column_i_untouched_by_edit_5(wip_src, cfactor_tc_wb):
+    # Column I is C-Soil Group Impervious Area (feeds composite-C on col M).
+    # Edit 5 must NOT touch it, regardless of what Spec-1 U7 claimed.
+    wip_wb = openpyxl.load_workbook(wip_src, data_only=False)
+    w_wip = wip_wb["C_FACTOR"]
+    w_gold = cfactor_tc_wb["C_FACTOR"]
+    for r in range(CFACTOR_DATA_START, CFACTOR_DATA_END + 1):
+        assert w_wip[f"I{r}"].value == w_gold[f"I{r}"].value, (
+            f"C_FACTOR!I{r} unexpectedly changed by Edit 5"
+        )
+
+
+def test_cfactor_tc_edit_idempotent(wip_src):
+    wb = openpyxl.load_workbook(wip_src, data_only=False)
+    add_config_sheet(wb)
+    rewire_junction_angle_rule(wb)
+    add_hgl_crown_ceiling_checks(wb)
+    annotate_hgl_method(wb)
+    add_u7_small_area_tc_lookup(wb)
+    before = [wb["C_FACTOR"][f"W{r}"].value for r in range(CFACTOR_DATA_START, CFACTOR_DATA_END + 1)]
+    add_u7_small_area_tc_lookup(wb)
+    after = [wb["C_FACTOR"][f"W{r}"].value for r in range(CFACTOR_DATA_START, CFACTOR_DATA_END + 1)]
+    assert before == after, "C_FACTOR!W column drifted on re-run"

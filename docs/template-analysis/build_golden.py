@@ -325,8 +325,43 @@ def annotate_hgl_method(wb):
         cell.alignment = Alignment(horizontal="right")
 
 
+CFACTOR_SHEET = "C_FACTOR"
+CFACTOR_TC_COL = "W"
+CFACTOR_TC_HDR_ROW = 2
+CFACTOR_DATA_RANGE = range(6, 89)  # inclusive 6..88
+
+
 def add_u7_small_area_tc_lookup(wb):
-    raise NotImplementedError("Task 5")
+    ws = wb[CFACTOR_SHEET]
+    skipped = []
+
+    ws[f"{CFACTOR_TC_COL}{CFACTOR_TC_HDR_ROW}"] = "Tc (Table 3-3, small-area)"
+
+    for r in CFACTOR_DATA_RANGE:
+        existing = ws[f"{CFACTOR_TC_COL}{r}"].value
+        if existing is None or existing == "":
+            pass
+        elif isinstance(existing, str) and existing.startswith("=") and (
+            f"D{r}" in existing or f"$D${r}" in existing
+        ) and (f"M{r}" in existing or f"$M${r}" in existing):
+            # Already looks like our formula from a prior run.
+            continue
+        else:
+            skipped.append(r)
+            continue
+        ws[f"{CFACTOR_TC_COL}{r}"] = (
+            f'=IF(D{r}="","",'
+            f'IF(D{r}>2,"",'
+            f'IF(M{r}>=0.8,5,'
+            f'IF(M{r}>=0.65,7,'
+            f'IF(M{r}>=0.4,10,15)))))'
+        )
+
+    if skipped:
+        print(
+            f"Edit 5: skipped C_FACTOR!{CFACTOR_TC_COL} on rows "
+            f"{skipped} (pre-existing unrelated content)"
+        )
 
 
 def annotate_equations_sheet(wb):
