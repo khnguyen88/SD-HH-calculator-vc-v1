@@ -6850,9 +6850,69 @@ function _legacyBuildWorkbook(){
 }
 
 async function buildSimpleWorkbook(){
-  // Stub — filled in by Phase 3 Task 14. Throws so the toggle doesn't
-  // silently fall back to Robust.
-  throw new Error("Simple writer not yet implemented (Phase 3 Task 14)");
+  const wb = await loadGoldenBase();
+  const sdc = wb.Sheets["STORM DRAIN COMPS"];
+  const cf  = wb.Sheets["C_FACTOR"];
+  const cfg = wb.Sheets["Config"];
+
+  const writeCell = (ws, addr, value, t) => {
+    if(value === "" || value == null) return;
+    ws[addr] = { t: t || "n", v: value };
+  };
+
+  state.pipes.forEach((p, i) => {
+    const row = i + 10;
+    if(row > 98) return;
+    const fromLabel = (findStructure(p.fromStructureId)||{}).structureId
+                      || p.fromStructureId || "";
+    const toLabel = (findStructure(p.toStructureId)||{}).structureId
+                      || p.toStructureId || "";
+    writeCell(sdc, "A"+row, fromLabel, "s");
+    writeCell(sdc, "B"+row, toLabel, "s");
+    writeCell(sdc, "N"+row, parseFloat(p.size) || "", "n");
+    writeCell(sdc, "O"+row, p.length);
+    writeCell(sdc, "P"+row, p.upstreamInvert);
+    writeCell(sdc, "Q"+row, p.downstreamInvert);
+    writeCell(sdc, "R"+row, p.angle);
+    writeCell(sdc, "S"+row, pipeEffectiveN(p));
+    const s = findStructure(p.fromStructureId);
+    if(s){
+      writeCell(sdc, "AA"+row, (s.type||"manhole"), "s");
+      writeCell(sdc, "AB"+row, s.rim);
+      const calc = computeStructureCalc(s.id);
+      if(calc && calc.captured){
+        writeCell(sdc, "AK"+row, round(calc.captured, 4));
+      }
+    }
+  });
+
+  state.drainage.forEach((d, i) => {
+    const row = i + 6;
+    if(row > 88) return;
+    writeCell(cf, "B"+row, d.structureId, "s");
+    writeCell(cf, "C"+row, d.area);
+    writeCell(cf, "V"+row, d.tc);
+  });
+
+  writeCell(cfg, "B1", state.project || "", "s");
+  writeCell(cfg, "B2", new Date().toISOString(), "s");
+  writeCell(cfg, "B3", state.hydraulics.junctionAngleRule || "smaller-loss", "s");
+  writeCell(cfg, "B4", state.hydraulics.hglCrownCeilingRule || "crown-plus-1ft", "s");
+  writeCell(cfg, "B5",
+    state.hydraulics.hglMethod === "conservative"
+      ? "legacy both-end crown floor"
+      : "HEC-22 EGL (d/s crown floor)", "s");
+  writeCell(cfg, "B6", "simple", "s");
+  writeCell(cfg, "B7", 2, "n");
+
+  if(state.hydraulics.jurisdiction){
+    writeCell(sdc, "T3", state.hydraulics.jurisdiction, "s");
+  }
+  if(state.rainfall && state.rainfall.pipeStorm){
+    writeCell(sdc, "H3", state.rainfall.pipeStorm, "s");
+  }
+
+  return wb;
 }
 
 async function exportExcel(){
