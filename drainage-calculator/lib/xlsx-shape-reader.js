@@ -145,11 +145,58 @@
   }
 
   function readRobustWorkbook(wb){
-    throw new Error("readRobustWorkbook not yet implemented (Task 21)");
+    // Robust files are Simple files + extras. Reuse the Simple reader
+    // for overlap, then overlay the Robust-only sheets.
+    const base = readSimpleWorkbook(wb);
+    base._shape = "robust";
+
+    const tr55 = wb.Sheets["TR-55 Segments"];
+    const tr55Segments = [];
+    if(tr55){
+      const sheetAoa = XLSX.utils.sheet_to_json(tr55, {header:1, raw:true, defval:""});
+      const headers = (sheetAoa[0]||[]).map(h => String(h).trim());
+      const idx = (name) => headers.indexOf(name);
+      for(let i = 1; i < sheetAoa.length; i++){
+        const row = sheetAoa[i];
+        if(!row.some(v => v !== "" && v != null)) continue;
+        tr55Segments.push({
+          drainageAreaId: row[idx("Drainage Area")] || "",
+          order: row[idx("Order")] || i,
+          type: String(row[idx("Type")]||"").toLowerCase(),
+          n: row[idx("n")] || "",
+          L: row[idx("L (ft)")] || "",
+          s: row[idx("s (ft/ft)")] || "",
+          P2: row[idx("P2 (in)")] || "",
+          surface: row[idx("Surface")] || "",
+          area: row[idx("Area a (sf)")] || "",
+          wp: row[idx("Wetted Perimeter Pw (ft)")] || "",
+        });
+      }
+    }
+
+    const outletStructures = readSheetAsObjects(wb, "Outlet Structures");
+    const outletDevices    = readSheetAsObjects(wb, "Outlet Devices");
+
+    return Object.assign(base, { tr55Segments, outletStructures, outletDevices });
+  }
+
+  function readSheetAsObjects(wb, sheetName){
+    const ws = wb.Sheets[sheetName];
+    if(!ws) return [];
+    const aoa = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
+    if(aoa.length < 1) return [];
+    const headers = aoa[0].map(h => String(h).trim());
+    return aoa.slice(1)
+      .filter(r => r.some(v => v !== "" && v != null))
+      .map(r => {
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = r[i]; });
+        return obj;
+      });
   }
 
   const api = { detectShape, readSimpleWorkbook, readRobustWorkbook,
-                hglMethodFromLabel };
+                hglMethodFromLabel, readSheetAsObjects };
   if(typeof window !== "undefined") window.__xlsxShapeReader = api;
   if(typeof module !== "undefined" && module.exports) module.exports = api;
 })();

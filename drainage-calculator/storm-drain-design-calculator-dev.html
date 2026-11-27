@@ -6763,6 +6763,68 @@ function applySimpleReaderResult(simple){
   if(simple.config.projectName) state.project = simple.config.projectName;
 }
 
+function applyRobustReaderResult(robust){
+  // Apply Simple-covered fields first.
+  applySimpleReaderResult(robust);
+  // Then overlay Robust-only extras.
+  const daByLabel = {};
+  state.drainage.forEach(d => { daByLabel[d.structureId] = d; });
+  (robust.tr55Segments || []).forEach(seg => {
+    const da = daByLabel[seg.drainageAreaId];
+    if(!da) return;
+    da.tr55.segments.push({ id: nextId(), type: seg.type,
+      n: seg.n, L: seg.L, s: seg.s, P2: seg.P2,
+      surface: seg.surface, area: seg.area, wp: seg.wp });
+    da.tcMethod = "tr55";
+  });
+  state.outletStructures = (robust.outletStructures || []).map(r => ({
+    id: nextId(),
+    label: r["Label"] || r["Outlet Structure ID"] || "",
+    desc:  r["Description"] || "",
+    precisionMode: r["Precision Mode"] === "individual" ? "individual" : "uniform",
+    startElev: r["Start Elevation (ft)"] || "",
+    endElev:   r["End Elevation (ft)"] || "",
+    coarseIncrement: r["Coarse Increment (ft)"] || 0.5,
+    fineIncrement:   r["Fine Increment (ft)"] || 0.05,
+    fineBand:        r["Fine Band +/- (ft)"] || 0.3,
+    twMode: r["Tailwater Mode"] || "none",
+    twFixed: r["Tailwater Fixed Elevation (ft)"] || "",
+    twStructureId: (function(){
+      const name = r["Tailwater Linked Structure ID"];
+      if(!name) return "";
+      const st = state.structures.find(s => s.structureId === name);
+      return st ? st.id : "";
+    })(),
+  }));
+  state.activeOutletId = state.outletStructures.length
+    ? state.outletStructures[0].id : "";
+  const osByLabel = {};
+  state.outletStructures.forEach(os => { osByLabel[os.label] = os; });
+  state.outletDevices = (robust.outletDevices || []).map(r => {
+    const osLabel = r["Outlet Structure"] || "";
+    const os = osByLabel[osLabel];
+    return {
+      id: nextId(),
+      outletStructureId: os ? os.id : state.activeOutletId,
+      label: r["Label"] || "", type: r["Type"] || "orifice",
+      invert: r["Invert (ft)"] || "",
+      crest:  r["Crest (ft)"] || "",
+      diameter: r["Diameter (in)"] || "",
+      diameterUnit: r["Diameter Unit"] === "ft" ? "ft" : "in",
+      length: r["Length (ft)"] || "",
+      lengthUnit: r["Length Unit"] === "in" ? "in" : "ft",
+      weirShape: r["Weir Shape"] || "rect",
+      notchAngle: r["Notch Angle (deg)"] || 90,
+      cd: r["Type"] !== "weir" ? (r["Coefficient"] || 0.6) : 0.6,
+      coef: r["Type"] === "weir" ? (r["Coefficient"] || 3.1) : 3.1,
+      fineOverrideEnabled: String(r["Fine Override Enabled"]).toUpperCase() === "TRUE",
+      fineIncrementOverride: r["Fine Increment Override (ft)"] || "",
+      fineBandOverride: r["Fine Band Override (ft)"] || "",
+      notes: r["Notes"] || "",
+    };
+  });
+}
+
 function importExcel(file){
   const reader = new FileReader();
   reader.onload = (e)=>{
@@ -6785,267 +6847,14 @@ function importExcel(file){
         renderAll(); updateSavesUI();
         return;
       }
-      // Fall through to the existing Robust-native read path.
-
-      // ---- Rainfall Settings ----
-      const rfWs = wb.Sheets["Rainfall Settings"];
-      if (rfWs) {
-        const rfAoaRaw = XLSX.utils.sheet_to_json(rfWs, {header:1, raw:false, defval:""});
-        const rfMap = {};
-        rfAoaRaw.forEach(r => { if (r[0]) rfMap[String(r[0]).trim()] = r[1]; });
-        const newRf = defaultRainfallSettings();
-        if (rfMap["Rainfall Source"])         newRf.rainfallSource = rfMap["Rainfall Source"];
-        if (rfMap["County"])                  newRf.county         = rfMap["County"];
-        if (rfMap["Pipe & HGL Design Storm"]) newRf.pipeStorm      = rfMap["Pipe & HGL Design Storm"];
-        if (rfMap["25-yr Check"])             newRf.pipe25Check    = rfMap["25-yr Check"] === "TRUE";
-        if (rfMap["Inlet Design Storm"])      newRf.inletStorm     = rfMap["Inlet Design Storm"];
-        state.hydraulics.hglMethod = hglMethodFromLabel(rfMap["HGL Method"]);
-        [5,10,15,30,60].forEach(d => {
-          const v = rfMap["Custom NOAA "+d+"-min (in/hr)"];
-          if (v !== "" && v != null) newRf.customNoaa[d] = String(v);
-        });
-        const fLat = parseFloat(rfMap["Fetched NOAA Lat"]);
-        const fLon = parseFloat(rfMap["Fetched NOAA Lon"]);
-        if (isFinite(fLat) && isFinite(fLon)) {
-          const fData = { lat: fLat, lon: fLon, displayName: rfMap["Fetched NOAA Name"] || "" };
-          const stormLabels = {"1yr":"1-yr","2yr":"2-yr","5yr":"5-yr","10yr":"10-yr","25yr":"25-yr",
-                               "50yr":"50-yr","100yr":"100-yr","500yr":"500-yr"};
-          for (const s of ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"]) {
-            fData[s] = {};
-            for (const d of [5,10,15,30,60]) {
-              const v = parseFloat(rfMap["Fetched " + stormLabels[s] + " " + d + "-min (in/hr)"]);
-              fData[s][d] = isFinite(v) ? v : "";
-            }
-          }
-          newRf.fetchedNoaa = fData;
-        }
-        // Old file with county "Fetched" but no fetched data rows — fall back
-        // to a real county so lookupIntensity doesn't return zeros.
-        if (newRf.county === "Fetched" && !newRf.fetchedNoaa) newRf.county = "Montgomery";
-        state.rainfall = newRf;
+      if(shape === "robust"){
+        const robust = window.__xlsxShapeReader.readRobustWorkbook(wb);
+        applyRobustReaderResult(robust);
+        state.exportShape = "robust";
+        syncShapeRadio();
+        renderAll(); updateSavesUI();
+        return;
       }
-
-      const da = sheetToRows(wb, "Drainage Area");
-      const daIdMap = {}; // label -> new internal id
-      if(da){
-        state.drainage = da.map(r=>{
-          const id = nextId();
-          const label = r["ID"]||"";
-          if(label) daIdMap[label]=id;
-          return {
-            id, structureId: label, desc:r["Description"]||"", area:r["Area A (ac)"]||"", C:r["C"]||"",
-            iOverride: (()=>{
-              const override = r["i Override (in/hr)"];
-              if (override !== "" && override != null && isFinite(Number(override))) return String(override);
-              // Migration: old exports had 'i (in/hr)' — treat as iOverride
-              const oldI = r["i (in/hr)"];
-              if (oldI !== "" && oldI != null && isFinite(Number(oldI))) return String(oldI);
-              return "";
-            })(),
-            tc:r["Tc (min)"]||"", cf: r["Cf"]===""||r["Cf"]==null?1:r["Cf"],
-            tcMethod: r["Tc Method"]==="tr55" ? "tr55" : "direct",
-            tr55: { segments: [] },
-          };
-        });
-      }
-
-      const tr55Rows = sheetToRows(wb, "TR-55 Segments");
-      if(tr55Rows){
-        // Rows are already in worksheet order; group by Drainage Area label, which
-        // preserves segment order without needing to sort on the "Order" column.
-        tr55Rows.forEach(r=>{
-          const daLabel = r["Drainage Area"]||"";
-          const targetId = daIdMap[daLabel];
-          if(!targetId) return;
-          const row = state.drainage.find(d=>d.id===targetId);
-          if(!row) return;
-          const type = r["Type"]||"sheet";
-          const seg = { id: nextId(), type };
-          if(type==="sheet"){
-            seg.n = r["n"]===""||r["n"]==null?"":r["n"];
-            seg.L = r["L (ft)"]===""||r["L (ft)"]==null?"":r["L (ft)"];
-            seg.s = r["s (ft/ft)"]===""||r["s (ft/ft)"]==null?"":r["s (ft/ft)"];
-            seg.P2 = r["P2 (in)"]===""||r["P2 (in)"]==null?"":r["P2 (in)"];
-          } else if(type==="shallow"){
-            seg.L = r["L (ft)"]===""||r["L (ft)"]==null?"":r["L (ft)"];
-            seg.s = r["s (ft/ft)"]===""||r["s (ft/ft)"]==null?"":r["s (ft/ft)"];
-            seg.surface = r["Surface"]||"unpaved";
-          } else {
-            seg.L = r["L (ft)"]===""||r["L (ft)"]==null?"":r["L (ft)"];
-            seg.s = r["s (ft/ft)"]===""||r["s (ft/ft)"]==null?"":r["s (ft/ft)"];
-            seg.n = r["n"]===""||r["n"]==null?"":r["n"];
-            seg.area = r["Area a (sf)"]===""||r["Area a (sf)"]==null?"":r["Area a (sf)"];
-            seg.wp = r["Wetted Perimeter Pw (ft)"]===""||r["Wetted Perimeter Pw (ft)"]==null?"":r["Wetted Perimeter Pw (ft)"];
-          }
-          row.tr55.segments.push(seg);
-        });
-      }
-
-      const st = sheetToRows(wb, "Junction Structure");
-      const stIdMap = {};
-      if(st){
-        state.structures = st.map(r=>{
-          const id = nextId();
-          const label = r["Structure ID"]||"";
-          if(label) stIdMap[label]=id;
-          const daLabel = r["Drainage Area ID"]||"";
-          return {
-            id, structureId: label, desc:r["Description"]||"",
-            drainageAreaId: daLabel && daIdMap[daLabel] ? daIdMap[daLabel] : "",
-            type: r["Type"]||"manhole",
-            forceElev: String(r["Force Fixed"]).toUpperCase()==="TRUE",
-            startElev: r["Fixed-Start Elev (ft)"]===""?"":r["Fixed-Start Elev (ft)"],
-            rim: r["Rim-Grate Elev (ft)"]===""?"":r["Rim-Grate Elev (ft)"],
-            splitMethod: r["Split Method"]||"capacity",
-            splitCapacity: r["Split Capacity (cfs)"]===""?"":r["Split Capacity (cfs)"],
-            splitRatio: r["Split Ratio (0-1)"]===""||r["Split Ratio (0-1)"]==null?0.5:r["Split Ratio (0-1)"],
-            structureMode: r["Structure Mode"]||"",
-            agency: r["Agency"]||"",
-            standardStructureId: r["Catalog ID"]||"",
-            structureCategory: r["Category"]||"",
-            shape: r["Shape"]||"",
-            innerDiameter: r["Inner Dia (ft)"]===""||r["Inner Dia (ft)"]==null?"":String(r["Inner Dia (ft)"]),
-            innerWidth: r["Inner W (ft)"]===""||r["Inner W (ft)"]==null?"":String(r["Inner W (ft)"]),
-            innerLength: r["Inner L (ft)"]===""||r["Inner L (ft)"]==null?"":String(r["Inner L (ft)"]),
-          };
-        });
-      }
-
-      const pipes = sheetToRows(wb, "Pipe Sizing");
-      if(pipes){
-        state.pipes = pipes.map(r=>{
-          const fromLabel = r["From Structure"]||"", toLabel = r["To Structure"]||"";
-          return {
-            id: nextId(),
-            fromStructureId: stIdMap[fromLabel] || "",
-            toStructureId: stIdMap[toLabel] || "",
-            angle: r["Angle (deg)"]||0,
-            shape: (r["Shape"]||"circular").toLowerCase()==="elliptical"?"elliptical":"circular",
-            size: r["Size (in or SPANxRISE)"]||"",
-            n: r["n"]===""||r["n"]==null?0.013:r["n"],
-            material: "",
-            upstreamInvert: r["US Invert (ft)"]===""||r["US Invert (ft)"]==null?"":r["US Invert (ft)"],
-            downstreamInvert: r["DS Invert (ft)"]===""||r["DS Invert (ft)"]==null?"":r["DS Invert (ft)"],
-            slope: r["Slope (ft-ft)"]||"",
-            length: r["Length (ft)"]||"",
-            splitRole: r["Split Role"]||"",
-          };
-        });
-      }
-
-      const osRows = sheetToRows(wb, "Outlet Structures");
-      const osIdMap = {};
-      if(osRows){
-        state.outletStructures = osRows.map(r=>{
-          const id = nextId();
-          const label = r["Label"] || r["Outlet Structure ID"] || "";
-          const key = r["Outlet Structure ID"] || label;
-          if(key) osIdMap[key] = id;
-          const linkedLabel = r["Tailwater Linked Structure ID"]||"";
-          return Object.assign({id, label, desc: r["Description"]||""}, {
-            startElev: r["Start Elevation (ft)"]===""||r["Start Elevation (ft)"]==null?"":r["Start Elevation (ft)"],
-            endElev: r["End Elevation (ft)"]===""||r["End Elevation (ft)"]==null?"":r["End Elevation (ft)"],
-            coarseIncrement: r["Coarse Increment (ft)"]===""||r["Coarse Increment (ft)"]==null?0.5:r["Coarse Increment (ft)"],
-            fineIncrement: r["Fine Increment (ft)"]===""||r["Fine Increment (ft)"]==null?0.05:r["Fine Increment (ft)"],
-            fineBand: r["Fine Band +/- (ft)"]===""||r["Fine Band +/- (ft)"]==null?0.3:r["Fine Band +/- (ft)"],
-            twMode: r["Tailwater Mode"]||"none",
-            twFixed: r["Tailwater Fixed Elevation (ft)"]===""||r["Tailwater Fixed Elevation (ft)"]==null?"":r["Tailwater Fixed Elevation (ft)"],
-            twStructureId: linkedLabel && stIdMap[linkedLabel] ? stIdMap[linkedLabel] : "",
-            precisionMode: r["Precision Mode"]==="individual" ? "individual" : "uniform",
-          });
-        });
-        state.activeOutletId = state.outletStructures.length ? state.outletStructures[0].id : "";
-      }
-
-      const devs = sheetToRows(wb, "Outlet Devices");
-      if(devs){
-        state.outletDevices = devs.map(r=>{
-          const osLabel = r["Outlet Structure"]||"";
-          return {
-            id: nextId(),
-            outletStructureId: osLabel && osIdMap[osLabel] ? osIdMap[osLabel] : state.activeOutletId,
-            label: r["Label"]||"", type: r["Type"]||"orifice",
-            invert: r["Invert (ft)"]===""?"":r["Invert (ft)"],
-            crest: r["Crest (ft)"]===""?"":r["Crest (ft)"],
-            diameter: r["Diameter (in)"]===""?"":r["Diameter (in)"],
-            diameterUnit: r["Diameter Unit"]==="ft" ? "ft" : "in",
-            length: r["Length (ft)"]===""?"":r["Length (ft)"],
-            lengthUnit: r["Length Unit"]==="in" ? "in" : "ft",
-            weirShape: r["Weir Shape"]||"rect",
-            notchAngle: r["Notch Angle (deg)"]===""?90:r["Notch Angle (deg)"],
-            cd: r["Type"]!=="weir" ? (r["Coefficient"]===""?0.6:r["Coefficient"]) : 0.6,
-            coef: r["Type"]==="weir" ? (r["Coefficient"]===""?3.1:r["Coefficient"]) : 3.1,
-            fineOverrideEnabled: String(r["Fine Override Enabled"]).toUpperCase()==="TRUE",
-            fineIncrementOverride: r["Fine Increment Override (ft)"]===""||r["Fine Increment Override (ft)"]==null?"":r["Fine Increment Override (ft)"],
-            fineBandOverride: r["Fine Band Override (ft)"]===""||r["Fine Band Override (ft)"]==null?"":r["Fine Band Override (ft)"],
-            notes: r["Notes"]||"",
-          };
-        });
-      }
-
-      const kb = sheetToRows(wb, "Kb Coefficients");
-      if(kb && kb.length){
-        state.kb = kb.map(r=>({angle:r["Angle (deg)"], inlet:r["Kb - Inlet"], manhole:r["Kb - Manhole"], bend:r["Kb - Bend"]}));
-      }
-
-      const ov = wb.Sheets["Overview"];
-      if(ov){
-        const aoa = XLSX.utils.sheet_to_json(ov, {header:1});
-        if(aoa[1] && aoa[1][1]) state.project = String(aoa[1][1]);
-      }
-
-      const isWs = wb.Sheets["Inlet Spacing"];
-      if(isWs){
-        const isAoa = XLSX.utils.sheet_to_json(isWs, {header:1, raw:true, defval:""});
-        const newSettings = defaultInletSpacingSettings();
-        // Rows 0-9 are settings key/value pairs; find data header row by sentinel "Label" in col 0
-        let dataHeaderIdx = -1;
-        isAoa.forEach((row,i)=>{
-          const k = String(row[0]||"").trim();
-          const v = row[1];
-          if(k==="Street") newSettings.street=String(v||"");
-          else if(k==="Default Allowable Spread (ft)") newSettings.allowableSpread=(v!==""&&v!=null)?v:8;
-          else if(k==="Label" || k==="Linked Structure") dataHeaderIdx=i;
-        });
-        if(dataHeaderIdx>=0){
-          const headers = isAoa[dataHeaderIdx].map(h=>String(h).trim());
-          const hIdx = h => headers.indexOf(h);
-          state.inletSpacing = isAoa.slice(dataHeaderIdx+1)
-            .filter(r=>r.some(v=>v!==""&&v!=null))
-            .map(r=>{
-              const g = (h)=>{ const i=hIdx(h); return i>=0?(r[i]!=null?r[i]:""):""; };
-              const row = defaultInletSpacingRow();
-              row.label = String(g("Label")||"");
-              row.L   = g("L (ft)")!==""?String(g("L (ft)")):row.L;
-              row.area= g("Area (ac)")!==""?String(g("Area (ac)")):row.area;
-              row.C   = g("C")!==""?String(g("C")):row.C;
-              row.tc  = g("Tc (min)")!==""?String(g("Tc (min)")):row.tc;
-              row.iOverride = g("i Override (in/hr)")!==""?String(g("i Override (in/hr)")):"";
-              row.S   = g("S")!==""?String(g("S")):row.S;
-              row.Sx  = g("Sx")!==""?String(g("Sx")):row.Sx;
-              row.W   = g("W (ft)")!==""?String(g("W (ft)")):row.W;
-              row.a   = g("a (ft)")!==""?String(g("a (ft)")):row.a;
-              row.n   = g("n")!==""?String(g("n")):row.n;
-              row.allowableSpread = g("Allowable Spread (ft)")!==""?String(g("Allowable Spread (ft)")):"";
-              row.bypassTo = String(g("Bypass To")||"");
-              const linkedStructName = String(g("Linked Structure")||"").trim();
-              if (linkedStructName) {
-                const matchSt = state.structures.find(s => (s.structureId||"") === linkedStructName);
-                row.linkedStructureId = matchSt ? matchSt.id : "";
-              } else {
-                row.linkedStructureId = "";
-              }
-              return row;
-            });
-        }
-        state.inletSpacingSettings = newSettings;
-      }
-
-      state.exportShape = "robust";
-      syncShapeRadio();
-      renderAll();
-      updateSavesUI();
-      toast("Imported <b>"+escapeHtml(file.name)+"</b>.");
     }catch(err){
       console.error(err);
       toast("Import failed: "+escapeHtml(err.message)+" \u2014 make sure this file was exported from this tool.", true);
