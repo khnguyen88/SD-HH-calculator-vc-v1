@@ -1,6 +1,6 @@
 # Calculator ↔ xlsx Import/Export Contract
 
-**Contract-Version:** 1
+**Contract-Version:** 2
 
 Specifies how the HTML calculator (and the companion visualizer) read from and
 write to the two xlsx shapes shipped by this project:
@@ -17,15 +17,27 @@ doc so the read/write surface is agreed before any code is written.
 
 ## 1. Shape detection
 
-On import, the calculator reads `wb.defined_names` (via SheetJS equivalent).
+On import, the calculator and visualizer use the shared `detectShape` helper
+in `drainage-calculator/lib/xlsx-shape-reader.js`:
 
-- `junctionAngleRule` present → **golden** shape. Read all three toggles from
-  their named ranges.
-- `junctionAngleRule` absent → **legacy** shape. Apply the three toggle
-  defaults.
+```
+1. wb.SheetNames contains "STORM DRAIN COMPS"?
+     a. ALSO contains "Outlet Structures"? → "robust"
+     b. Else                                → "simple"
+2. Else                                     → "unknown" (toast error)
+```
 
-One branch. No heuristic sniffing (no "guess by sheet count," no "guess by
-header text").
+Returns one of three values:
+- **`simple`** — STORM DRAIN COMPS present, Outlet Structures absent. Covers
+  both legacy WIP (`template_wip_new.xlsx`) and golden (`template_golden.xlsx`).
+- **`robust`** — STORM DRAIN COMPS AND Outlet Structures both present.
+  Calculator-native export format.
+- **`unknown`** — Neither STORM DRAIN COMPS nor Outlet Structures present.
+  Reader toasts an error and aborts.
+
+Sheet-presence detection (rather than named-range detection) is used because
+openpyxl and SheetJS expose `defined_names` differently, and the legacy WIP
+has no named ranges. Sheet-presence is reliable across both libraries.
 
 ## 2. Toggle values
 
@@ -45,6 +57,9 @@ carry out of the box:
 - `junctionAngleRule = "smaller-loss"`
 - `hglCrownCeilingRule = "crown-plus-1ft"`
 - `hglMethod = "HEC-22 EGL (d/s crown floor)"`
+
+> As of Spec 3 Task 18, `hglMethod` drives the actual HGL formulas on
+> `HGL!G/K/M` and `HGL(25YEAR)!G/K/M` via `IF(hglMethod="legacy both-end crown floor", <legacy>, <hec22>)` branching. Only column K's two branches differ semantically (strips the `D{r}` us_crown term in HEC-22); G and M wrap defensively.
 
 ## 3. Pipe-row read path (both shapes — identical)
 
@@ -76,6 +91,26 @@ Rows where `A{row}` is blank are skipped.
 Whole #", and the AD/AN controlling-angle formulas reference it as an angle.
 Spec-3 implementers: read the live header row, not the analysis doc.
 
+## 3a. Pipe-row read path — Robust shape
+
+Robust is `Simple + extras`. The Simple pipe-row read path (§3) applies
+verbatim: rows 10-98 of STORM DRAIN COMPS, same columns A/B/N/O/P/Q/R/S/
+AA/AB/AG/AH/AK. Shape detection returns "robust" only when the
+STORM DRAIN COMPS sheet AND the Outlet Structures sheet are both present.
+
+Robust-ONLY sheets layered on top of the Simple read:
+
+| Sheet | Rows | Role |
+|---|---|---|
+| `TR-55 Segments` | 2+ (header on row 1) | Per-drainage-area travel-time segments. Flat, tagged by `Drainage Area` column. |
+| `Outlet Structures` | 2+ | BMP/SWM facility list with stage/tailwater config. |
+| `Outlet Devices` | 2+ | All orifice/weir/pipe devices, tagged by `Outlet Structure` column. |
+| `Rating - <label>` (one per facility) | 2+ | Stage/tailwater/per-device-Q/total-Q rating curve. Not read on import; computed from the facility+devices. |
+| `Rainfall Settings` | 1+ (key/value pairs in cols A/B) | Rainfall source, county, storm, custom NOAA overrides, fetched NOAA metadata. |
+
+Rating sheets are not round-tripped — the calculator recomputes them on
+import from the Outlet Structures + Outlet Devices rows.
+
 ## 4. Drainage-area read path (both shapes — identical)
 
 Sheet: `C_FACTOR`, rows 6–88.
@@ -89,6 +124,19 @@ Sheet: `C_FACTOR`, rows 6–88.
 
 **Advisory columns the calculator MUST NOT read as authoritative:**
 - `C_FACTOR!W{row}` (Table 3-3 small-area Tc lookup; golden only) — informational.
+
+## 4a. Drainage-area read path — Robust shape
+
+Robust uses C_FACTOR (same as Simple) for the drainage-area row data.
+TR-55 segment detail is read from the `TR-55 Segments` sheet (see §3a).
+
+| Source | Calculator field |
+|---|---|
+| `C_FACTOR!B{row}` | `structureId` (join key) |
+| `C_FACTOR!C{row}` | `area` |
+| `C_FACTOR!M{row}` | `C` (composite) |
+| `C_FACTOR!V{row}` | `tc` (authoritative) |
+| `TR-55 Segments` rows | `drainage[].tr55.segments[]` (per-DA segment list) |
 
 ## 5. HGL sheets are not read on import
 
@@ -109,22 +157,34 @@ persistence. Never round-trip HGL numbers through them.
 
 ## 7. Export (calculator → xlsx)
 
-The calculator writes back into **input columns only** on `STORM DRAIN COMPS`
-and `C_FACTOR`:
+The calculator has two write paths, selected via `state.exportShape`:
 
-- `STORM DRAIN COMPS!A, B, N, O, P, Q, R, S, AA, AB, AG, AH, AK` plus `T3`
-  and `H3`.
-- `C_FACTOR!B, C, V`. (Composite C is computed by the xlsx formula on `M`
-  from land-use sub-areas; the calculator writes `R` if the project uses the
-  simple two-zone composite override, otherwise leaves `R` blank.)
-- `Config!B3, B4, B5` on the golden shape only — writes the three toggle
-  values. Does not touch columns `C` (citations), `E:G` (dropdown helpers),
-  or row 1 (header).
+### 7.1 Simple writer (`buildSimpleWorkbook`)
 
-The calculator **never writes to any formula-driven column** (C_FACTOR M, O,
-P; STORM DRAIN COMPS C, D, E, F, G, H, I, J, K, L, M, T–BD, and the Edit-2
-helper column; any HGL sheet cell; any print-report cell). Reopening the file
-in Excel recomputes every derived value from the inputs.
+Loads the embedded `template_golden.xlsx` bytes as a styled base, writes:
+- `STORM DRAIN COMPS!A, B, N, O, P, Q, R, S, AA, AB, AK` (pipe rows 10+)
+- `STORM DRAIN COMPS!T3` (jurisdiction), `H3` (design storm)
+- `C_FACTOR!B, C, V` (drainage rows 6+)
+- `Config!B1` project name, `B2` export timestamp, `B3:B5` toggles,
+  `B6 = "simple"`, `B7 = 2` (Contract-Version)
+
+Does NOT write Robust-only sheets. State for outlet structures, TR-55
+segments, custom NOAA, splitter metadata is silently dropped on export
+(the calculator surfaces a lossy-export toast when `hasRobustState()`
+returns true).
+
+### 7.2 Robust writer (`buildRobustWorkbook`)
+
+Loads the same golden base, writes everything 7.1 writes PLUS:
+- `Config!B6 = "robust"` (shape marker)
+- Appends sheets: `TR-55 Segments`, `Outlet Structures`, `Outlet Devices`,
+  one `Rating - <label>` per facility, `Rainfall Settings`.
+- Header row of each Robust-only sheet inherits the style from
+  `STORM DRAIN COMPS!A8` for visual consistency with Simple sheets.
+
+Neither writer touches formula-driven cells on STORM DRAIN COMPS or
+C_FACTOR. Excel recomputes HGL and print sheets on open (iterate=True
+is wired by Spec 2).
 
 ## 8. Versioning
 
