@@ -6560,7 +6560,7 @@ async function buildRobustWorkbook(){
   return wb;
 }
 
-function buildWorkbook(){
+function _legacyBuildWorkbook(){
   const wb = XLSX.utils.book_new();
 
   const ov = [
@@ -7008,12 +7008,26 @@ function buildWorkbook(){
   return wb;
 }
 
-function exportExcel(){
+async function buildSimpleWorkbook(){
+  // Stub — filled in by Phase 3 Task 14. Throws so the toggle doesn't
+  // silently fall back to Robust.
+  throw new Error("Simple writer not yet implemented (Phase 3 Task 14)");
+}
+
+async function exportExcel(){
   try{
-    const wb = buildWorkbook();
-    const name = (state.project||"storm-drain-project").replace(/[^a-z0-9\-_ ]/gi,"").trim().replace(/\s+/g,"-") || "storm-drain-project";
+    const shape = state.exportShape || "robust";
+    let wb;
+    if(shape === "simple"){
+      wb = await buildSimpleWorkbook();
+    } else {
+      wb = await buildRobustWorkbook();
+    }
+    const name = (state.project||"storm-drain-project")
+      .replace(/[^a-z0-9\-_ ]/gi,"").trim()
+      .replace(/\s+/g,"-") || "storm-drain-project";
     XLSX.writeFile(wb, name + ".xlsx", { bookSST: true });
-    toast("Exported <b>"+escapeHtml(name)+".xlsx</b>");
+    toast("Exported <b>"+escapeHtml(name)+".xlsx</b> ("+shape+")");
   }catch(err){
     console.error(err);
     toast("Export failed: "+escapeHtml(err.message), true);
@@ -7633,7 +7647,7 @@ function init(){
 document.addEventListener("DOMContentLoaded", init);
 
 // Exposed for debugging / automated testing only - not used by the UI.
-window.__sdc = { state, buildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, pipeEffectiveSlope, pipeIdealMinSlope, pipeCrownMatchCheck, frictionSlope, calcDrainageRow, findStructure, findDrainage, findPipe,
+window.__sdc = { state, _legacyBuildWorkbook, computeTotalFlow, computeStructureCalc, calcPipeRow, pipeEffectiveSlope, pipeIdealMinSlope, pipeCrownMatchCheck, frictionSlope, calcDrainageRow, findStructure, findDrainage, findPipe,
   circularSegment, orificeOrPipeQ, weirQ, deviceQ, resolveTailwater, generateStageList, computeRatingCurve, computeSplitterSplit, pipeDesignQ,
   findOutletStructure, devicesForOutlet,
   tr55SheetFlowTt, tr55ShallowVelocity, tr55TravelTime, tr55ChannelVelocity, computeTr55, TR55_SHALLOW_CP,
