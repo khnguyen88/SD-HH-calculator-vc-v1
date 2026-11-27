@@ -53,3 +53,48 @@ def test_wip_pipe_r_is_angle_not_manning():
             assert 0.005 <= p["n"] <= 0.03, (
                 f"n={p['n']} out of range; is R/S swapped?"
             )
+
+
+def materialize_structures_py(pipes):
+    """Mirror of the JS structure-materialization pass."""
+    seen = {}
+    for p in pipes:
+        for sid in (p["fromId"], p["toId"]):
+            if sid and sid not in seen:
+                seen[sid] = {
+                    "structureId": sid, "type": "manhole",
+                    "rim": "", "capturedQOverride": "",
+                }
+    by_from = {p["fromId"]: p for p in pipes}
+    for sid, s in seen.items():
+        source = by_from.get(sid)
+        if source:
+            if source.get("_structureType"):
+                s["type"] = str(source["_structureType"]).lower()
+            if source.get("_rim") not in (None, ""):
+                s["rim"] = source["_rim"]
+            if source.get("_capturedQOverride") not in (None, ""):
+                s["capturedQOverride"] = source["_capturedQOverride"]
+    all_from = {p["fromId"] for p in pipes}
+    for sid, s in seen.items():
+        if sid not in all_from and s["type"] == "manhole":
+            s["type"] = "outfall"
+    return list(seen.values())
+
+
+def test_structures_materialized_from_pipes():
+    import openpyxl
+    wb = openpyxl.load_workbook(WIP, data_only=True)
+    pipes = read_simple_pipes_py(wb)
+    sdc = wb["STORM DRAIN COMPS"]
+    for p, r_idx in zip(pipes, (r for r in range(10, 99)
+                               if sdc[f"A{r}"].value not in (None, ""))):
+        p["_structureType"] = sdc[f"AA{r_idx}"].value
+        p["_rim"] = sdc[f"AB{r_idx}"].value
+        p["_capturedQOverride"] = sdc[f"AK{r_idx}"].value
+    structs = materialize_structures_py(pipes)
+    all_ids = {s["structureId"] for s in structs}
+    all_pipe_ids = {p["fromId"] for p in pipes} | {p["toId"] for p in pipes}
+    assert all_ids == all_pipe_ids - {"", None}
+    outfalls = [s for s in structs if s["type"] == "outfall"]
+    assert len(outfalls) >= 1, "Simple reader must identify at least one outfall"
