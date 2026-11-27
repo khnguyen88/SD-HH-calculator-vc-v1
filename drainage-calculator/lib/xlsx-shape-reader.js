@@ -26,7 +26,47 @@
   }
 
   function readSimpleWorkbook(wb){
-    throw new Error("readSimpleWorkbook not yet implemented (Task 4-6)");
+    const sdc = wb.Sheets["STORM DRAIN COMPS"];
+    if(!sdc) throw new Error("Missing STORM DRAIN COMPS sheet");
+
+    const cell = (addr) => {
+      const c = sdc[addr];
+      if(!c) return "";
+      return (c.v !== undefined && c.v !== null) ? c.v : "";
+    };
+
+    const pipes = [];
+    for(let r = 10; r <= 98; r++){
+      const fromId = cell("A"+r);
+      if(fromId === "" || fromId == null) continue;
+      pipes.push({
+        fromId: String(fromId),
+        toId: String(cell("B"+r)||""),
+        size: cell("N"+r),
+        length: cell("O"+r),
+        usInvert: cell("P"+r),
+        dsInvert: cell("Q"+r),
+        angle: cell("R"+r),
+        n: cell("S"+r),
+        _structureType: cell("AA"+r),
+        _rim: cell("AB"+r),
+        _inflowAngle1: cell("AG"+r),
+        _inflowAngle2: cell("AH"+r),
+        _capturedQOverride: cell("AK"+r),
+      });
+    }
+
+    const jurisdiction = cell("T3") || "MCDOT";
+    const pipeStorm    = cell("H3") || "10yr";
+
+    return {
+      _shape: "simple",
+      pipes,
+      hydraulics: { jurisdiction, pipeStorm },
+      structures: [],
+      drainage: [],
+      config: {},
+    };
   }
 
   function readRobustWorkbook(wb){
