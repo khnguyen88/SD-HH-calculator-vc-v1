@@ -20,6 +20,7 @@ def _assert_data2_clean(wb):
         assert v is not None, f"DATA2!{col_letter}1 header missing"
     assert ws["A2"].value == 0
     assert ws["B101"].value == 1
+    assert ws["C101"].value == 0.7854
     for col_letter in ("D", "E", "F", "G", "H", "I", "J", "K", "L"):
         for r in range(1, 102):
             v = ws[f"{col_letter}{r}"].value
