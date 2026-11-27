@@ -12,6 +12,8 @@ import sys
 
 import openpyxl
 
+from cleanup_data2 import clean_data2
+
 
 # These are literal defined-name strings. "\0", "\c", etc. are the two
 # character names \0, \c, ... (backslash + letter/digit), NOT escape
@@ -230,6 +232,7 @@ def main(src, dst):
     update_equations_instructions(wb)
     modernize_k_column_tc_formula(wb)
     enable_iterative_calculation(wb)
+    clean_data2(wb)  # Spec 3 pre-work: clear DATA2 cols D-L
     wb.save(dst)
     print(f"wrote {dst}: removed {len(removed)} defined names")
 
