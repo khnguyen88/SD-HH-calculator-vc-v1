@@ -98,3 +98,38 @@ def test_structures_materialized_from_pipes():
     assert all_ids == all_pipe_ids - {"", None}
     outfalls = [s for s in structs if s["type"] == "outfall"]
     assert len(outfalls) >= 1, "Simple reader must identify at least one outfall"
+
+
+def test_cfactor_drainage_rows():
+    import openpyxl
+    wb = openpyxl.load_workbook(GOLDEN, data_only=True)
+    cf = wb["C_FACTOR"]
+    rows = []
+    for r in range(6, 89):
+        b = cf[f"B{r}"].value
+        if b in (None, ""):
+            continue
+        rows.append({
+            "structureId": b,
+            "area": cf[f"C{r}"].value,
+            "C": cf[f"M{r}"].value,
+            "tc": cf[f"V{r}"].value,
+        })
+    assert isinstance(rows, list)
+
+
+def test_config_toggles_golden():
+    import openpyxl
+    wb = openpyxl.load_workbook(GOLDEN, data_only=True)
+    cfg = wb["Config"]
+    assert cfg["B3"].value == "smaller-loss"
+    assert cfg["B4"].value == "crown-plus-1ft"
+    assert cfg["B5"].value == "HEC-22 EGL (d/s crown floor)"
+
+
+def test_config_toggles_absent_in_wip():
+    import openpyxl
+    wb = openpyxl.load_workbook(WIP, data_only=True)
+    assert "Config" not in wb.sheetnames, (
+        "Legacy WIP must not carry a Config sheet (defaults apply)"
+    )

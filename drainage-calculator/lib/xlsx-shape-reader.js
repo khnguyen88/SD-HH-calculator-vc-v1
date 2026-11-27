@@ -92,11 +92,55 @@
     }
     const structures = Object.values(seen);
 
+    // ---- C_FACTOR drainage rows ----
+    const drainage = [];
+    const cf = wb.Sheets["C_FACTOR"];
+    if(cf){
+      const cellCf = (addr) => {
+        const c = cf[addr];
+        if(!c) return "";
+        return (c.v !== undefined && c.v !== null) ? c.v : "";
+      };
+      for(let r = 6; r <= 88; r++){
+        const sid = cellCf("B"+r);
+        if(sid === "" || sid == null) continue;
+        drainage.push({
+          structureId: String(sid),
+          area: cellCf("C"+r),
+          C:    cellCf("M"+r),
+          tc:   cellCf("V"+r),
+        });
+      }
+    }
+
+    // ---- Config toggles (golden only; defaults otherwise) ----
+    const config = {
+      junctionAngleRule:   "smaller-loss",
+      hglCrownCeilingRule: "crown-plus-1ft",
+      hglMethod:           "HEC-22 EGL (d/s crown floor)",
+      projectName:         "",
+      templateShape:       "simple",
+      contractVersion:     1,
+    };
+    const cfg = wb.Sheets["Config"];
+    if(cfg){
+      const cellCfg = (addr) => {
+        const c = cfg[addr];
+        if(!c) return "";
+        return (c.v !== undefined && c.v !== null) ? c.v : "";
+      };
+      if(cellCfg("B1")) config.projectName         = String(cellCfg("B1"));
+      if(cellCfg("B3")) config.junctionAngleRule   = String(cellCfg("B3"));
+      if(cellCfg("B4")) config.hglCrownCeilingRule = String(cellCfg("B4"));
+      if(cellCfg("B5")) config.hglMethod           = String(cellCfg("B5"));
+      if(cellCfg("B6")) config.templateShape       = String(cellCfg("B6"));
+      if(cellCfg("B7")) config.contractVersion     = Number(cellCfg("B7"));
+    }
+
     return {
       _shape: "simple",
-      pipes, structures,
+      pipes, structures, drainage, config,
       hydraulics: { jurisdiction, pipeStorm },
-      drainage: [], config: {},
     };
   }
 
