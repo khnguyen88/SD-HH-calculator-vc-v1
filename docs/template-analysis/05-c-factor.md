@@ -13,7 +13,7 @@ Occupied range: `B6:V88` (data rows 6–88, 83 basin rows). No Table objects —
 User-typed cells (raw data entry):
 - `B6:B88` — Inlet Row ID (lookup key; consumed by STORM DRAIN COMPS and INLET SPACING via `VLOOKUP(..., C_FACTOR!$B$6:$V$88, col, FALSE)`)
 - `C6:C88` — Drainage area (sf, square feet; raw surveyed or CAD-measured area)
-- `E6:E88` through `L6:L88` — Sub-area breakdowns by land use type (sf per category; feeds the weighted C computation in column M)
+- `E6:E88` through `L6:L88` — Sub-area breakdowns by land use type (sf per category; feeds the weighted C computation in column M). Column I (row 5 header "Imp. Area (Ac)") — the impervious-area portion of the drainage area in acres. Consumed by the composite-C computation on column M.
 - `N6:N88` — Impervious area (sf, used for `O` and `R` computations)
 - `V6:V88` — Time of concentration Tc (min, user-entered or computed externally; col 21 of the lookup range)
 - `AA3`, `AA4` — Composite C weights for pervious and impervious portions respectively (constants referenced in column R formula)
@@ -45,6 +45,10 @@ Workbook-scoped named ranges read: none.
 ### Column R: Override / composite C (user override)
 
 - `R6` → `=IFERROR(($AA$3*(O6)+$AA$4*(P6))/(D6), "")` — simple two-zone composite C (impervious weight × impervious area + pervious weight × pervious area, normalised by total area). Used when the sub-area breakdown columns are not filled in; column M prefers R if non-blank.
+
+### Column W: Table 3-3 small-area Tc lookup (advisory; golden template only)
+
+Column W (added by Spec 2 Edit 5; present in golden only, blank in legacy WIP) — Table 3-3 small-area Tc lookup. Formula branches on D (sheet-flow length category) and M (composite C). Advisory column — the calculator's reader MUST NOT read W as authoritative (per `calculator-import-contract.md` §4 note).
 
 ## Outputs
 

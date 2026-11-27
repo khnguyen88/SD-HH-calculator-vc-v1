@@ -17,8 +17,8 @@ User-typed cells (no formula — raw data entry within Table4):
 - `O10:O98` — Pipe length (ft)
 - `P10:P98` — Upstream (U/S) invert elevation (ft)
 - `Q10:Q98` — Downstream (D/S) invert elevation (ft)
-- `R10:R98` — Manning's n (e.g., 0.013 for RCP)
-- `S10:S98` — Manning's n (duplicate input slot; used by some formula branches)
+- `R10:R98` — Angle Out of Pipe (Deg) — Whole # (row-8 header: `'Angle Out of Pipe (Deg) - Whole #'`). The deflection angle at which this pipe leaves the upstream structure, used by the controlling-angle junction-loss computation on columns AD/AE/AF.
+- `S10:S98` — Manning's roughness coefficient n for the pipe (row-8 header: `'Manning Coeff'`). Default 0.013 (concrete pipe); user override permitted.
 - `W10:W98` — Flow velocity override or design velocity (fps, user-typed)
 - `AA10:AA98` — Structure type (Inlet / Manhole / Bend / Junction / Flow Splitter / Outfall)
 - `AB10:AB98` — Top/opening elevation of the structure (rim elevation, ft)
@@ -139,3 +139,7 @@ None — STORM DRAIN COMPS has 0 `#REF!` errors and no broken cross-sheet refere
 ## Fix plan
 
 None. No repairs needed for this sheet.
+
+---
+
+> Correction landed in Spec 3 pre-work: an earlier version of this doc listed column R as "Manning's n." Verified empirically against the row-8 headers in both `template_wip_new.xlsx` and `template_golden.xlsx`.
