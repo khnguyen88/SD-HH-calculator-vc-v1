@@ -6116,6 +6116,7 @@ async function loadGoldenBase(){
 async function buildRobustWorkbook(){
   const wb = await loadGoldenBase();
   const sdc = wb.Sheets["STORM DRAIN COMPS"];
+  const headerStyle = (sdc["A8"] && sdc["A8"].s) ? sdc["A8"].s : undefined;
 
   const writeCell = (ws, addr, value, t) => {
     if(value === "" || value == null) return;
@@ -6175,6 +6176,227 @@ async function buildRobustWorkbook(){
   if(state.rainfall && state.rainfall.pipeStorm){
     writeCell(sdc, "H3", state.rainfall.pipeStorm, "s");
   }
+
+  // ---- TR-55 Segments (Robust-only) ----
+  const tr55Header = ["Drainage Area","Order","Type","n","L (ft)","s (ft/ft)",
+                      "P2 (in)","Surface","Area a (sf)","Wetted Perimeter Pw (ft)"];
+  const tr55Rows = [tr55Header];
+  state.drainage.forEach(r => {
+    const segs = (r.tr55 && r.tr55.segments) || [];
+    segs.forEach((seg, i) => {
+      tr55Rows.push([
+        r.structureId || "", i+1, seg.type,
+        (seg.type==="sheet"||seg.type==="channel") ? (seg.n||"") : "",
+        seg.L||"", seg.s||"",
+        seg.type==="sheet" ? (seg.P2||"") : "",
+        seg.type==="shallow" ? (seg.surface||"unpaved") : "",
+        seg.type==="channel" ? (seg.area||"") : "",
+        seg.type==="channel" ? (seg.wp||"") : "",
+      ]);
+    });
+  });
+  const wsTr55 = XLSX.utils.aoa_to_sheet(tr55Rows);
+  wsTr55["!cols"] = [{wch:14},{wch:8},{wch:10},{wch:9},{wch:9},
+                     {wch:11},{wch:9},{wch:14},{wch:11},{wch:15}];
+  if(headerStyle){
+    for(let c = 0; c < tr55Header.length; c++){
+      const addr = XLSX.utils.encode_cell({r:0, c});
+      if(wsTr55[addr]) wsTr55[addr].s = headerStyle;
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, wsTr55, "TR-55 Segments");
+
+  // ---- Outlet Structures (Robust-only) ----
+  const osHeader = ["Outlet Structure ID","Label","Description","Precision Mode",
+    "Start Elevation (ft)","End Elevation (ft)","Coarse Increment (ft)",
+    "Fine Increment (ft)","Fine Band +/- (ft)","Tailwater Mode",
+    "Tailwater Fixed Elevation (ft)","Tailwater Linked Structure ID"];
+  const osAoa = [osHeader];
+  state.outletStructures.forEach(os => {
+    osAoa.push([
+      os.label||os.id, os.label||"", os.desc||"", os.precisionMode||"uniform",
+      os.startElev, os.endElev, os.coarseIncrement||0.5,
+      os.fineIncrement||0.05, os.fineBand||0.3,
+      os.twMode||"none",
+      (os.twFixed===""||os.twFixed==null)?"":os.twFixed,
+      os.twStructureId ? ((findStructure(os.twStructureId)||{}).structureId||"") : "",
+    ]);
+  });
+  const wsOs = XLSX.utils.aoa_to_sheet(osAoa);
+  wsOs["!cols"] = [{wch:20},{wch:20},{wch:26},{wch:13},{wch:12},
+                   {wch:12},{wch:12},{wch:12},{wch:12},{wch:12},
+                   {wch:14},{wch:18}];
+  if(headerStyle){
+    for(let c = 0; c < osHeader.length; c++){
+      const addr = XLSX.utils.encode_cell({r:0, c});
+      if(wsOs[addr]) wsOs[addr].s = headerStyle;
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, wsOs, "Outlet Structures");
+
+  // ---- Outlet Devices (Robust-only) ----
+  const devHeader = ["Device ID","Outlet Structure","Label","Type","Invert (ft)",
+    "Crest (ft)","Diameter (in)","Diameter Unit","Length (ft)","Length Unit",
+    "Weir Shape","Notch Angle (deg)","Coefficient","Fine Override Enabled",
+    "Fine Increment Override (ft)","Fine Band Override (ft)","Notes"];
+  const devAoa = [devHeader];
+  state.outletDevices.forEach(d => {
+    const osLabel = ((findOutletStructure(d.outletStructureId)||{}).label) || "";
+    devAoa.push([
+      d.id, osLabel, d.label||"", d.type,
+      d.type!=="weir" ? d.invert : "",
+      d.type==="weir" ? d.crest : "",
+      d.type!=="weir" ? d.diameter : "",
+      d.type!=="weir" ? (d.diameterUnit||"in") : "",
+      d.type==="weir" ? d.length : "",
+      d.type==="weir" ? (d.lengthUnit||"ft") : "",
+      d.type==="weir" ? (d.weirShape||"rect") : "",
+      (d.type==="weir" && d.weirShape==="vnotch") ? (d.notchAngle||90) : "",
+      d.type==="weir" ? d.coef : d.cd,
+      d.fineOverrideEnabled ? "TRUE" : "FALSE",
+      (d.fineIncrementOverride===""||d.fineIncrementOverride==null)?"":d.fineIncrementOverride,
+      (d.fineBandOverride===""||d.fineBandOverride==null)?"":d.fineBandOverride,
+      d.notes||"",
+    ]);
+  });
+  const wsDev = XLSX.utils.aoa_to_sheet(devAoa);
+  wsDev["!cols"] = [{wch:10},{wch:20},{wch:18},{wch:10},{wch:10},
+                    {wch:10},{wch:12},{wch:9},{wch:10},{wch:9},
+                    {wch:10},{wch:12},{wch:11},{wch:13},{wch:14},
+                    {wch:14},{wch:26}];
+  if(headerStyle){
+    for(let c = 0; c < devHeader.length; c++){
+      const addr = XLSX.utils.encode_cell({r:0, c});
+      if(wsDev[addr]) wsDev[addr].s = headerStyle;
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, wsDev, "Outlet Devices");
+
+  // ---- One Rating Curve sheet per outlet structure (Robust-only) ----
+  const usedSheetNames = new Set(wb.SheetNames);
+  function safeSheetName(base){
+    let name = String(base).replace(/[\\\/\?\*\[\]:]/g,"").trim().slice(0,26) || "Outlet";
+    let candidate = "Rating - "+name;
+    if(candidate.length>31) candidate = candidate.slice(0,31);
+    let n=2;
+    while(usedSheetNames.has(candidate)){
+      const suffix = "~"+n;
+      candidate = ("Rating - "+name).slice(0, 31-suffix.length)+suffix;
+      n++;
+    }
+    usedSheetNames.add(candidate);
+    return candidate;
+  }
+
+  state.outletStructures.forEach(os=>{
+    const devices = devicesForOutlet(os.id);
+    const ratingHeader = ["Stage (ft)","Tailwater (ft)"];
+    devices.forEach(d=>{
+      const label = d.label||d.id;
+      ratingHeader.push(label+" alpha (deg)");
+      ratingHeader.push(label+" A (sf)");
+      ratingHeader.push(label+" Centroid abv invert (ft)");
+      ratingHeader.push(label+" Head to centroid (ft)");
+      ratingHeader.push(label+" Regime");
+      ratingHeader.push(label+" Q (cfs)");
+    });
+    ratingHeader.push("Total Q (cfs)");
+    const { rows: curveRows } = computeRatingCurve(os.id);
+    const twLinked = os.twMode==="linked" && os.twStructureId;
+    const twStructLabel = twLinked ? ((findStructure(os.twStructureId)||{}).structureId||"") : "";
+    const ratingAoa = [ratingHeader];
+    curveRows.forEach(r=>{
+      const row = [num(r.stage), null];
+      r.devices.forEach(dr=>{
+        row.push(dr.alpha!=null ? round(dr.alpha*180/Math.PI,3) : "");
+        row.push(dr.area!=null ? round(dr.area,4) : "");
+        row.push(dr.centroidAboveInvert!=null ? round(dr.centroidAboveInvert,4) : "");
+        row.push(dr.head!=null ? round(dr.head,4) : "");
+        row.push(dr.regime||"");
+        row.push(round(dr.Q,4));
+      });
+      row.push(null);
+      ratingAoa.push(row);
+    });
+    const wsRating = XLSX.utils.aoa_to_sheet(ratingAoa);
+    const nDev = devices.length;
+    curveRows.forEach((r,i)=>{
+      const row = i+2;
+      if(os.twMode==="fixed"){
+        setFormula(wsRating, "B"+row, "="+num(os.twFixed), r.tw!=null?round(r.tw,3):0);
+      } else if(twLinked){
+        setFormula(wsRating, "B"+row, "=IFERROR(INDEX('Junction Structure'!Q:Q,MATCH(\""+twStructLabel+"\",'Junction Structure'!A:A,0)),\"\")", r.tw!=null?round(r.tw,3):"");
+      } else {
+        wsRating["B"+row] = { t:"s", v:"" };
+      }
+      // Q is the 6th column within each device's 6-column block (0-indexed offset 5).
+      const qCols = [];
+      for(let d=0; d<nDev; d++){ qCols.push(colLetter(3+d*6+5)+row); }
+      const totalCol = colLetter(3+nDev*6);
+      setFormula(wsRating, totalCol+row, "="+qCols.join("+"), round(r.total,4));
+    });
+    // Column widths + hide state: alpha/A/centroid/head start hidden if you
+    // currently have "Show full geometry detail" unchecked in the app (matches
+    // what you're looking at when you export), otherwise visible. Either way,
+    // Excel's own Format > Hide & Unhide Columns reveals them any time you need
+    // them - a plain "hidden" column is universally supported, unlike Excel's
+    // outline/grouping XML which some strict readers reject.
+    const detailHidden = !state.outletShowGeometryDetail;
+    const cols = [{wch:11},{wch:11}];
+    devices.forEach(()=>{
+      cols.push({wch:10, hidden:detailHidden});
+      cols.push({wch:10, hidden:detailHidden});
+      cols.push({wch:15, hidden:detailHidden});
+      cols.push({wch:13, hidden:detailHidden});
+      cols.push({wch:12});
+      cols.push({wch:10});
+    });
+    cols.push({wch:12});
+    wsRating["!cols"] = cols;
+    if(headerStyle){
+      for(let c = 0; c < ratingHeader.length; c++){
+        const addr = XLSX.utils.encode_cell({r:0, c});
+        if(wsRating[addr]) wsRating[addr].s = headerStyle;
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, wsRating, safeSheetName(os.label||os.id));
+  });
+
+  // ---- Rainfall Settings (Robust-only) ----
+  // Row-label/value pairs (no header row), so no headerStyle application.
+  const rf = state.rainfall;
+  const rfAoa = [
+    ["Rainfall Source",          rf.rainfallSource||"noaa"],
+    ["County",                   rf.county||"Montgomery"],
+    ["Pipe & HGL Design Storm",  rf.pipeStorm||"10yr"],
+    ["25-yr Check",              rf.pipe25Check ? "TRUE" : "FALSE"],
+    ["Inlet Design Storm",       rf.inletStorm||"2yr"],
+    ["HGL Method",               state.hydraulics.hglMethod==="conservative" ? "Conservative" : "HEC-22"],
+    ["Custom NOAA 5-min (in/hr)",  (rf.customNoaa&&rf.customNoaa[5]!=null&&rf.customNoaa[5]!=="")?rf.customNoaa[5]:""],
+    ["Custom NOAA 10-min (in/hr)", (rf.customNoaa&&rf.customNoaa[10]!=null&&rf.customNoaa[10]!=="")?rf.customNoaa[10]:""],
+    ["Custom NOAA 15-min (in/hr)", (rf.customNoaa&&rf.customNoaa[15]!=null&&rf.customNoaa[15]!=="")?rf.customNoaa[15]:""],
+    ["Custom NOAA 30-min (in/hr)", (rf.customNoaa&&rf.customNoaa[30]!=null&&rf.customNoaa[30]!=="")?rf.customNoaa[30]:""],
+    ["Custom NOAA 60-min (in/hr)", (rf.customNoaa&&rf.customNoaa[60]!=null&&rf.customNoaa[60]!=="")?rf.customNoaa[60]:""],
+  ];
+  if (rf.fetchedNoaa) {
+    const fn = rf.fetchedNoaa;
+    rfAoa.push(
+      ["Fetched NOAA Lat",  fn.lat],
+      ["Fetched NOAA Lon",  fn.lon],
+      ["Fetched NOAA Name", fn.displayName || ""]
+    );
+    const stormLabels = {"1yr":"1-yr","2yr":"2-yr","5yr":"5-yr","10yr":"10-yr","25yr":"25-yr",
+                         "50yr":"50-yr","100yr":"100-yr","500yr":"500-yr"};
+    for (const storm of ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"]) {
+      for (const d of [5,10,15,30,60]) {
+        rfAoa.push(["Fetched " + stormLabels[storm] + " " + d + "-min (in/hr)",
+                    (fn[storm] && fn[storm][d] != null) ? fn[storm][d] : ""]);
+      }
+    }
+  }
+  const wsRf = XLSX.utils.aoa_to_sheet(rfAoa);
+  wsRf["!cols"] = [{wch:30},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, wsRf, "Rainfall Settings");
 
   return wb;
 }
