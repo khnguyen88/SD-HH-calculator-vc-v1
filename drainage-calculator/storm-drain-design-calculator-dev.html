@@ -6097,6 +6097,22 @@ function setFormula(ws, addr, formula, value){
 }
 function setCellNum(ws, addr, v){ ws[addr] = { t:"n", v: (v===""||v==null||!isFinite(v))?0:v }; }
 
+// Load the embedded golden template as a SheetJS workbook. Preserves cell
+// styling, print layout, formulas, and named ranges — filling input
+// columns on top of this base produces a styled output file with no
+// manual style code. Used by buildSimpleWorkbook + buildRobustWorkbook.
+async function loadGoldenBase(){
+  if(window.__TEMPLATE_GOLDEN_B64_PENDING){
+    await window.__TEMPLATE_GOLDEN_B64_PENDING;
+  }
+  const b64 = window.__TEMPLATE_GOLDEN_B64;
+  if(!b64) throw new Error("Golden template base64 not loaded");
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return XLSX.read(bytes, {type:"array", cellStyles:true, cellFormula:true, cellDates:true});
+}
+
 function buildWorkbook(){
   const wb = XLSX.utils.book_new();
 
