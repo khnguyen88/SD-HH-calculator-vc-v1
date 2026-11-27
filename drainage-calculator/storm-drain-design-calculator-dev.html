@@ -675,6 +675,8 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
 <div id="printArea"></div>
 
 <script>/* SHEETJS_BUNDLE */</script>
+<!-- XLSX_SHAPE_READER_PLACEHOLDER -->
+<script src="lib/xlsx-shape-reader.js"></script>
 <script>
 /* ==========================================================================
    Storm Drain Design Calculator
@@ -1502,6 +1504,7 @@ function defaultInletSpacingRow() {
 const state = {
   project: "Untitled Storm Drain Project",
   active: "overview",
+  exportShape: "robust", // "simple" | "robust"; see Task 15 UI toggle
   drainage: [],
   structures: [],
   pipes: [],
@@ -1514,7 +1517,7 @@ const state = {
   inletSpacing: [],
   inletSpacingSettings: defaultInletSpacingSettings(),
   rainfall: defaultRainfallSettings(),
-  hydraulics: { hglMethod: "hec22" },
+  hydraulics: { hglMethod: "hec22", junctionAngleRule: "smaller-loss", hglCrownCeilingRule: "crown-plus-1ft" },
 };
 
 function defaultOutletFields(){
@@ -6736,12 +6739,75 @@ function sheetToRows(wb, name){
   });
 }
 
+function applySimpleReaderResult(simple){
+  state.structures = simple.structures.map(s => ({
+    id: nextId(), structureId: s.structureId, desc: "",
+    type: s.type || "manhole", drainageAreaId: "",
+    rim: s.rim === "" ? "" : s.rim,
+    startElev: "", forceElev: false,
+    splitMethod: "capacity", splitCapacity: "", splitRatio: 0.5,
+    structureMode: "", agency: "", standardStructureId: "",
+    structureCategory: "", shape: "", innerDiameter: "",
+    innerWidth: "", innerLength: "",
+  }));
+  const idByLabel = {};
+  state.structures.forEach(s => { idByLabel[s.structureId] = s.id; });
+  state.pipes = simple.pipes.map(p => ({
+    id: nextId(),
+    fromStructureId: idByLabel[p.fromId] || "",
+    toStructureId:   idByLabel[p.toId]   || "",
+    angle: p.angle || 0,
+    shape: "circular",
+    size: p.size || "",
+    n: (p.n === "" || p.n == null) ? 0.013 : p.n,
+    material: "",
+    upstreamInvert:   p.usInvert === "" ? "" : p.usInvert,
+    downstreamInvert: p.dsInvert === "" ? "" : p.dsInvert,
+    slope: "", length: p.length || "",
+    splitRole: "",
+  }));
+  state.drainage = simple.drainage.map(d => ({
+    id: nextId(), structureId: d.structureId,
+    desc: "", area: d.area || "", C: d.C || "",
+    iOverride: "", tc: d.tc || "", cf: 1,
+    tcMethod: "direct",
+    tr55: { segments: [] },
+  }));
+  state.outletStructures = [];
+  state.outletDevices = [];
+  state.activeOutletId = "";
+  state.rainfall.customNoaa = {};
+  state.rainfall.fetchedNoaa = null;
+  state.hydraulics.junctionAngleRule   = simple.config.junctionAngleRule;
+  state.hydraulics.hglCrownCeilingRule = simple.config.hglCrownCeilingRule;
+  state.hydraulics.hglMethod = window.__xlsxShapeReader.hglMethodFromLabel(
+    simple.config.hglMethod
+  );
+  if(simple.config.projectName) state.project = simple.config.projectName;
+}
+
 function importExcel(file){
   const reader = new FileReader();
   reader.onload = (e)=>{
     try{
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, {type:"array", cellFormula:false});
+      const shape = window.__xlsxShapeReader.detectShape(wb);
+      if(shape === "unknown"){
+        toast("Couldn't detect template shape. This file should be a WIP "
+              +"template, golden template, or calculator export.", true);
+        return;
+      }
+      if(shape === "simple"){
+        const simple = window.__xlsxShapeReader.readSimpleWorkbook(wb);
+        applySimpleReaderResult(simple);
+        state.exportShape = "simple";
+        toast("Imported Simple template. Outlet structures, TR-55 "
+              +"segments, and custom NOAA data were not in the file.");
+        renderAll(); updateSavesUI();
+        return;
+      }
+      // Fall through to the existing Robust-native read path.
 
       // ---- Rainfall Settings ----
       const rfWs = wb.Sheets["Rainfall Settings"];

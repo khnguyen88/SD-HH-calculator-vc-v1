@@ -693,6 +693,164 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 
 </script>
 <script>
+/* xlsx-shape-reader.js — shared Simple/Robust xlsx reader.
+   Inlined into both calculator and visualizer by build.js.
+   Exposes window.__xlsxShapeReader with:
+     detectShape, readSimpleWorkbook, readRobustWorkbook, hglMethodFromLabel */
+(function(){
+  "use strict";
+
+  function detectShape(wb){
+    const names = wb.SheetNames || Object.keys(wb.Sheets || {});
+    const has = (n) => names.indexOf(n) !== -1;
+    if(has("STORM DRAIN COMPS")){
+      if(has("Outlet Structures")) return "robust";
+      return "simple";
+    }
+    return "unknown";
+  }
+
+  function hglMethodFromLabel(label){
+    const s = String(label||"").toLowerCase();
+    if(s.indexOf("hec-22")!==-1 || s.indexOf("hec22")!==-1) return "hec22";
+    if(s.indexOf("legacy")!==-1 || s.indexOf("both-end")!==-1
+       || s.indexOf("both end")!==-1 || s.indexOf("conservative")!==-1){
+      return "legacy-both-crown";
+    }
+    return "hec22";
+  }
+
+  function readSimpleWorkbook(wb){
+    const sdc = wb.Sheets["STORM DRAIN COMPS"];
+    if(!sdc) throw new Error("Missing STORM DRAIN COMPS sheet");
+
+    const cell = (addr) => {
+      const c = sdc[addr];
+      if(!c) return "";
+      return (c.v !== undefined && c.v !== null) ? c.v : "";
+    };
+
+    const pipes = [];
+    for(let r = 10; r <= 98; r++){
+      const fromId = cell("A"+r);
+      if(fromId === "" || fromId == null) continue;
+      pipes.push({
+        fromId: String(fromId),
+        toId: String(cell("B"+r)||""),
+        size: cell("N"+r),
+        length: cell("O"+r),
+        usInvert: cell("P"+r),
+        dsInvert: cell("Q"+r),
+        angle: cell("R"+r),
+        n: cell("S"+r),
+        _structureType: cell("AA"+r),
+        _rim: cell("AB"+r),
+        _inflowAngle1: cell("AG"+r),
+        _inflowAngle2: cell("AH"+r),
+        _capturedQOverride: cell("AK"+r),
+      });
+    }
+
+    const jurisdiction = cell("T3") || "MCDOT";
+    const pipeStorm    = cell("H3") || "10yr";
+
+    // Pass 1: every unique fromId and toId becomes a structure.
+    const seen = Object.create(null);
+    for(const p of pipes){
+      for(const sid of [p.fromId, p.toId]){
+        if(sid && !seen[sid]){
+          seen[sid] = {
+            structureId: sid, type: "manhole", rim: "", capturedQOverride: "",
+          };
+        }
+      }
+    }
+    // Pass 2: enrich from the pipe row where A == structureId.
+    const byFrom = Object.create(null);
+    for(const p of pipes) byFrom[p.fromId] = p;
+    for(const sid of Object.keys(seen)){
+      const src = byFrom[sid];
+      if(src){
+        if(src._structureType) seen[sid].type = String(src._structureType).toLowerCase();
+        if(src._rim !== "" && src._rim != null) seen[sid].rim = src._rim;
+        if(src._capturedQOverride !== "" && src._capturedQOverride != null){
+          seen[sid].capturedQOverride = src._capturedQOverride;
+        }
+      }
+    }
+    // Pass 3: outfall = structure that only appears as a toId.
+    const allFrom = new Set(pipes.map(p => p.fromId));
+    for(const sid of Object.keys(seen)){
+      if(!allFrom.has(sid) && seen[sid].type === "manhole"){
+        seen[sid].type = "outfall";
+      }
+    }
+    const structures = Object.values(seen);
+
+    // ---- C_FACTOR drainage rows ----
+    const drainage = [];
+    const cf = wb.Sheets["C_FACTOR"];
+    if(cf){
+      const cellCf = (addr) => {
+        const c = cf[addr];
+        if(!c) return "";
+        return (c.v !== undefined && c.v !== null) ? c.v : "";
+      };
+      for(let r = 6; r <= 88; r++){
+        const sid = cellCf("B"+r);
+        if(sid === "" || sid == null) continue;
+        drainage.push({
+          structureId: String(sid),
+          area: cellCf("C"+r),
+          C:    cellCf("M"+r),
+          tc:   cellCf("V"+r),
+        });
+      }
+    }
+
+    // ---- Config toggles (golden only; defaults otherwise) ----
+    const config = {
+      junctionAngleRule:   "smaller-loss",
+      hglCrownCeilingRule: "crown-plus-1ft",
+      hglMethod:           "HEC-22 EGL (d/s crown floor)",
+      projectName:         "",
+      templateShape:       "simple",
+      contractVersion:     1,
+    };
+    const cfg = wb.Sheets["Config"];
+    if(cfg){
+      const cellCfg = (addr) => {
+        const c = cfg[addr];
+        if(!c) return "";
+        return (c.v !== undefined && c.v !== null) ? c.v : "";
+      };
+      if(cellCfg("B1")) config.projectName         = String(cellCfg("B1"));
+      if(cellCfg("B3")) config.junctionAngleRule   = String(cellCfg("B3"));
+      if(cellCfg("B4")) config.hglCrownCeilingRule = String(cellCfg("B4"));
+      if(cellCfg("B5")) config.hglMethod           = String(cellCfg("B5"));
+      if(cellCfg("B6")) config.templateShape       = String(cellCfg("B6"));
+      if(cellCfg("B7")) config.contractVersion     = Number(cellCfg("B7"));
+    }
+
+    return {
+      _shape: "simple",
+      pipes, structures, drainage, config,
+      hydraulics: { jurisdiction, pipeStorm },
+    };
+  }
+
+  function readRobustWorkbook(wb){
+    throw new Error("readRobustWorkbook not yet implemented (Task 21)");
+  }
+
+  const api = { detectShape, readSimpleWorkbook, readRobustWorkbook,
+                hglMethodFromLabel };
+  if(typeof window !== "undefined") window.__xlsxShapeReader = api;
+  if(typeof module !== "undefined" && module.exports) module.exports = api;
+})();
+
+</script>
+<script>
 /* ==========================================================================
    Storm Drain Design Calculator
    Drainage Area (Rational Method) -> Junction Structure -> Pipe -> Structure
@@ -1519,6 +1677,7 @@ function defaultInletSpacingRow() {
 const state = {
   project: "Untitled Storm Drain Project",
   active: "overview",
+  exportShape: "robust", // "simple" | "robust"; see Task 15 UI toggle
   drainage: [],
   structures: [],
   pipes: [],
@@ -1531,7 +1690,7 @@ const state = {
   inletSpacing: [],
   inletSpacingSettings: defaultInletSpacingSettings(),
   rainfall: defaultRainfallSettings(),
-  hydraulics: { hglMethod: "hec22" },
+  hydraulics: { hglMethod: "hec22", junctionAngleRule: "smaller-loss", hglCrownCeilingRule: "crown-plus-1ft" },
 };
 
 function defaultOutletFields(){
@@ -6753,12 +6912,75 @@ function sheetToRows(wb, name){
   });
 }
 
+function applySimpleReaderResult(simple){
+  state.structures = simple.structures.map(s => ({
+    id: nextId(), structureId: s.structureId, desc: "",
+    type: s.type || "manhole", drainageAreaId: "",
+    rim: s.rim === "" ? "" : s.rim,
+    startElev: "", forceElev: false,
+    splitMethod: "capacity", splitCapacity: "", splitRatio: 0.5,
+    structureMode: "", agency: "", standardStructureId: "",
+    structureCategory: "", shape: "", innerDiameter: "",
+    innerWidth: "", innerLength: "",
+  }));
+  const idByLabel = {};
+  state.structures.forEach(s => { idByLabel[s.structureId] = s.id; });
+  state.pipes = simple.pipes.map(p => ({
+    id: nextId(),
+    fromStructureId: idByLabel[p.fromId] || "",
+    toStructureId:   idByLabel[p.toId]   || "",
+    angle: p.angle || 0,
+    shape: "circular",
+    size: p.size || "",
+    n: (p.n === "" || p.n == null) ? 0.013 : p.n,
+    material: "",
+    upstreamInvert:   p.usInvert === "" ? "" : p.usInvert,
+    downstreamInvert: p.dsInvert === "" ? "" : p.dsInvert,
+    slope: "", length: p.length || "",
+    splitRole: "",
+  }));
+  state.drainage = simple.drainage.map(d => ({
+    id: nextId(), structureId: d.structureId,
+    desc: "", area: d.area || "", C: d.C || "",
+    iOverride: "", tc: d.tc || "", cf: 1,
+    tcMethod: "direct",
+    tr55: { segments: [] },
+  }));
+  state.outletStructures = [];
+  state.outletDevices = [];
+  state.activeOutletId = "";
+  state.rainfall.customNoaa = {};
+  state.rainfall.fetchedNoaa = null;
+  state.hydraulics.junctionAngleRule   = simple.config.junctionAngleRule;
+  state.hydraulics.hglCrownCeilingRule = simple.config.hglCrownCeilingRule;
+  state.hydraulics.hglMethod = window.__xlsxShapeReader.hglMethodFromLabel(
+    simple.config.hglMethod
+  );
+  if(simple.config.projectName) state.project = simple.config.projectName;
+}
+
 function importExcel(file){
   const reader = new FileReader();
   reader.onload = (e)=>{
     try{
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, {type:"array", cellFormula:false});
+      const shape = window.__xlsxShapeReader.detectShape(wb);
+      if(shape === "unknown"){
+        toast("Couldn't detect template shape. This file should be a WIP "
+              +"template, golden template, or calculator export.", true);
+        return;
+      }
+      if(shape === "simple"){
+        const simple = window.__xlsxShapeReader.readSimpleWorkbook(wb);
+        applySimpleReaderResult(simple);
+        state.exportShape = "simple";
+        toast("Imported Simple template. Outlet structures, TR-55 "
+              +"segments, and custom NOAA data were not in the file.");
+        renderAll(); updateSavesUI();
+        return;
+      }
+      // Fall through to the existing Robust-native read path.
 
       // ---- Rainfall Settings ----
       const rfWs = wb.Sheets["Rainfall Settings"];
