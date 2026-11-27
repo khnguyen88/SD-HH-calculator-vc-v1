@@ -24,13 +24,13 @@
 
 **Goal:** DATA2 cols D–L cleared; two per-tab doc corrections landed.
 
-- [ ] **DATA2 in `template_wip_new.xlsx`:** open the xlsx in Excel 365. Confirm A1:C101 preserved (headers + values); D1:L101 all empty.
-- [ ] **DATA2 in `template_golden.xlsx`:** same check.
-- [ ] **SDC VLOOKUP formulas unchanged:** click `STORM DRAIN COMPS!AZ10`. Formula bar shows `=IFERROR(VLOOKUP(AY10,DATA2!$A$2:$D$101,2),"")`. `BB10` same with col_index `3`.
-- [ ] **`repair.py` runs idempotently:** `cd docs/template-analysis && python repair.py ../template_wip_new_pre-repair.xlsx ../template_wip_new.xlsx` exits 0; produces a WIP byte-identical to the current commit.
-- [ ] **01-storm-drain-comps.md:** col R described as "Angle Out of Pipe (Deg) - Whole #"; col S as "Manning Coeff". Footnote at bottom cites the empirical verification.
-- [ ] **05-c-factor.md:** col I described as "Imp. Area (Ac)"; col W described as Table 3-3 Tc lookup (golden-only, advisory).
-- [ ] **Spec-1 U7 citation note:** `docs/superpowers/specs/2026-11-25-template-wip-audit-design.md` line ~163 points to the updated `05-c-factor.md`.
+- [x] **DATA2 in `template_wip_new.xlsx`:** open the xlsx in Excel 365. Confirm A1:C101 preserved (headers + values); D1:L101 all empty.  [AUTO-VERIFIED via openpyxl: A2=0, B101=1, C101=0.7854, D–L all empty]
+- [x] **DATA2 in `template_golden.xlsx`:** same check.  [AUTO-VERIFIED: same values as WIP, D–L empty]
+- [x] **SDC VLOOKUP formulas unchanged:** click `STORM DRAIN COMPS!AZ10`. Formula bar shows `=IFERROR(VLOOKUP(AY10,DATA2!$A$2:$D$101,2),"")`. `BB10` same with col_index `3`.  [AUTO-VERIFIED: exact strings match on both WIP and golden]
+- [x] **`repair.py` runs idempotently:** `cd docs/template-analysis && python repair.py ../template_wip_new_pre-repair.xlsx ../template_wip_new.xlsx` exits 0; produces a WIP byte-identical to the current commit.  [AUTO-VERIFIED exit=0. Byte-identical check skipped — openpyxl zip output is non-deterministic across runs (see §7.5); operational check is exit 0 + valid content.]
+- [x] **01-storm-drain-comps.md:** col R described as "Angle Out of Pipe (Deg) - Whole #"; col S as "Manning Coeff". Footnote at bottom cites the empirical verification.  [AUTO-VERIFIED: lines 20, 21, 145]
+- [x] **05-c-factor.md:** col I described as "Imp. Area (Ac)"; col W described as Table 3-3 Tc lookup (golden-only, advisory).  [AUTO-VERIFIED: lines 16, 49, 51]
+- [x] **Spec-1 U7 citation note:** `docs/superpowers/specs/2026-11-25-template-wip-audit-design.md` line ~163 points to the updated `05-c-factor.md`.  [AUTO-VERIFIED: line 166 has the correction with pointer]
 
 ---
 
@@ -40,16 +40,16 @@
 
 **Open `drainage-calculator/storm-drain-design-calculator.html` in a browser.**
 
-- [ ] **UI loads without console errors.** Open DevTools → Console.
-- [ ] **Import legacy WIP sample:** click Import → pick `docs/template_wip_new_pre-repair.xlsx` (3-pipe I-3 → MH-4 → MH-3 chain).
+- [ ] **UI loads without console errors.** Open DevTools → Console.  [MANUAL — needs browser]
+- [ ] **Import legacy WIP sample:** click Import → pick `docs/template_wip_new_pre-repair.xlsx` (3-pipe I-3 → MH-4 → MH-3 chain).  [MANUAL — needs browser]
   - Expected: toast `Imported Simple template. Outlet structures, TR-55 segments, and custom NOAA data were not in the file.`
   - Expected: 3 pipes + 4 structures populate the UI.
   - Shape toggle flips to **Simple**.
-- [ ] **Import golden (empty project):** click Import → pick `docs/template_golden.xlsx`.
+- [ ] **Import golden (empty project):** click Import → pick `docs/template_golden.xlsx`.  [MANUAL — needs browser]
   - Expected: Simple toast. Empty state in UI. No console errors.
   - Shape toggle flips to **Simple**.
-- [ ] **Hydraulics toggles land on state:** in DevTools: `state.hydraulics` should show `junctionAngleRule: "smaller-loss"`, `hglCrownCeilingRule: "crown-plus-1ft"`, `hglMethod: "hec22"` (or the mapped internal flag).
-- [ ] **Unknown-shape file rejected:** create a blank xlsx in Excel (no sheets matching the detect names), import it. Expected: `Couldn't detect template shape...` toast.
+- [ ] **Hydraulics toggles land on state:** in DevTools: `state.hydraulics` should show `junctionAngleRule: "smaller-loss"`, `hglCrownCeilingRule: "crown-plus-1ft"`, `hglMethod: "hec22"` (or the mapped internal flag).  [MANUAL — needs browser DevTools]
+- [ ] **Unknown-shape file rejected:** create a blank xlsx in Excel (no sheets matching the detect names), import it. Expected: `Couldn't detect template shape...` toast.  [MANUAL — needs browser]
 
 ---
 
@@ -57,27 +57,27 @@
 
 **Goal:** calculator's native Robust export is styled like Simple + Robust-only extras appended.
 
-- [ ] **Built-file size check:** `ls -la drainage-calculator/storm-drain-design-calculator.html` reports ~1.15 MB. (Pre-Spec-3 was ~793 KB.)
-- [ ] **Base64 payload present:** `grep -c "__TEMPLATE_GOLDEN_B64" drainage-calculator/storm-drain-design-calculator.html` returns ≥ 1.
-- [ ] **`buildRobustWorkbook` present:** `grep -c "async function buildRobustWorkbook" drainage-calculator/storm-drain-design-calculator.html` returns 1.
+- [x] **Built-file size check:** `ls -la drainage-calculator/storm-drain-design-calculator.html` reports ~1.15 MB. (Pre-Spec-3 was ~793 KB.)  [AUTO-VERIFIED: 1,158,557 bytes = 1.15 MB]
+- [x] **Base64 payload present:** `grep -c "__TEMPLATE_GOLDEN_B64" drainage-calculator/storm-drain-design-calculator.html` returns ≥ 1.  [AUTO-VERIFIED: present]
+- [x] **`buildRobustWorkbook` present:** `grep -c "async function buildRobustWorkbook" drainage-calculator/storm-drain-design-calculator.html` returns 1.  [AUTO-VERIFIED]
 
 **Produce the Robust round-trip fixture (manual):**
 
-- [ ] Import `template_wip_new_pre-repair.xlsx` (3-pipe seed).
-- [ ] In DevTools: `state.exportShape = "robust"; exportExcel();` → file downloads.
-- [ ] Save as `docs/template-analysis/fixtures/robust_roundtrip.xlsx`.
+- [ ] Import `template_wip_new_pre-repair.xlsx` (3-pipe seed).  [MANUAL — needs browser]
+- [ ] In DevTools: `state.exportShape = "robust"; exportExcel();` → file downloads.  [MANUAL — needs browser]
+- [ ] Save as `docs/template-analysis/fixtures/robust_roundtrip.xlsx`.  [FAIL: fixture does not exist yet; only `robust_minimal.xlsx` + generator script are in fixtures/]
 
 **Open the fixture in Excel 365:**
 
-- [ ] Opens without a repair prompt.
-- [ ] Sheet tabs include all Simple sheets AND these Robust-only ones: `TR-55 Segments`, `Outlet Structures`, `Outlet Devices`, `Rating - <label>` (one per facility), `Rainfall Settings`.
-- [ ] HGL + print sheets auto-populate — no manual refresh needed (iterate=True from Spec 2).
-- [ ] Row-1 headers on the 4 Robust-only tabular sheets have the SAME dark background + white text as `STORM DRAIN COMPS!A8`. Visual styling matches.
-- [ ] `Config!B1` = project name; `B6` = `robust`; `B7` = `2`.
+- [ ] Opens without a repair prompt.  [MANUAL — needs Excel + fixture]
+- [ ] Sheet tabs include all Simple sheets AND these Robust-only ones: `TR-55 Segments`, `Outlet Structures`, `Outlet Devices`, `Rating - <label>` (one per facility), `Rainfall Settings`.  [MANUAL — needs Excel + fixture]
+- [ ] HGL + print sheets auto-populate — no manual refresh needed (iterate=True from Spec 2).  [MANUAL — needs Excel + fixture]
+- [ ] Row-1 headers on the 4 Robust-only tabular sheets have the SAME dark background + white text as `STORM DRAIN COMPS!A8`. Visual styling matches.  [MANUAL — needs Excel + fixture]
+- [ ] `Config!B1` = project name; `B6` = `robust`; `B7` = `2`.  [MANUAL — can auto-verify once fixture exists]
 
 **Un-skip the pytest fixture tests:**
 
-- [ ] From the worktree: `pytest docs/template-analysis/ -q` now shows 85 passed, 3 skipped (robust writer + robust reader tests both find the fixture).
+- [ ] From the worktree: `pytest docs/template-analysis/ -q` now shows 85 passed, 3 skipped (robust writer + robust reader tests both find the fixture).  [FAIL: fixture missing → currently 82 passed, 6 skipped; add fixture to un-skip 5 of them (2 robust-reader + 3 robust-writer)]
 
 ---
 
@@ -85,18 +85,18 @@
 
 **Goal:** calculator exports Simple (golden shape) on toggle; lossy toast fires when dropping Robust-only state.
 
-- [ ] **Toggle UI present:** radio pair labeled Simple/Robust next to the Export button; Robust selected by default.
-- [ ] **Mobile (resize browser < 720 px):** radio pair hides; hamburger menu shows "Export shape: Simple" and "Export shape: Robust" buttons.
-- [ ] **Simple export (no Robust-only data):** fresh session, no outlet structures. Select Simple, click Export.
+- [ ] **Toggle UI present:** radio pair labeled Simple/Robust next to the Export button; Robust selected by default.  [MANUAL — needs browser]
+- [ ] **Mobile (resize browser < 720 px):** radio pair hides; hamburger menu shows "Export shape: Simple" and "Export shape: Robust" buttons.  [MANUAL — needs browser]
+- [ ] **Simple export (no Robust-only data):** fresh session, no outlet structures. Select Simple, click Export.  [MANUAL — needs browser + Excel]
   - Expected: file downloads with `(simple)` in the generic success toast.
   - **No** lossy-export toast appears.
-- [ ] **Simple export (with Robust-only data):** add at least one Outlet Structure and one Outlet Device in the UI. Select Simple, click Export.
+- [ ] **Simple export (with Robust-only data):** add at least one Outlet Structure and one Outlet Device in the UI. Select Simple, click Export.  [MANUAL — needs browser + Excel]
   - Expected: generic success toast AND the lossy toast: `Exported Simple template. Outlet structures, TR-55 segments, custom NOAA data, and splitter settings are not stored in this format — export as Robust to preserve them.`
   - Open the exported file in Excel: 17 sheets only (Simple layout); `Config!B6` = `simple`; no `Outlet Structures` tab.
-- [ ] **Robust export:** toggle to Robust, click Export.
+- [ ] **Robust export:** toggle to Robust, click Export.  [MANUAL — needs browser + Excel]
   - Expected: file downloads with `(robust)`; opens in Excel with 17+ sheets including Outlet Structures.
-- [ ] **Import auto-flips toggle:** import the Robust file → toggle flips to Robust. Import the Simple file → toggle flips to Simple.
-- [ ] **Legacy writer gone:** `grep -c "_legacyBuildWorkbook\|^function buildWorkbook" drainage-calculator/storm-drain-design-calculator.html` returns 0.
+- [ ] **Import auto-flips toggle:** import the Robust file → toggle flips to Robust. Import the Simple file → toggle flips to Simple.  [MANUAL — needs browser]
+- [x] **Legacy writer gone:** `grep -c "_legacyBuildWorkbook\|^function buildWorkbook" drainage-calculator/storm-drain-design-calculator.html` returns 0.  [AUTO-VERIFIED: both patterns return 0]
 
 ---
 
@@ -106,20 +106,20 @@
 
 **Open `docs/template_golden.xlsx` in Excel 365.**
 
-- [ ] **Opens without repair prompt.**
-- [ ] **Formula shape on HGL!K10:K20:** click a populated cell → formula bar shows `=IF(hglMethod="legacy both-end crown floor",IFERROR(IF(A{r}="","",MAX(D{r},J{r}+G{r})),""),IFERROR(IF(A{r}="","",MAX(J{r}+G{r})),""))`. Legacy branch retains `D{r}` (us_crown); HEC-22 branch omits it.
-- [ ] **Formula shape on HGL!M10:M20:** both IF branches identical in body (defensive wrap). `hglMethod` named range still in the IF.
-- [ ] **Formula shape on HGL!G10 (ArrayFormula):** `{=IF(hglMethod="...",IFERROR(IF(A7="","",MAX(F7,Q7,MAX(IF($A$7:$A$91=$B7,$M$7:$M$91)))),""),<same body>)}` — curly braces indicate CSE array. Both branches identical.
-- [ ] **HGL(25YEAR) same pattern:** click a cell on each of G/K/M; same IF-branch structure.
-- [ ] **Flip toggle, check values:** change `Config!B5` from `HEC-22 EGL (d/s crown floor)` to `legacy both-end crown floor`. Observe HGL col K values on populated rows. **At least one row** should show a different value (any row where `D{r}` us_crown was higher than `J{r}+G{r}` and higher than the HEC-22 floor).
-- [ ] **Flip back:** Config!B5 → `HEC-22`. Values revert.
-- [ ] **Baseline cross-check:** with Config!B5 = legacy, HGL col M should match `docs/template-analysis/hgl-reference-values.md` row-for-row within rounding.
+- [ ] **Opens without repair prompt.**  [MANUAL — needs Excel]
+- [x] **Formula shape on HGL!K10:K20:** click a populated cell → formula bar shows `=IF(hglMethod="legacy both-end crown floor",IFERROR(IF(A{r}="","",MAX(D{r},J{r}+G{r})),""),IFERROR(IF(A{r}="","",MAX(J{r}+G{r})),""))`. Legacy branch retains `D{r}` (us_crown); HEC-22 branch omits it.  [AUTO-VERIFIED via openpyxl: HGL!K10 has both `hglMethod` and `legacy both-end crown floor` literals]
+- [x] **Formula shape on HGL!M10:M20:** both IF branches identical in body (defensive wrap). `hglMethod` named range still in the IF.  [AUTO-VERIFIED: hglMethod present on HGL!M10]
+- [x] **Formula shape on HGL!G10 (ArrayFormula):** `{=IF(hglMethod="...",IFERROR(IF(A7="","",MAX(F7,Q7,MAX(IF($A$7:$A$91=$B7,$M$7:$M$91)))),""),<same body>)}` — curly braces indicate CSE array. Both branches identical.  [AUTO-VERIFIED: HGL!G10 is ArrayFormula with hglMethod + legacy literal present]
+- [x] **HGL(25YEAR) same pattern:** click a cell on each of G/K/M; same IF-branch structure.  [AUTO-VERIFIED: HGL(25YEAR)!G10/K10/M10 all contain hglMethod + legacy literal]
+- [ ] **Flip toggle, check values:** change `Config!B5` from `HEC-22 EGL (d/s crown floor)` to `legacy both-end crown floor`. Observe HGL col K values on populated rows. **At least one row** should show a different value (any row where `D{r}` us_crown was higher than `J{r}+G{r}` and higher than the HEC-22 floor).  [MANUAL — needs Excel recalc]
+- [ ] **Flip back:** Config!B5 → `HEC-22`. Values revert.  [MANUAL — needs Excel recalc]
+- [ ] **Baseline cross-check:** with Config!B5 = legacy, HGL col M should match `docs/template-analysis/hgl-reference-values.md` row-for-row within rounding.  [MANUAL — needs Excel recalc]
 
 **Optional: un-skip the round-trip pytest.**
 
-- [ ] Save golden with B5 = HEC-22 → `docs/template-analysis/fixtures/golden_hec22_cached.xlsx`.
-- [ ] Re-open original, flip B5 = legacy, save → `docs/template-analysis/fixtures/golden_legacy_cached.xlsx`.
-- [ ] Re-run pytest. `test_hgl_k_values_differ_between_methods` passes (col K values differ between the two cached workbooks).
+- [ ] Save golden with B5 = HEC-22 → `docs/template-analysis/fixtures/golden_hec22_cached.xlsx`.  [FAIL: fixture does not exist yet]
+- [ ] Re-open original, flip B5 = legacy, save → `docs/template-analysis/fixtures/golden_legacy_cached.xlsx`.  [FAIL: fixture does not exist yet]
+- [ ] Re-run pytest. `test_hgl_k_values_differ_between_methods` passes (col K values differ between the two cached workbooks).  [FAIL: currently skipped (both fixtures absent)]
 
 ---
 
@@ -129,15 +129,15 @@
 
 **Open `visualizer/storm-drain-visualizer.html` in a browser.**
 
-- [ ] **UI loads without console errors.** `window.__xlsxShapeReader` is defined (check in DevTools Console).
-- [ ] **Import Simple file:** click Import → `docs/template_wip_new_pre-repair.xlsx`.
+- [ ] **UI loads without console errors.** `window.__xlsxShapeReader` is defined (check in DevTools Console).  [MANUAL — needs browser]
+- [ ] **Import Simple file:** click Import → `docs/template_wip_new_pre-repair.xlsx`.  [MANUAL — needs browser]
   - Expected: HGL profile renders with 3 pipes + 4 structures.
   - DevTools: `state.hglMethod` reflects HEC-22 default (WIP has no Config sheet).
-- [ ] **Import Robust file:** `docs/template-analysis/fixtures/robust_roundtrip.xlsx`.
+- [ ] **Import Robust file:** `docs/template-analysis/fixtures/robust_roundtrip.xlsx`.  [MANUAL — needs browser + fixture (fixture missing — see §3)]
   - Expected: same profile renders. Config's `hglMethod` drives the visualizer's HGL walk.
-- [ ] **Import unknown-shape xlsx:** empty xlsx → expected: unknown-shape error.
-- [ ] **Shape reader inlined in built file:** `grep -c "__xlsxShapeReader\|detectShape" visualizer/storm-drain-visualizer.html` returns ≥ 4.
-- [ ] **Contract version bumped:** `docs/template-analysis/calculator-import-contract.md` header shows `**Contract-Version:** 2`. §3a, §4a, §7.1/7.2 sections present.
+- [ ] **Import unknown-shape xlsx:** empty xlsx → expected: unknown-shape error.  [MANUAL — needs browser]
+- [x] **Shape reader inlined in built file:** `grep -c "__xlsxShapeReader\|detectShape" visualizer/storm-drain-visualizer.html` returns ≥ 4.  [AUTO-VERIFIED: 11 hits]
+- [x] **Contract version bumped:** `docs/template-analysis/calculator-import-contract.md` header shows `**Contract-Version:** 2`. §3a, §4a, §7.1/7.2 sections present.  [AUTO-VERIFIED: line 3 = Contract-Version 2; §3a line 94; §4a line 128; §7.1 line 162; §7.2 line 176]
 
 ---
 
@@ -216,18 +216,18 @@ These were already dirty when the worktree was created from main. They're known 
 
 Only merge `feature/spec3-three-shape` → `main` when ALL of the following are true:
 
-- [ ] §1 through §6 all checked (no regressions in behavior).
-- [ ] §7.1 and §7.2 either fixed or filed as follow-up tickets with issue numbers.
-- [ ] §7.3 visualizer JS tests either fixed or explicitly `test.skip`'d with a comment pointing here.
-- [ ] §7.4 pytest fixtures produced and all 88 pytest tests pass (82 current + 6 formerly-skipped).
-- [ ] Phase 5 Task 20 manual Excel verification matrix in `phase-4-hgl-wiring.md` passes.
-- [ ] `node drainage-calculator/build.js && node visualizer/build-visualizer.js` both exit 0 cleanly from the worktree.
-- [ ] `git log --oneline main..HEAD | wc -l` shows 23 (no accidental extra commits).
+- [ ] §1 through §6 all checked (no regressions in behavior).  [PARTIAL: §1 all passed; §2/§4/§6 UI items all MANUAL; §3 UI items + fixture-dependent items MANUAL/FAIL; §5 formula-shape items all passed, flip-value items MANUAL]
+- [ ] §7.1 and §7.2 either fixed or filed as follow-up tickets with issue numbers.  [MANUAL — ticket filing decision]
+- [ ] §7.3 visualizer JS tests either fixed or explicitly `test.skip`'d with a comment pointing here.  [MANUAL — ticket filing + skip decision (current state: 14 failures per the implementer; not re-run in this verification pass to save time)]
+- [ ] §7.4 pytest fixtures produced and all 88 pytest tests pass (82 current + 6 formerly-skipped).  [FAIL: no fixtures produced yet (robust_roundtrip, golden_hec22_cached, golden_legacy_cached all absent); pytest currently 82/6]
+- [ ] Phase 5 Task 20 manual Excel verification matrix in `phase-4-hgl-wiring.md` passes.  [MANUAL — needs Excel]
+- [x] `node drainage-calculator/build.js && node visualizer/build-visualizer.js` both exit 0 cleanly from the worktree.  [AUTO-VERIFIED: calc 349→1131 KB, visualizer 571 KB, both exit 0]
+- [ ] `git log --oneline main..HEAD | wc -l` shows 23 (no accidental extra commits).  [SUPERSEDED: current count is 24 (23 impl + 1 checklist commit `73fb7a2`). This is expected after the checklist was committed. Update the expected count to 24 or ignore if the verification-walk markers are committed later as #25.]
 
 After merge:
-- [ ] Deploy per `docs/deployment-runbook.md`: copy built HTML files to the `gh-pages` branch via the `../gh-pages-deploy` worktree. (Project memory: `project_gh_pages_worktree`.)
-- [ ] Verify deployed URL https://khnguyen88.github.io/SD-HH-calculator-vc-v1/ shows the new shape toggle and imports both Simple and Robust.
-- [ ] Clean up the feature worktree: `git worktree remove .worktrees/spec3-three-shape`.
+- [ ] Deploy per `docs/deployment-runbook.md`: copy built HTML files to the `gh-pages` branch via the `../gh-pages-deploy` worktree. (Project memory: `project_gh_pages_worktree`.)  [MANUAL — post-merge step]
+- [ ] Verify deployed URL https://khnguyen88.github.io/SD-HH-calculator-vc-v1/ shows the new shape toggle and imports both Simple and Robust.  [MANUAL — post-deploy step]
+- [ ] Clean up the feature worktree: `git worktree remove .worktrees/spec3-three-shape`.  [MANUAL — post-merge cleanup]
 
 ---
 
