@@ -26,6 +26,17 @@ out = out.replace(
   '<script>\n' + shapeReaderSrc.replace(/\$/g, '$$$$') + '\n</script>'
 );
 
+// Spec 3: Embed the golden template bytes as base64 so buildSimpleWorkbook
+// and buildRobustWorkbook can load it as a styled base. ~335 KB increase.
+const goldenBytes = fs.readFileSync(
+  path.join(__dirname, "..", "docs", "template_golden.xlsx")
+);
+const goldenB64 = goldenBytes.toString("base64");
+out = out.replace(
+  /<!--\s*TEMPLATE_GOLDEN_B64_PLACEHOLDER\s*-->(\s*<script>[\s\S]*?__TEMPLATE_GOLDEN_B64[\s\S]*?<\/script>)?/,
+  "<script>window.__TEMPLATE_GOLDEN_B64 = \"" + goldenB64 + "\";</script>"
+);
+
 fs.writeFileSync(outFile, out);
 
 const inKB = Math.round(fs.statSync(devFile).size / 1024);
