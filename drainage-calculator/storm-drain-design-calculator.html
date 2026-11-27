@@ -891,7 +891,23 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     const outletStructures = readSheetAsObjects(wb, "Outlet Structures");
     const outletDevices    = readSheetAsObjects(wb, "Outlet Devices");
 
-    return Object.assign(base, { tr55Segments, outletStructures, outletDevices });
+    // ---- Rainfall Settings (Robust-only — custom + fetched NOAA) ----
+    // Format: key/value pairs in col A/B. Static keys plus optional
+    // Custom NOAA 5/10/15/30/60-min and the Fetched NOAA metadata +
+    // 8 storms × 5 durations grid (when a NOAA location was fetched).
+    const rainfallSettings = {};
+    const rfWs = wb.Sheets["Rainfall Settings"];
+    if(rfWs){
+      const aoa = XLSX.utils.sheet_to_json(rfWs, {header:1, raw:false, defval:""});
+      for(const row of aoa){
+        const k = String(row[0]||"").trim();
+        if(k) rainfallSettings[k] = row[1];
+      }
+    }
+
+    return Object.assign(base, {
+      tr55Segments, outletStructures, outletDevices, rainfallSettings,
+    });
   }
 
   function readSheetAsObjects(wb, sheetName){
@@ -7029,6 +7045,43 @@ function applyRobustReaderResult(robust){
       notes: r["Notes"] || "",
     };
   });
+  // ---- Rainfall Settings (Robust-only round-trip) ----
+  // Restores custom NOAA overrides + fetched NOAA grid that Spec 2's
+  // Robust writer emits. applySimpleReaderResult already picked up the
+  // Config toggles; this picks up the rainfall details that only the
+  // Robust shape persists.
+  const rf = robust.rainfallSettings || {};
+  if(Object.keys(rf).length){
+    const str = (v) => (v === "" || v == null) ? "" : String(v);
+    if(rf["Rainfall Source"]) state.rainfall.rainfallSource = str(rf["Rainfall Source"]);
+    if(rf["County"])          state.rainfall.county         = str(rf["County"]);
+    if(rf["Pipe & HGL Design Storm"]) state.rainfall.pipeStorm = str(rf["Pipe & HGL Design Storm"]);
+    if(rf["25-yr Check"] !== undefined) state.rainfall.pipe25Check = (str(rf["25-yr Check"]) === "TRUE");
+    if(rf["Inlet Design Storm"]) state.rainfall.inletStorm = str(rf["Inlet Design Storm"]);
+    // Custom NOAA overrides (5/10/15/30/60-min).
+    state.rainfall.customNoaa = state.rainfall.customNoaa || {};
+    [5,10,15,30,60].forEach(d => {
+      const v = rf["Custom NOAA " + d + "-min (in/hr)"];
+      if(v !== "" && v != null) state.rainfall.customNoaa[d] = str(v);
+    });
+    // Fetched NOAA metadata + 8 storms × 5 durations grid.
+    const fLat = parseFloat(rf["Fetched NOAA Lat"]);
+    const fLon = parseFloat(rf["Fetched NOAA Lon"]);
+    if(isFinite(fLat) && isFinite(fLon)){
+      const fData = { lat: fLat, lon: fLon,
+                      displayName: str(rf["Fetched NOAA Name"]) };
+      const stormLabels = {"1yr":"1-yr","2yr":"2-yr","5yr":"5-yr",
+        "10yr":"10-yr","25yr":"25-yr","50yr":"50-yr","100yr":"100-yr","500yr":"500-yr"};
+      ["1yr","2yr","5yr","10yr","25yr","50yr","100yr","500yr"].forEach(s => {
+        fData[s] = {};
+        [5,10,15,30,60].forEach(d => {
+          const v = parseFloat(rf["Fetched " + stormLabels[s] + " " + d + "-min (in/hr)"]);
+          fData[s][d] = isFinite(v) ? v : "";
+        });
+      });
+      state.rainfall.fetchedNoaa = fData;
+    }
+  }
 }
 
 function importExcel(file){

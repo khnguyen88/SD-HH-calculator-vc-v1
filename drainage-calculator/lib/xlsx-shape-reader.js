@@ -177,7 +177,23 @@
     const outletStructures = readSheetAsObjects(wb, "Outlet Structures");
     const outletDevices    = readSheetAsObjects(wb, "Outlet Devices");
 
-    return Object.assign(base, { tr55Segments, outletStructures, outletDevices });
+    // ---- Rainfall Settings (Robust-only — custom + fetched NOAA) ----
+    // Format: key/value pairs in col A/B. Static keys plus optional
+    // Custom NOAA 5/10/15/30/60-min and the Fetched NOAA metadata +
+    // 8 storms × 5 durations grid (when a NOAA location was fetched).
+    const rainfallSettings = {};
+    const rfWs = wb.Sheets["Rainfall Settings"];
+    if(rfWs){
+      const aoa = XLSX.utils.sheet_to_json(rfWs, {header:1, raw:false, defval:""});
+      for(const row of aoa){
+        const k = String(row[0]||"").trim();
+        if(k) rainfallSettings[k] = row[1];
+      }
+    }
+
+    return Object.assign(base, {
+      tr55Segments, outletStructures, outletDevices, rainfallSettings,
+    });
   }
 
   function readSheetAsObjects(wb, sheetName){
