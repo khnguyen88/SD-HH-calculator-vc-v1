@@ -3,15 +3,17 @@
 #
 # Usage: python build_golden.py <wip_source.xlsx> <golden_output.xlsx>
 #
-# Six edits are applied in order (all idempotent):
+# Seven edits are applied in order (all idempotent):
 #   1. add_config_sheet        - new Config tab with 3 toggle named ranges
 #   2. rewire_junction_angle_rule - toggle-aware controlling-angle formula
 #   3. add_hgl_crown_ceiling_checks - clearance columns on HGL + HGL(25YEAR)
 #   4. annotate_hgl_method     - top-of-sheet hglMethod stamp
 #   5. add_u7_small_area_tc_lookup - Table 3-3 Tc lookup on C_FACTOR col W
 #   6. annotate_equations_sheet - toggle + citation annotations
+#   7. wire_hgl_method         - HGL G/K/M cols IF-branch on hglMethod (Spec 3)
 #
 # Spec: docs/superpowers/specs/2026-11-25-golden-template-design.md
+import re
 import sys
 
 import openpyxl
@@ -435,6 +437,143 @@ def annotate_equations_sheet(wb):
     write(33, 1, "  I-2 (HGL ≤ Rim − 1 ft; the crown-ceiling toggle disclosure).")
 
 
+HGL_DATA_ROW_START = 7
+HGL_DATA_ROW_END = 91
+HGL_METHOD_LEGACY_LABEL = "legacy both-end crown floor"
+HGL_METHOD_SHEETS = ("HGL", "HGL(25YEAR)")
+
+
+def _wrap_if_hgl_method(legacy_body, hec22_body):
+    """Compose the IF(hglMethod=legacy,...) wrapper used on HGL G/K/M."""
+    return (
+        f'=IF(hglMethod="{HGL_METHOD_LEGACY_LABEL}",'
+        f'{legacy_body},{hec22_body})'
+    )
+
+
+def _hec22_strip_us_crown(legacy_body, us_crown_token):
+    """Return the HEC-22 variant of a MAX(...) formula body.
+
+    Drops the us_crown term from the first MAX(...) call encountered.
+    Keeps everything else — IFERROR wrapper, IF(A{r}="",...) guard,
+    additional MAX args like downstream chain lookups — verbatim.
+    """
+    # Match: MAX(<args>)  where <us_crown_token> is one of the comma-
+    # separated args. Replace just that arg, preserving surrounding
+    # tokens exactly.
+    pattern = re.compile(
+        r"MAX\(([^()]*(?:\([^()]*\)[^()]*)*)\)"
+    )
+
+    def strip_arg(match):
+        inside = match.group(1)
+        # Split on commas that are not inside parens.
+        parts = []
+        depth = 0
+        start = 0
+        for i, ch in enumerate(inside):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                parts.append(inside[start:i])
+                start = i + 1
+        parts.append(inside[start:])
+        filtered = [p for p in parts if p.strip() != us_crown_token]
+        if len(filtered) == len(parts):
+            # us_crown token not present in this MAX — leave untouched.
+            return match.group(0)
+        return "MAX(" + ",".join(filtered) + ")"
+
+    # Only transform the first MAX we see (the crown-floor MAX, not
+    # any nested MAX(IF(...)) downstream chain lookup).
+    out, n = pattern.subn(strip_arg, legacy_body, count=1)
+    return out
+
+
+def wire_hgl_method(wb):
+    """Replace HGL cols G, K, M with IF(hglMethod=...) branching formulas.
+
+    Spec 2 left hglMethod label-only (P3 stamp only). Spec 3 Task 18 makes
+    the toggle drive the formulas on both HGL and HGL(25YEAR).
+
+    Branch semantics (docs/template-analysis/02-hgl.md §G, §K, §M):
+      - Legacy ("legacy both-end crown floor"): verbatim current formula.
+      - HEC-22 ("HEC-22 EGL (d/s crown floor)"): drops the us_crown term.
+
+    us_crown appears only on column K (as D{r}). Columns G (uses F{r}=
+    ds_crown) and M (no crown) are unchanged between branches; they still
+    get wrapped in IF(hglMethod=...,legacy,hec22) so the branch structure
+    is uniform across G/K/M and a single test can assert "all three cols
+    on both sheets carry the hglMethod toggle."
+
+    Column G is stored as an ArrayFormula (CSE) because of the embedded
+    MAX(IF($A$7:$A$91=$B{r},$M$7:$M$91)) chain lookup; the ArrayFormula
+    wrapper is preserved on rewrite.
+
+    Any row whose formula shape is unrecognized is logged to stderr and
+    left unchanged — never wreck a working formula on a bad guess.
+    """
+    for sheet_name in HGL_METHOD_SHEETS:
+        if sheet_name not in wb.sheetnames:
+            continue
+        ws = wb[sheet_name]
+
+        for r in range(HGL_DATA_ROW_START, HGL_DATA_ROW_END + 1):
+            # ---- Column G: ArrayFormula, no us_crown; wrap only.
+            gcell = ws[f"G{r}"]
+            gval = gcell.value
+            gtext = None
+            is_array = False
+            if isinstance(gval, ArrayFormula):
+                gtext = gval.text
+                is_array = True
+            elif isinstance(gval, str) and gval.startswith("="):
+                gtext = gval
+            if gtext is not None:
+                body = gtext.lstrip("=")
+                if "hglMethod" in body:
+                    # Already wired from a prior run — idempotent skip.
+                    pass
+                else:
+                    # G has no us_crown; HEC-22 variant == legacy.
+                    new_text = _wrap_if_hgl_method(body, body)
+                    if is_array:
+                        ws[f"G{r}"] = ArrayFormula(gval.ref, new_text)
+                    else:
+                        ws[f"G{r}"] = new_text
+
+            # ---- Column K: plain string formula, us_crown = D{r}.
+            kval = ws[f"K{r}"].value
+            if isinstance(kval, str) and kval.startswith("="):
+                body = kval.lstrip("=")
+                if "hglMethod" in body:
+                    pass  # idempotent
+                else:
+                    hec22 = _hec22_strip_us_crown(body, f"D{r}")
+                    if hec22 == body:
+                        print(
+                            f"[wire_hgl_method] unparsed {sheet_name}!K{r}: "
+                            f"us_crown token D{r} not found in "
+                            f"{body!r} — leaving unchanged",
+                            file=sys.stderr,
+                        )
+                    else:
+                        ws[f"K{r}"] = _wrap_if_hgl_method(body, hec22)
+
+            # ---- Column M: plain string formula, no crown terms; wrap only.
+            mval = ws[f"M{r}"].value
+            if isinstance(mval, str) and mval.startswith("="):
+                body = mval.lstrip("=")
+                if "hglMethod" in body:
+                    pass  # idempotent
+                else:
+                    ws[f"M{r}"] = _wrap_if_hgl_method(body, body)
+
+    return wb
+
+
 def enable_iterative_calculation(wb):
     # Belt-and-suspenders: repair.py also sets this on the WIP, but the
     # golden builder enforces it so the setting survives any WIP edit
@@ -455,6 +594,7 @@ def main(src, dst):
     annotate_hgl_method(wb)
     add_u7_small_area_tc_lookup(wb)
     annotate_equations_sheet(wb)
+    wire_hgl_method(wb)
     enable_iterative_calculation(wb)
     wb.save(dst)
     print(f"wrote {dst}")
