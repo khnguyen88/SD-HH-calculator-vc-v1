@@ -581,6 +581,19 @@ input[type="number"]::-webkit-outer-spin-button{
 input[type="number"]{ -moz-appearance:textfield; }
 input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
 
+.export-shape-toggle {
+  display: inline-flex;
+  gap: 0.6em;
+  margin-left: 0.6em;
+  font-size: 0.85em;
+  color: var(--muted, #aaa);
+}
+.export-shape-toggle label { cursor: pointer; }
+.export-shape-toggle input[type="radio"] { margin-right: 0.3em; }
+@media (max-width: 720px) {
+  .export-shape-toggle { display: none; } /* mobile uses hamburger */
+}
+
 </style>
 </head>
 <body>
@@ -629,12 +642,18 @@ input[inputmode="decimal"]:disabled{ opacity:0.55; cursor:not-allowed; }
         <button class="btn" id="importBtn" title="Import a previously exported .xlsx file">&#8593;<span class="btn-label"> Import from Excel</span></button>
         <input type="file" id="importFile" accept=".xlsx">
         <button class="btn btn-primary" id="exportBtn" title="Export all tables to a .xlsx file">&#8595;<span class="btn-label"> Export to Excel</span></button>
+        <span class="export-shape-toggle" title="Choose export format">
+          <label><input type="radio" name="exportShape" value="simple" id="exportShapeSimple"> Simple</label>
+          <label><input type="radio" name="exportShape" value="robust" id="exportShapeRobust" checked> Robust</label>
+        </span>
         <button class="btn" id="openVisualizerBtn" title="Send the current project to the HGL/EGL visualizer">Open in Visualizer</button>
       </div>
     </div>
 
     <div class="mobile-nav-panel" id="mobileNavPanel">
       <nav id="mobileNav"></nav>
+      <button class="mobile-nav-item" data-export-shape="simple">Export shape: Simple</button>
+      <button class="mobile-nav-item" data-export-shape="robust">Export shape: Robust</button>
     </div>
 
     <div class="content">
@@ -7195,6 +7214,7 @@ function importExcel(file){
         const simple = window.__xlsxShapeReader.readSimpleWorkbook(wb);
         applySimpleReaderResult(simple);
         state.exportShape = "simple";
+        syncShapeRadio();
         toast("Imported Simple template. Outlet structures, TR-55 "
               +"segments, and custom NOAA data were not in the file.");
         renderAll(); updateSavesUI();
@@ -7456,6 +7476,8 @@ function importExcel(file){
         state.inletSpacingSettings = newSettings;
       }
 
+      state.exportShape = "robust";
+      syncShapeRadio();
       renderAll();
       updateSavesUI();
       toast("Imported <b>"+escapeHtml(file.name)+"</b>.");
@@ -7471,6 +7493,13 @@ function importExcel(file){
    Init
 --------------------------------------------------------------------- */
 // ====== SECTION: Init ======
+function syncShapeRadio(){
+  const v = state.exportShape || "robust";
+  document.querySelectorAll("input[name=exportShape]").forEach(r => {
+    r.checked = (r.value === v);
+  });
+}
+
 function init(){
   seedExample();
   renderAll();
@@ -7502,6 +7531,19 @@ function init(){
   });
 
   document.getElementById("exportBtn").addEventListener("click", exportExcel);
+  document.querySelectorAll("input[name=exportShape]").forEach(r => {
+    r.addEventListener("change", () => {
+      if(r.checked) state.exportShape = r.value;
+    });
+  });
+  syncShapeRadio();
+  document.querySelectorAll("[data-export-shape]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.exportShape = btn.dataset.exportShape;
+      syncShapeRadio();
+      closeMobileNav();
+    });
+  });
   document.getElementById("openVisualizerBtn").addEventListener("click", openInVisualizer);
   const fileInput = document.getElementById("importFile");
   document.getElementById("importBtn").addEventListener("click", ()=> fileInput.click());
