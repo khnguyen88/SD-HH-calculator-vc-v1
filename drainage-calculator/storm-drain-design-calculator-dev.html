@@ -3039,7 +3039,7 @@ function renderPipes(){
   const section = el("div",{class:"section"});
   section.appendChild(el("div",{class:"section-head"},[
     el("h2",{},"Pipe runs"),
-    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", n:0.013, material:"", upstreamInvert:"", downstreamInvert:"", slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
+    el("button",{class:"btn btn-sm", onclick:()=>{ state.pipes.push({id:nextId(), fromStructureId:"", toStructureId:"", angle:0, shape:"circular", size:"", width:"", barrelCount:1, n:0.013, material:"", upstreamInvert:"", downstreamInvert:"", slope:"", length:"", splitRole:""}); renderAll(); }}, "+ Add row"),
     el("button",{class:"btn btn-sm", onclick:()=>printTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F5A8} Print Table"),
     el("button",{class:"btn btn-sm", onclick:()=>printDetailTableSheet("view-pipes","Pipe Sizing & Capacity")}, "\u{1F4CA} Detail")
   ]));
@@ -6142,6 +6142,10 @@ async function buildRobustWorkbook(){
     writeCell(sdc, "Q"+row, p.downstreamInvert);
     writeCell(sdc, "R"+row, p.angle);
     writeCell(sdc, "S"+row, pipeEffectiveN(p));
+    // Spec 7: Pipe Shape / Width / # (barrel count) on BF/BG/BH.
+    writeCell(sdc, "BF"+row, (p.shape || "circular"), "s");
+    writeCell(sdc, "BG"+row, (p.width === "" || p.width == null) ? "" : parseFloat(p.width), "n");
+    writeCell(sdc, "BH"+row, (p.barrelCount && p.barrelCount > 0) ? Number(p.barrelCount) : 1, "n");
     const s = findStructure(p.fromStructureId);
     if(s){
       writeCell(sdc, "AA"+row, (s.type||"manhole"), "s");
@@ -6429,6 +6433,10 @@ async function buildSimpleWorkbook(){
     writeCell(sdc, "Q"+row, p.downstreamInvert);
     writeCell(sdc, "R"+row, p.angle);
     writeCell(sdc, "S"+row, pipeEffectiveN(p));
+    // Spec 7: Pipe Shape / Width / # (barrel count) on BF/BG/BH.
+    writeCell(sdc, "BF"+row, (p.shape || "circular"), "s");
+    writeCell(sdc, "BG"+row, (p.width === "" || p.width == null) ? "" : parseFloat(p.width), "n");
+    writeCell(sdc, "BH"+row, (p.barrelCount && p.barrelCount > 0) ? Number(p.barrelCount) : 1, "n");
     const s = findStructure(p.fromStructureId);
     if(s){
       writeCell(sdc, "AA"+row, (s.type||"manhole"), "s");
@@ -6716,8 +6724,12 @@ function applySimpleReaderResult(simple){
     fromStructureId: idByLabel[p.fromId] || "",
     toStructureId:   idByLabel[p.toId]   || "",
     angle: p.angle || 0,
-    shape: "circular",
+    // Spec 7: read shape/width/barrelCount from BF/BG/BH columns.
+    shape: (p.shape === "rectangular" || p.shape === "elliptical")
+      ? p.shape : "circular",
     size: p.size || "",
+    width: (p.width === "" || p.width == null) ? "" : p.width,
+    barrelCount: (p.barrelCount && p.barrelCount > 0) ? Number(p.barrelCount) : 1,
     n: (p.n === "" || p.n == null) ? 0.013 : p.n,
     material: "",
     upstreamInvert:   p.usInvert === "" ? "" : p.usInvert,

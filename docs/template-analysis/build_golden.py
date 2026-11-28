@@ -581,6 +581,106 @@ def wire_hgl_method(wb):
     return wb
 
 
+PIPE_DATA_ROW_START = 10
+PIPE_DATA_ROW_END = 98
+
+
+def add_pipe_shape_columns(wb):
+    """Spec 7 Path B: append Pipe Shape / Width / # columns at BF/BG/BH on
+    STORM DRAIN COMPS, plus helper formulas on BI/BJ/BK. Rewrite the
+    full-flow (T), velocity (V), friction-slope (Y), and partial-flow
+    inputs (AV, AW) to be shape-aware and multi-barrel aware.
+
+    Non-destructive: existing formulas on cols other than T/V/Y/AV/AW
+    are untouched. Columns inserted at the end (past BE Lv_min helper).
+    Default values populate rows 10-98 so blanks in BF/BG/BH on a fresh
+    template behave as circular / blank / 1 barrel.
+
+    Idempotent: re-runs detect the BF8 header and skip the per-row
+    defaults (preserves user data).
+    """
+    if "STORM DRAIN COMPS" not in wb.sheetnames:
+        return wb
+    ws = wb["STORM DRAIN COMPS"]
+
+    # Row-8 headers (data header row per Spec 1).
+    already_run = ws["BF8"].value is not None
+    ws["N8"] = "Size/Height (in)"
+    ws["BF8"] = "Pipe Shape"
+    ws["BG8"] = "Width (in)"
+    ws["BH8"] = "#"
+    ws["BI8"] = "A (sf per barrel)"
+    ws["BJ8"] = "R (ft per barrel)"
+    ws["BK8"] = "D_eq (in)"
+
+    for r in range(PIPE_DATA_ROW_START, PIPE_DATA_ROW_END + 1):
+        # Data-entry defaults — only populate on first run, preserve user
+        # edits on re-runs.
+        if not already_run:
+            if ws[f"BF{r}"].value in (None, ""):
+                ws[f"BF{r}"] = "circular"
+            # BG stays blank by default (circular doesn't need width).
+            if ws[f"BH{r}"].value in (None, ""):
+                ws[f"BH{r}"] = 1
+
+        # Helper formulas (always rewritten — they derive from input cells).
+        # BK: equivalent diameter (in), shape-aware.
+        #   circular   → D = N
+        #   elliptical → D_eq = sqrt(N·BG)  (area-equivalent)
+        #   rectangular→ D_eq = 2·N·BG/(N+BG)  (hydraulic-diameter equivalent)
+        ws[f"BK{r}"] = (
+            f'=IF(BF{r}="rectangular",'
+            f'IF(OR(N{r}="",BG{r}=""),"",2*N{r}*BG{r}/(N{r}+BG{r})),'
+            f'IF(BF{r}="elliptical",'
+            f'IF(OR(N{r}="",BG{r}=""),"",SQRT(N{r}*BG{r})),'
+            f'IF(N{r}="","",N{r})))'
+        )
+
+        # BI: Area A (sf per barrel), shape-aware.
+        #   circular   → PI·N²/(4·144)
+        #   elliptical → PI·N·BG/(4·144)
+        #   rectangular→ N·BG/144
+        ws[f"BI{r}"] = (
+            f'=IF(BF{r}="rectangular",'
+            f'IF(OR(N{r}="",BG{r}=""),"",N{r}*BG{r}/144),'
+            f'IF(BF{r}="elliptical",'
+            f'IF(OR(N{r}="",BG{r}=""),"",PI()*N{r}*BG{r}/(4*144)),'
+            f'IF(N{r}="","",PI()*N{r}^2/(4*144))))'
+        )
+
+        # BJ: Hydraulic radius R (ft per barrel). R = D_eq/4; inches→ft.
+        ws[f"BJ{r}"] = f'=IF(BK{r}="","",BK{r}/48)'
+
+        # Rewrite full-flow Capacity (T) — total for all barrels.
+        # T = BH * (1.486/n) * R^(2/3) * sqrt(S) * A
+        # (S here is pipe slope Z column; n is Manning on S column.)
+        ws[f"T{r}"] = (
+            f'=IF(Z{r}="","",IF(BI{r}="","",'
+            f'BH{r}*1.486/S{r}*BJ{r}^(2/3)*SQRT(Z{r})*BI{r}))'
+        )
+
+        # Manning velocity full (V) — per-barrel (same for all barrels).
+        ws[f"V{r}"] = (
+            f'=IF(Z{r}="","",IF(BJ{r}="","",'
+            f'1.486/S{r}*BJ{r}^(2/3)*SQRT(Z{r})))'
+        )
+
+        # Friction slope (Y) — per-barrel at design-Q-per-barrel.
+        # Sf = ((Q_per_barrel * n) / (1.486 * A * R^(2/3)))^2
+        ws[f"Y{r}"] = (
+            f'=IF(A{r}="","",IF(BI{r}="","",IF(M{r}="","",'
+            f'ROUND(((M{r}/BH{r}*S{r})/(1.486*BI{r}*BJ{r}^(2/3)))^2,6))))'
+        )
+
+        # Partial-flow block inputs:
+        #   AV (Q per barrel) — was Table4 lookup via Q_total; now M/BH.
+        ws[f"AV{r}"] = f'=IF(M{r}="","",M{r}/BH{r})'
+        #   AW (effective diameter for DATA2) — now BK (shape-aware D_eq).
+        ws[f"AW{r}"] = f'=BK{r}'
+
+    return wb
+
+
 def enable_iterative_calculation(wb):
     # Belt-and-suspenders: repair.py also sets this on the WIP, but the
     # golden builder enforces it so the setting survives any WIP edit
@@ -602,6 +702,7 @@ def main(src, dst):
     add_u7_small_area_tc_lookup(wb)
     annotate_equations_sheet(wb)
     wire_hgl_method(wb)
+    add_pipe_shape_columns(wb)
     enable_iterative_calculation(wb)
     wb.save(dst)
     print(f"wrote {dst}")

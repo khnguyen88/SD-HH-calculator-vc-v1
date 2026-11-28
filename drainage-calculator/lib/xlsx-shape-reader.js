@@ -37,10 +37,21 @@
     for(let r = 10; r <= 98; r++){
       const fromId = cell("A"+r);
       if(fromId === "" || fromId == null) continue;
+      // Spec 7: BF=shape, BG=width (in), BH=barrel count. Golden template
+      // populates defaults circular/""/1; non-golden (legacy WIP) leaves
+      // them blank — fall back to circular / "" / 1.
+      const rawShape = cell("BF"+r);
+      const rawWidth = cell("BG"+r);
+      const rawBarrels = cell("BH"+r);
       pipes.push({
         fromId: String(fromId),
         toId: String(cell("B"+r)||""),
         size: cell("N"+r),
+        width: (rawWidth === "" || rawWidth == null) ? "" : rawWidth,
+        shape: (rawShape === "" || rawShape == null)
+          ? "circular" : String(rawShape).toLowerCase(),
+        barrelCount: (rawBarrels === "" || rawBarrels == null)
+          ? 1 : Number(rawBarrels),
         length: cell("O"+r),
         usInvert: cell("P"+r),
         dsInvert: cell("Q"+r),
