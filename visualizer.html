@@ -141,35 +141,37 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     for(let r = 10; r <= 98; r++){
       const fromId = cell("A"+r);
       if(fromId === "" || fromId == null) continue;
-      // Spec 7: BF=shape, BG=width (in), BH=barrel count. Golden template
-      // populates defaults circular/""/1; non-golden (legacy WIP) leaves
-      // them blank — fall back to circular / "" / 1.
-      const rawShape = cell("BF"+r);
-      const rawWidth = cell("BG"+r);
-      const rawBarrels = cell("BH"+r);
+      // Spec 7 Path A: Pipe Shape at O, Width (in) at P, # at Q. All
+      // existing SDC columns at col 15+ shifted right by 3. Pre-Spec-7
+      // Length/USInv/DSInv (O/P/Q) → R/S/T. Angle R → U. Manning n S → V.
+      // AA structure type → AD. AB rim → AE. AG/AH inflow angles → AJ/AK.
+      // AK captured-Q override → AN. Jurisdiction T3 → W3.
+      const rawShape = cell("O"+r);
+      const rawWidth = cell("P"+r);
+      const rawBarrels = cell("Q"+r);
       pipes.push({
         fromId: String(fromId),
         toId: String(cell("B"+r)||""),
-        size: cell("N"+r),
+        size: cell(cols.size+r),
         width: (rawWidth === "" || rawWidth == null) ? "" : rawWidth,
         shape: (rawShape === "" || rawShape == null)
           ? "circular" : String(rawShape).toLowerCase(),
         barrelCount: (rawBarrels === "" || rawBarrels == null)
           ? 1 : Number(rawBarrels),
-        length: cell("O"+r),
-        usInvert: cell("P"+r),
-        dsInvert: cell("Q"+r),
-        angle: cell("R"+r),
-        n: cell("S"+r),
-        _structureType: cell("AA"+r),
-        _rim: cell("AB"+r),
-        _inflowAngle1: cell("AG"+r),
-        _inflowAngle2: cell("AH"+r),
-        _capturedQOverride: cell("AK"+r),
+        length: cell("R"+r),
+        usInvert: cell("S"+r),
+        dsInvert: cell("T"+r),
+        angle: cell("U"+r),
+        n: cell("V"+r),
+        _structureType: cell("AD"+r),
+        _rim: cell("AE"+r),
+        _inflowAngle1: cell("AJ"+r),
+        _inflowAngle2: cell("AK"+r),
+        _capturedQOverride: cell("AN"+r),
       });
     }
 
-    const jurisdiction = cell("T3") || "MCDOT";
+    const jurisdiction = cell("W3") || "MCDOT";
     const pipeStorm    = cell("H3") || "10yr";
 
     // Pass 1: every unique fromId and toId becomes a structure.
