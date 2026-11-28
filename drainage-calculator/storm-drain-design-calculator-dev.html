@@ -3048,7 +3048,7 @@ function renderPipes(){
   const table = el("table",{class:"data"});
   table.appendChild(el("thead",{},el("tr",{},[
     el("th",{},"ID"), el("th",{},"From"), el("th",{},"To"), el("th",{},"Role"), el("th",{},"Angle (\u00b0)"),
-    el("th",{},"Shape"), el("th",{},"Size (in)"), el("th",{},"Material"), el("th",{},"n"), el("th",{},"US Inv\n(ft)"), el("th",{},"DS Inv\n(ft)"), el("th",{},"Slope (ft/ft)"), el("th",{},"Length (ft)"),
+    el("th",{},"Shape"), el("th",{},"Size/Height (in)"), el("th",{},"Width (in)"), el("th",{},"#"), el("th",{},"Material"), el("th",{},"n"), el("th",{},"US Inv\n(ft)"), el("th",{},"DS Inv\n(ft)"), el("th",{},"Slope (ft/ft)"), el("th",{},"Length (ft)"),
     el("th",{class:"computed"},"Design Q"), el("th",{class:"computed"},"Area (sf)"), el("th",{class:"computed"},"Qfull (cfs)"),
     el("th",{class:"computed"},"V (fps)"), el("th",{class:"computed"},"Status"), el("th",{},""), el("th",{},"")
   ])));
@@ -3063,6 +3063,15 @@ function renderPipes(){
       el("td",{}, numInput(row,"angle",60)),
       el("td",{}, shapeSelect(row)),
       el("td",{}, txtInput(row,"size",80)),
+      // Spec 7: Width input (circular ignores \u2014 shown dimmed for clarity).
+      (row.shape === "circular")
+        ? el("td",{class:"out",style:"color:#777;font-style:italic;"}, "\u2014")
+        : el("td",{}, numInput(row,"width",60)),
+      el("td",{}, (()=>{
+        const inp = numInput(row,"barrelCount",48);
+        if((row.barrelCount||0) < 1){ row.barrelCount = 1; }
+        return inp;
+      })()),
       el("td",{}, materialSelect(row)),
       nCell(row),
       el("td",{}, numInput(row,"upstreamInvert",70)),
@@ -3141,8 +3150,8 @@ function renderPipes(){
   }
   function shapeSelect(row){
     const sel = el("select",{class:"cell-input",style:"width:96px","data-focus-key":"pipes:"+row.id+":shape", onchange:(e)=>{ row.shape=e.target.value; withFocusPreserved(renderAll); }});
-    ["circular","elliptical"].forEach(v=>{
-      const o = el("option",{value:v},v==="circular"?"Circular":"Elliptical");
+    [["circular","Circular"], ["elliptical","Elliptical"], ["rectangular","Rectangular"]].forEach(([v,lab])=>{
+      const o = el("option",{value:v}, lab);
       if(row.shape===v) o.selected=true;
       sel.appendChild(o);
     });
