@@ -905,9 +905,10 @@
     if (shape === "unknown") {
       throw new Error("Couldn't read this xlsx. Use a calculator export, a golden template, or a legacy WIP file.");
     }
-    const reader = (shape === "robust")
-      ? window.__xlsxShapeReader.readRobustWorkbook
-      : window.__xlsxShapeReader.readSimpleWorkbook;
+    const reader =
+      (shape === "robust")        ? window.__xlsxShapeReader.readRobustWorkbook :
+      (shape === "legacy-native") ? window.__xlsxShapeReader.readLegacyNativeWorkbook :
+                                    window.__xlsxShapeReader.readSimpleWorkbook;
     const result = reader(wb);
 
     // ---- Map shared-reader output onto the visualizer state model ----
@@ -918,7 +919,11 @@
     // a number when present; capturedQOverride feeds capturedQ when supplied.
     const importedStructures = (result.structures || []).map((s) => {
       const rim = pickNum(s.rim);
-      const captured = pickNum(s.capturedQOverride);
+      // Prefer the reader's explicit capturedQ (legacy shape) over the
+      // override hint (Simple/Robust). Same pattern for totalQ/startElev/
+      // outPipeId/forceElev: legacy shape carries them; Simple/Robust leave
+      // them absent and the defaults below apply.
+      const captured = pickNum(s.capturedQ, s.capturedQOverride);
       return {
         id:        String(s.structureId || ""),
         label:     String(s.structureId || ""),
@@ -926,14 +931,14 @@
         x:         0,
         y:         0,
         rim:       rim,
-        startElev: null,
+        startElev: pickNum(s.startElev),
         crown:     null,
-        forceElev: false,
+        forceElev: s.forceElev === true,
         capturedQ: captured != null ? captured : 0,
-        totalQ:    0,
+        totalQ:    pickNum(s.totalQ) != null ? pickNum(s.totalQ) : 0,
         Hb:        0,
         elevation: 0,
-        outPipeId: ""
+        outPipeId: String(s.outPipeId || "")
       };
     });
 
@@ -945,20 +950,23 @@
     const importedPipes = (result.pipes || []).map((p, i) => {
       const normShape = normalizeShape("circular");
       const size = normalizeSize(normShape, p.size);
+      // Legacy shape carries an explicit pipe ID (e.g., "r12"); Simple/
+      // Robust don't, so synthesize a readable one from fromId/toId.
+      const synthId = String(p.fromId || ("P-" + (i + 1))) + "-" + String(p.toId || (i + 1));
       return {
-        id:        String(p.fromId || ("P-" + (i + 1))) + "-" + String(p.toId || (i + 1)),
+        id:        p.id ? String(p.id) : synthId,
         fromId:    String(p.fromId || ""),
         toId:      String(p.toId || ""),
         shape:     normShape,
         size:      size != null ? size : num(p.size, 18),
         n:         num(p.n, 0.013),
-        slope:     0,  // not emitted by Simple/Robust; HGL walks recompute from inverts/length
+        slope:     0,
         length:    num(p.length, 0),
         angle:     num(p.angle, 0),
         designQ:   null,
         usInvert:  pickNum(p.usInvert),
         dsInvert:  pickNum(p.dsInvert),
-        splitRole: "",
+        splitRole: String(p.splitRole || "").toLowerCase(),
         Hf:        0
       };
     });
@@ -966,10 +974,20 @@
     // Reader config: {hglMethod (label string), junctionAngleRule,
     // hglCrownCeilingRule, projectName, ...}.  Collapse the human-readable
     // HGL label to the visualizer's two-value toggle via the reader's helper.
-    const hglMethod = window.__xlsxShapeReader.hglMethodFromLabel(
-      (result.config && result.config.hglMethod) || ""
+    // Only override state.ui.hglMethod when the xlsx provided an EXPLICIT
+    // AND RECOGNIZED value. An empty or unrecognized value means "no HGL
+    // Method info" — don't clobber the user's current toggle.
+    const hglRaw = (result.config && result.config.hglMethod) || "";
+    const _low = hglRaw.toLowerCase();
+    const _recognized = hglRaw && (
+      _low.indexOf("hec-22") !== -1 || _low.indexOf("hec22") !== -1 ||
+      _low.indexOf("legacy") !== -1 || _low.indexOf("both-end") !== -1 ||
+      _low.indexOf("both end") !== -1 || _low.indexOf("conservative") !== -1
     );
-    state.ui.hglMethod = hglMethod;
+    const hglMethod = _recognized
+      ? window.__xlsxShapeReader.hglMethodFromLabel(hglRaw)
+      : state.ui.hglMethod;
+    if (_recognized) state.ui.hglMethod = hglMethod;
 
     // Outfall: first structure of type "outfall" (the Simple reader already
     // retags leaf structures as "outfall" in Pass 3), else lowest rim.
@@ -998,7 +1016,8 @@
 
     // Drainage areas + TR-55: the reader surfaces both as plain arrays.
     const drainageAreas = (result.drainage || []).map((d, i) => ({
-      id:          String("DA-" + (i + 1)),
+      // Legacy carries DA's own ID; Simple/Robust don't, so synthesize.
+      id:          d.id ? String(d.id) : String("DA-" + (i + 1)),
       structureId: String(d.structureId || ""),
       areaAc:      pickNum(d.area),
       C:           pickNum(d.C),

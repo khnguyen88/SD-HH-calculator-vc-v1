@@ -6884,6 +6884,16 @@ function importExcel(file){
         renderAll(); updateSavesUI();
         return;
       }
+      if(shape === "legacy-native"){
+        const legacy = window.__xlsxShapeReader.readLegacyNativeWorkbook(wb);
+        applyRobustReaderResult(legacy);
+        state.exportShape = "robust";
+        syncShapeRadio();
+        toast("Imported legacy native format. Re-export as Robust to "
+              +"upgrade to the current layout.");
+        renderAll(); updateSavesUI();
+        return;
+      }
       if(shape === "robust"){
         const robust = window.__xlsxShapeReader.readRobustWorkbook(wb);
         applyRobustReaderResult(robust);

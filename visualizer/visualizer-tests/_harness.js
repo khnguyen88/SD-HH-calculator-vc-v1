@@ -4,12 +4,24 @@ const path = require("path");
 const { JSDOM } = require("jsdom");
 
 const DEV_HTML_PATH = path.join(__dirname, "..", "storm-drain-visualizer-dev.html");
+const SHAPE_READER_PATH = path.join(__dirname, "..", "..",
+  "drainage-calculator", "lib", "xlsx-shape-reader.js");
 
 function loadVisualizer(extraHeadScripts, opts) {
   opts = opts || {};
-  const html = fs.readFileSync(DEV_HTML_PATH, "utf8");
-  // Replace the SHEETJS sentinel with an inlined bundle when needed; tests pass
-  // extraHeadScripts to inject the real `xlsx` module into globalThis.
+  let html = fs.readFileSync(DEV_HTML_PATH, "utf8");
+
+  // Spec 5 fix: jsdom can't resolve <script src="../drainage-calculator/...">
+  // because the dev file lives at an unusual relative path. Inline the
+  // shape reader source directly into the HTML so jsdom never has to fetch
+  // it. The build-visualizer.js prod inliner does the same thing; this
+  // harness just performs it eagerly for tests.
+  const shapeReaderSrc = fs.readFileSync(SHAPE_READER_PATH, "utf8");
+  html = html.replace(
+    /<script src="\.\.\/drainage-calculator\/lib\/xlsx-shape-reader\.js"><\/script>/,
+    "<script>\n" + shapeReaderSrc + "\n</script>"
+  );
+
   const dom = new JSDOM(html, {
     runScripts: "dangerously",
     resources: "usable",
