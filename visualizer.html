@@ -101,6 +101,365 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 /* ==== end SheetJS ==== */
 </script><!-- build-visualizer.js replaces this with the inlined bundle -->
 <script>
+/* ==== xlsx-shape-reader (inlined by build-visualizer.js) ==== */
+/* xlsx-shape-reader.js — shared Simple/Robust xlsx reader.
+   Inlined into both calculator and visualizer by build.js.
+   Exposes window.__xlsxShapeReader with:
+     detectShape, readSimpleWorkbook, readRobustWorkbook, hglMethodFromLabel */
+(function(){
+  "use strict";
+
+  function detectShape(wb){
+    const names = wb.SheetNames || Object.keys(wb.Sheets || {});
+    const has = (n) => names.indexOf(n) !== -1;
+    if(has("STORM DRAIN COMPS")){
+      if(has("Outlet Structures")) return "robust";
+      return "simple";
+    }
+    // Pre-Spec-3 calculator native format (Spec 4).
+    if(has("Pipe Sizing") && has("Junction Structure")) return "legacy-native";
+    return "unknown";
+  }
+
+  function hglMethodFromLabel(label){
+    const s = String(label||"").toLowerCase();
+    if(s.indexOf("hec-22")!==-1 || s.indexOf("hec22")!==-1) return "hec22";
+    if(s.indexOf("legacy")!==-1 || s.indexOf("both-end")!==-1
+       || s.indexOf("both end")!==-1 || s.indexOf("conservative")!==-1){
+      return "legacy-both-crown";
+    }
+    return "hec22";
+  }
+
+  function readSimpleWorkbook(wb){
+    const sdc = wb.Sheets["STORM DRAIN COMPS"];
+    if(!sdc) throw new Error("Missing STORM DRAIN COMPS sheet");
+
+    const cell = (addr) => {
+      const c = sdc[addr];
+      if(!c) return "";
+      return (c.v !== undefined && c.v !== null) ? c.v : "";
+    };
+
+    const pipes = [];
+    for(let r = 10; r <= 98; r++){
+      const fromId = cell("A"+r);
+      if(fromId === "" || fromId == null) continue;
+      pipes.push({
+        fromId: String(fromId),
+        toId: String(cell("B"+r)||""),
+        size: cell("N"+r),
+        length: cell("O"+r),
+        usInvert: cell("P"+r),
+        dsInvert: cell("Q"+r),
+        angle: cell("R"+r),
+        n: cell("S"+r),
+        _structureType: cell("AA"+r),
+        _rim: cell("AB"+r),
+        _inflowAngle1: cell("AG"+r),
+        _inflowAngle2: cell("AH"+r),
+        _capturedQOverride: cell("AK"+r),
+      });
+    }
+
+    const jurisdiction = cell("T3") || "MCDOT";
+    const pipeStorm    = cell("H3") || "10yr";
+
+    // Pass 1: every unique fromId and toId becomes a structure.
+    const seen = Object.create(null);
+    for(const p of pipes){
+      for(const sid of [p.fromId, p.toId]){
+        if(sid && !seen[sid]){
+          seen[sid] = {
+            structureId: sid, type: "manhole", rim: "", capturedQOverride: "",
+          };
+        }
+      }
+    }
+    // Pass 2: enrich from the pipe row where A == structureId.
+    const byFrom = Object.create(null);
+    for(const p of pipes) byFrom[p.fromId] = p;
+    for(const sid of Object.keys(seen)){
+      const src = byFrom[sid];
+      if(src){
+        if(src._structureType) seen[sid].type = String(src._structureType).toLowerCase();
+        if(src._rim !== "" && src._rim != null) seen[sid].rim = src._rim;
+        if(src._capturedQOverride !== "" && src._capturedQOverride != null){
+          seen[sid].capturedQOverride = src._capturedQOverride;
+        }
+      }
+    }
+    // Pass 3: outfall = structure that only appears as a toId.
+    const allFrom = new Set(pipes.map(p => p.fromId));
+    for(const sid of Object.keys(seen)){
+      if(!allFrom.has(sid) && seen[sid].type === "manhole"){
+        seen[sid].type = "outfall";
+      }
+    }
+    const structures = Object.values(seen);
+
+    // ---- C_FACTOR drainage rows ----
+    const drainage = [];
+    const cf = wb.Sheets["C_FACTOR"];
+    if(cf){
+      const cellCf = (addr) => {
+        const c = cf[addr];
+        if(!c) return "";
+        return (c.v !== undefined && c.v !== null) ? c.v : "";
+      };
+      for(let r = 6; r <= 88; r++){
+        const sid = cellCf("B"+r);
+        if(sid === "" || sid == null) continue;
+        drainage.push({
+          structureId: String(sid),
+          area: cellCf("C"+r),
+          C:    cellCf("M"+r),
+          tc:   cellCf("V"+r),
+        });
+      }
+    }
+
+    // ---- Config toggles (golden only; defaults otherwise) ----
+    const config = {
+      junctionAngleRule:   "smaller-loss",
+      hglCrownCeilingRule: "crown-plus-1ft",
+      hglMethod:           "HEC-22 EGL (d/s crown floor)",
+      projectName:         "",
+      templateShape:       "simple",
+      contractVersion:     1,
+    };
+    const cfg = wb.Sheets["Config"];
+    if(cfg){
+      const cellCfg = (addr) => {
+        const c = cfg[addr];
+        if(!c) return "";
+        return (c.v !== undefined && c.v !== null) ? c.v : "";
+      };
+      if(cellCfg("B1")) config.projectName         = String(cellCfg("B1"));
+      if(cellCfg("B3")) config.junctionAngleRule   = String(cellCfg("B3"));
+      if(cellCfg("B4")) config.hglCrownCeilingRule = String(cellCfg("B4"));
+      if(cellCfg("B5")) config.hglMethod           = String(cellCfg("B5"));
+      if(cellCfg("B6")) config.templateShape       = String(cellCfg("B6"));
+      if(cellCfg("B7")) config.contractVersion     = Number(cellCfg("B7"));
+    }
+
+    return {
+      _shape: "simple",
+      pipes, structures, drainage, config,
+      hydraulics: { jurisdiction, pipeStorm },
+    };
+  }
+
+  function readRobustWorkbook(wb){
+    // Robust files are Simple files + extras. Reuse the Simple reader
+    // for overlap, then overlay the Robust-only sheets.
+    const base = readSimpleWorkbook(wb);
+    base._shape = "robust";
+
+    const tr55 = wb.Sheets["TR-55 Segments"];
+    const tr55Segments = [];
+    if(tr55){
+      const sheetAoa = XLSX.utils.sheet_to_json(tr55, {header:1, raw:true, defval:""});
+      const headers = (sheetAoa[0]||[]).map(h => String(h).trim());
+      const idx = (name) => headers.indexOf(name);
+      for(let i = 1; i < sheetAoa.length; i++){
+        const row = sheetAoa[i];
+        if(!row.some(v => v !== "" && v != null)) continue;
+        tr55Segments.push({
+          drainageAreaId: row[idx("Drainage Area")] || "",
+          order: row[idx("Order")] || i,
+          type: String(row[idx("Type")]||"").toLowerCase(),
+          n: row[idx("n")] || "",
+          L: row[idx("L (ft)")] || "",
+          s: row[idx("s (ft/ft)")] || "",
+          P2: row[idx("P2 (in)")] || "",
+          surface: row[idx("Surface")] || "",
+          area: row[idx("Area a (sf)")] || "",
+          wp: row[idx("Wetted Perimeter Pw (ft)")] || "",
+        });
+      }
+    }
+
+    const outletStructures = readSheetAsObjects(wb, "Outlet Structures");
+    const outletDevices    = readSheetAsObjects(wb, "Outlet Devices");
+
+    // ---- Rainfall Settings (Robust-only — custom + fetched NOAA) ----
+    // Format: key/value pairs in col A/B. Static keys plus optional
+    // Custom NOAA 5/10/15/30/60-min and the Fetched NOAA metadata +
+    // 8 storms × 5 durations grid (when a NOAA location was fetched).
+    const rainfallSettings = {};
+    const rfWs = wb.Sheets["Rainfall Settings"];
+    if(rfWs){
+      const aoa = XLSX.utils.sheet_to_json(rfWs, {header:1, raw:false, defval:""});
+      for(const row of aoa){
+        const k = String(row[0]||"").trim();
+        if(k) rainfallSettings[k] = row[1];
+      }
+    }
+
+    return Object.assign(base, {
+      tr55Segments, outletStructures, outletDevices, rainfallSettings,
+    });
+  }
+
+  function readSheetAsObjects(wb, sheetName){
+    const ws = wb.Sheets[sheetName];
+    if(!ws) return [];
+    const aoa = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
+    if(aoa.length < 1) return [];
+    const headers = aoa[0].map(h => String(h).trim());
+    return aoa.slice(1)
+      .filter(r => r.some(v => v !== "" && v != null))
+      .map(r => {
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = r[i]; });
+        return obj;
+      });
+  }
+
+  function readLegacyNativeWorkbook(wb){
+    // Pre-Spec-3 calculator native xlsx (Spec 4). Separate sheets per
+    // entity; no STORM DRAIN COMPS. Output shape matches readRobust so
+    // applyRobustReaderResult can consume it directly.
+    const pipeRows = readSheetAsObjects(wb, "Pipe Sizing");
+    const structRows = readSheetAsObjects(wb, "Junction Structure");
+    const daRows = readSheetAsObjects(wb, "Drainage Area");
+
+    const pipes = pipeRows
+      .filter(r => r["From Structure"] !== "" && r["From Structure"] != null)
+      .map(r => ({
+        // Legacy exports carry an explicit ID (e.g., "r12") on col A.
+        id: (r["ID"] !== "" && r["ID"] != null) ? String(r["ID"]) : "",
+        fromId: String(r["From Structure"] || ""),
+        toId: String(r["To Structure"] || ""),
+        size: r["Size (in or SPANxRISE)"] || "",
+        length: r["Length (ft)"] || "",
+        usInvert: (r["US Invert (ft)"] !== "" && r["US Invert (ft)"] != null)
+          ? r["US Invert (ft)"] : "",
+        dsInvert: (r["DS Invert (ft)"] !== "" && r["DS Invert (ft)"] != null)
+          ? r["DS Invert (ft)"] : "",
+        angle: r["Angle (deg)"] || 0,
+        n: (r["n"] !== "" && r["n"] != null) ? r["n"] : 0.013,
+        // Normalize splitRole to a top-level field (visualizer reads it).
+        splitRole: String(r["Split Role"] || "").toLowerCase(),
+        _splitRole: r["Split Role"] || "",
+        _structureType: "",
+        _rim: "",
+        _inflowAngle1: "",
+        _inflowAngle2: "",
+        _capturedQOverride: "",
+      }));
+
+    const structures = structRows
+      .filter(r => r["Structure ID"] !== "" && r["Structure ID"] != null)
+      .map(r => ({
+        structureId: String(r["Structure ID"] || ""),
+        type: String(r["Type"] || "manhole").toLowerCase(),
+        rim: (r["Rim-Grate Elev (ft)"] !== "" && r["Rim-Grate Elev (ft)"] != null)
+          ? r["Rim-Grate Elev (ft)"] : "",
+        // Legacy-only fields the visualizer consumes.
+        startElev: (r["Fixed-Start Elev (ft)"] !== "" && r["Fixed-Start Elev (ft)"] != null)
+          ? r["Fixed-Start Elev (ft)"] : "",
+        forceElev: String(r["Force Fixed"] || "").toUpperCase() === "TRUE",
+        totalQ: (r["Total Flow (cfs)"] !== "" && r["Total Flow (cfs)"] != null)
+          ? r["Total Flow (cfs)"] : "",
+        outPipeId: String(r["Outgoing Pipe ID"] || ""),
+        capturedQ: (r["Captured Q (cfs)"] !== "" && r["Captured Q (cfs)"] != null)
+          ? r["Captured Q (cfs)"] : "",
+        capturedQOverride: "",
+      }));
+
+    const drainage = daRows
+      .filter(r => r["ID"] !== "" && r["ID"] != null)
+      .map(r => ({
+        // Legacy carries DA's own ID separately from the linked structure.
+        id: String(r["ID"] || ""),
+        // "Structure" column links the DA to the capturing structure.
+        structureId: String(r["Structure"] || ""),
+        area: r["Area A (ac)"] || "",
+        C: r["C"] || "",
+        tc: r["Tc (min)"] || "",
+      }));
+
+    // TR-55 Segments: identical sheet layout to Robust.
+    const tr55 = wb.Sheets["TR-55 Segments"];
+    const tr55Segments = [];
+    if(tr55){
+      const sheetAoa = XLSX.utils.sheet_to_json(tr55, {header:1, raw:true, defval:""});
+      const headers = (sheetAoa[0]||[]).map(h => String(h).trim());
+      const idx = (name) => headers.indexOf(name);
+      for(let i = 1; i < sheetAoa.length; i++){
+        const row = sheetAoa[i];
+        if(!row.some(v => v !== "" && v != null)) continue;
+        tr55Segments.push({
+          drainageAreaId: row[idx("Drainage Area")] || "",
+          order: row[idx("Order")] || i,
+          type: String(row[idx("Type")]||"").toLowerCase(),
+          n: row[idx("n")] || "",
+          L: row[idx("L (ft)")] || "",
+          s: row[idx("s (ft/ft)")] || "",
+          P2: row[idx("P2 (in)")] || "",
+          surface: row[idx("Surface")] || "",
+          area: row[idx("Area a (sf)")] || "",
+          wp: row[idx("Wetted Perimeter Pw (ft)")] || "",
+        });
+      }
+    }
+    const outletStructures = readSheetAsObjects(wb, "Outlet Structures");
+    const outletDevices    = readSheetAsObjects(wb, "Outlet Devices");
+
+    // Rainfall Settings is a key/value sheet in legacy as in Robust.
+    const rainfallSettings = {};
+    const rfWs = wb.Sheets["Rainfall Settings"];
+    if(rfWs){
+      const aoa = XLSX.utils.sheet_to_json(rfWs, {header:1, raw:false, defval:""});
+      for(const row of aoa){
+        const k = String(row[0]||"").trim();
+        if(k) rainfallSettings[k] = row[1];
+      }
+    }
+
+    // No Config sheet in legacy — derive hglMethod from Rainfall Settings
+    // IF PRESENT. Leave as empty string when absent so consumers can
+    // distinguish "no explicit value" from "default value" (prevents a
+    // missing Rainfall Settings sheet from silently overriding the
+    // consumer's current hglMethod toggle).
+    const config = {
+      junctionAngleRule:   "smaller-loss",
+      hglCrownCeilingRule: "crown-plus-1ft",
+      hglMethod: rainfallSettings["HGL Method"]
+        ? String(rainfallSettings["HGL Method"]) : "",
+      projectName: "",
+      templateShape: "legacy-native",
+      contractVersion: 1,
+    };
+    const ovSheet = wb.Sheets["Overview"];
+    if(ovSheet){
+      const aoa = XLSX.utils.sheet_to_json(ovSheet, {header:1, raw:false, defval:""});
+      if(aoa[1] && aoa[1][1]) config.projectName = String(aoa[1][1]);
+    }
+
+    const jurisdiction = "MCDOT";
+    const pipeStorm = String(rainfallSettings["Pipe & HGL Design Storm"] || "10yr");
+
+    return {
+      _shape: "legacy-native",
+      pipes, structures, drainage, config,
+      tr55Segments, outletStructures, outletDevices, rainfallSettings,
+      hydraulics: { jurisdiction, pipeStorm },
+    };
+  }
+
+  const api = { detectShape, readSimpleWorkbook, readRobustWorkbook,
+                readLegacyNativeWorkbook,
+                hglMethodFromLabel, readSheetAsObjects };
+  if(typeof window !== "undefined") window.__xlsxShapeReader = api;
+  if(typeof module !== "undefined" && module.exports) module.exports = api;
+})();
+
+/* ==== end xlsx-shape-reader ==== */
+</script>
+<script>
   // ==== dom-helpers: begin ====
   function el(tag, attrs, children) {
     const e = document.createElement(tag);
@@ -903,175 +1262,166 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     renderAll();
   }
 
-  // --- xlsx importer (task-06) ---
+  // --- xlsx importer (Spec 3 Task 22) ---
+  // Dispatches through the shared __xlsxShapeReader so Simple (STORM DRAIN
+  // COMPS only) and Robust (adds Outlet Structures) workbooks both import.
+  // The shared reader returns a minimal record that we map onto the
+  // visualizer's richer state model (structures need x/y/crown/startElev/etc.,
+  // pipes need shape + splitRole). Unknown layouts raise the same error the
+  // calculator uses so users get a single consistent message.
   async function importFromXlsxFile(file) {
     if (typeof XLSX === "undefined") throw new Error("SheetJS not loaded — did you open the BUILT file?");
+    if (!window.__xlsxShapeReader) throw new Error("xlsx-shape-reader not loaded — did you open the BUILT file?");
 
     const num = (v, fallback) => { const n = Number(v); return isFinite(n) ? n : fallback; };
-    // Return the first value that is present and numeric; null if none qualify.
     const pickNum = (...vals) => { for (const v of vals) { if (v != null && v !== "") { const n = Number(v); if (isFinite(n)) return n; } } return null; };
-    // Return the first value that is present (non-null, non-empty); null otherwise.
-    const pick = (...vals) => { for (const v of vals) if (v != null && v !== "") return v; return null; };
 
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array" });
 
-    const sh = (name) => {
-      const s = wb.Sheets[name];
-      if (!s) return [];
-      return XLSX.utils.sheet_to_json(s, { defval: null });
-    };
-
-    if (!wb.Sheets["Junction Structure"] || !wb.Sheets["Pipe Sizing"]) {
-      throw new Error("Not a storm-drain export: expected 'Junction Structure' and 'Pipe Sizing' sheets");
+    const shape = window.__xlsxShapeReader.detectShape(wb);
+    if (shape === "unknown") {
+      throw new Error("Couldn't read this xlsx. Use a calculator export, a golden template, or a legacy WIP file.");
     }
+    const reader =
+      (shape === "robust")        ? window.__xlsxShapeReader.readRobustWorkbook :
+      (shape === "legacy-native") ? window.__xlsxShapeReader.readLegacyNativeWorkbook :
+                                    window.__xlsxShapeReader.readSimpleWorkbook;
+    const result = reader(wb);
 
-    const structureIdOf = (r) => r["Structure ID"] || r["Structure"] || r.structureId || r["structureId"] || "";
-
-    const daRows   = sh("Drainage Area");
-    const tr55Rows = sh("TR-55 Segments");
-    const strRows  = sh("Junction Structure");
-    const pipeRows = sh("Pipe Sizing");
-    const outRows  = sh("Outlet Structures");
-
-    // Rainfall Settings: honor the calculator's HGL method row. The sheet is
-    // a label/value AoA with no header row, so read it as rows. A missing row
-    // or unrecognized value leaves the current method untouched (old exports
-    // behave exactly as before).
-    let hglMethodFromSheet = null;
-    if (wb.Sheets["Rainfall Settings"]) {
-      const rfAoA = XLSX.utils.sheet_to_json(wb.Sheets["Rainfall Settings"], { header: 1, defval: null });
-      for (const row of rfAoA) {
-        if (row && String(row[0]).trim() === "HGL Method") {
-          const v = String(row[1] == null ? "" : row[1]).trim();
-          if (v === "HEC-22") hglMethodFromSheet = "hec22";
-          else if (v === "Conservative") hglMethodFromSheet = "legacy-both-crown";
-        }
-      }
-    }
-    if (hglMethodFromSheet) state.ui.hglMethod = hglMethodFromSheet;
-
-    // Build captured-Q lookup: drainage-area row has structureId + computed Q.
-    // The main-app export names storm columns "Q_<storm> (cfs)", not "Q (cfs)".
-    // Fallback only: the Junction Structure sheet's own "Captured Q (cfs)" is
-    // authoritative. When that is absent we cannot tell which storm column is
-    // the design storm, so take the first Q_* column rather than guess.
-    const qOf = (r) => {
-      if (r["Q (cfs)"] != null) return num(r["Q (cfs)"], 0);
-      if (r.Q != null) return num(r.Q, 0);
-      for (const k of Object.keys(r)) {
-        if (/^Q.*\(cfs\)$/i.test(k)) { const n = pickNum(r[k]); if (n != null) return n; }
-      }
-      return 0;
-    };
-    const capturedByStructureId = Object.create(null);
-    for (const r of daRows) {
-      const sid = structureIdOf(r);
-      const q = qOf(r);
-      if (sid) capturedByStructureId[sid] = (capturedByStructureId[sid] || 0) + q;
-    }
-
-    const structures = strRows.map((r, i) => {
-      // The Junction Structure sheet carries the real Captured Q; the DA-sheet
-      // lookup is only a fallback for JSON-style sheets.
-      const captured = pickNum(r["Captured Q (cfs)"]);
+    // ---- Map shared-reader output onto the visualizer state model ----
+    // Reader structures: {structureId, type, rim, capturedQOverride}.
+    // Visualizer structures need: id, type, x, y, rim, startElev, crown,
+    // forceElev, capturedQ, totalQ, Hb, elevation, outPipeId, label.
+    // We leave x/y at 0 so autoLayoutIfNeeded() lays them out; rim is kept as
+    // a number when present; capturedQOverride feeds capturedQ when supplied.
+    const importedStructures = (result.structures || []).map((s) => {
+      const rim = pickNum(s.rim);
+      // Prefer the reader's explicit capturedQ (legacy shape) over the
+      // override hint (Simple/Robust). Same pattern for totalQ/startElev/
+      // outPipeId/forceElev: legacy shape carries them; Simple/Robust leave
+      // them absent and the defaults below apply.
+      const captured = pickNum(s.capturedQ, s.capturedQOverride);
       return {
-        id:           String(structureIdOf(r) || ("S-" + (i+1))),
-        label:        String(pick(r["Label"], r["Description"], r.label) || structureIdOf(r) || ""),
-        type:         String(r["Type"] || r.type || "manhole").toLowerCase(),
-        x:            num(r["X"] ?? r.x, 0),
-        y:            num(r["Y"] ?? r.y, 0),
-        rim:          pickNum(r["Rim-Grate Elev (ft)"], r["Rim"], r.rim),
-        startElev:    pickNum(r["Fixed-Start Elev (ft)"], r["Start Elev"], r.startElev),
-        crown:        pickNum(r["Pipe Crown (ft)"], r["Crown"], r.crown),
-        forceElev:    r["Force Elev"] === true || r["Force Elev"] === "TRUE" || r["Force Fixed"] === true || r["Force Fixed"] === "TRUE",
-        capturedQ:    captured != null ? captured : (capturedByStructureId[structureIdOf(r)] || 0),
-        totalQ:       pickNum(r["Total Flow (cfs)"], r["Total Q (cfs)"]) ?? 0,
-        Hb:           num(r["Hb (ft)"], 0),
-        elevation:    pickNum(r["Upstream HGL (ft)"], r["Upstream EGL (ft)"]) ?? 0,
-        outPipeId:    String(pick(r["Outgoing Pipe ID"], r.outPipeId) || "")
+        id:        String(s.structureId || ""),
+        label:     String(s.structureId || ""),
+        type:      String(s.type || "manhole").toLowerCase(),
+        x:         0,
+        y:         0,
+        rim:       rim,
+        startElev: pickNum(s.startElev),
+        crown:     null,
+        forceElev: s.forceElev === true,
+        capturedQ: captured != null ? captured : 0,
+        totalQ:    pickNum(s.totalQ) != null ? pickNum(s.totalQ) : 0,
+        Hb:        0,
+        elevation: 0,
+        outPipeId: String(s.outPipeId || "")
       };
     });
 
-    const pipes = pipeRows.map((r, i) => {
-      const fromId = r["From Structure"] != null && r["From Structure"] !== "" ? r["From Structure"] : r.fromId;
-      const toId   = r["To Structure"]   != null && r["To Structure"]   !== "" ? r["To Structure"]   : r.toId;
-      if (fromId == null || fromId === "" || toId == null || toId === "") {
-        throw new Error("Pipe row " + (i + 2) + " missing From/To Structure");
-      }
-      const shape = normalizeShape(r["Shape"] || "circular");
-      const size = normalizeSize(shape, pick(r["Size (in or SPANxRISE)"], r["Size"], shape === "circular" ? 18 : ""));
-      if (size == null || (shape === "circular" && !(isFinite(size) && size > 0))) {
-        throw new Error("Pipe row " + (i + 2) + " has an invalid Size for " + shape);
-      }
+    // Reader pipes: {fromId, toId, size, length, usInvert, dsInvert, angle, n,
+    // _structureType, _rim, _inflowAngle*, _capturedQOverride}.  No explicit
+    // id, shape, or splitRole — the Simple shape stores a single row per
+    // structure, so we synthesize ids as "<fromId>-<toId>" and default shape
+    // to circular (Simple/Robust templates encode circular pipes only).
+    const importedPipes = (result.pipes || []).map((p, i) => {
+      const normShape = normalizeShape("circular");
+      const size = normalizeSize(normShape, p.size);
+      // Legacy shape carries an explicit pipe ID (e.g., "r12"); Simple/
+      // Robust don't, so synthesize a readable one from fromId/toId.
+      const synthId = String(p.fromId || ("P-" + (i + 1))) + "-" + String(p.toId || (i + 1));
       return {
-        id:         String(pick(r["ID"], r["Pipe ID"], r.id) || ("P-" + (i+1))),
-        fromId:     String(fromId),
-        toId:       String(toId),
-        shape,
-        size,
-        n:          num(pick(r["n"], r["Manning's n"], r.n), 0.013),
-        slope:      num(pick(r["Slope (ft-ft)"], r["Slope (ft/ft)"], r.slope), 0.005),
-        length:     num(r["Length (ft)"] ?? r.length, 0),
-        angle:      num(r["Angle (deg)"] ?? r.angle, 0),
-        designQ:    pickNum(r["Design Q (cfs)"], r.designQ),
-        usInvert:   pickNum(r["US Invert (ft)"], r.usInvert),
-        dsInvert:   pickNum(r["DS Invert (ft)"], r.dsInvert),
-        splitRole:  String(pick(r["Split Role"], r.splitRole) || "").toLowerCase(),
-        Hf:         num(r["Hf (ft)"], 0)
+        id:        p.id ? String(p.id) : synthId,
+        fromId:    String(p.fromId || ""),
+        toId:      String(p.toId || ""),
+        shape:     normShape,
+        size:      size != null ? size : num(p.size, 18),
+        n:         num(p.n, 0.013),
+        slope:     0,
+        length:    num(p.length, 0),
+        angle:     num(p.angle, 0),
+        designQ:   null,
+        usInvert:  pickNum(p.usInvert),
+        dsInvert:  pickNum(p.dsInvert),
+        splitRole: String(p.splitRole || "").toLowerCase(),
+        Hf:        0
       };
     });
 
-    // Find outfall: pick the structure with type == "outfall" (first), else lowest elevation.
+    // Reader config: {hglMethod (label string), junctionAngleRule,
+    // hglCrownCeilingRule, projectName, ...}.  Collapse the human-readable
+    // HGL label to the visualizer's two-value toggle via the reader's helper.
+    // Only override state.ui.hglMethod when the xlsx provided an EXPLICIT
+    // AND RECOGNIZED value. An empty or unrecognized value means "no HGL
+    // Method info" — don't clobber the user's current toggle.
+    const hglRaw = (result.config && result.config.hglMethod) || "";
+    const _low = hglRaw.toLowerCase();
+    const _recognized = hglRaw && (
+      _low.indexOf("hec-22") !== -1 || _low.indexOf("hec22") !== -1 ||
+      _low.indexOf("legacy") !== -1 || _low.indexOf("both-end") !== -1 ||
+      _low.indexOf("both end") !== -1 || _low.indexOf("conservative") !== -1
+    );
+    const hglMethod = _recognized
+      ? window.__xlsxShapeReader.hglMethodFromLabel(hglRaw)
+      : state.ui.hglMethod;
+    if (_recognized) state.ui.hglMethod = hglMethod;
+
+    // Outfall: first structure of type "outfall" (the Simple reader already
+    // retags leaf structures as "outfall" in Pass 3), else lowest rim.
     let outfallSid = null, outfallTw = null;
-    const outfallStructs = structures.filter((s) => s.type === "outfall");
+    const outfallStructs = importedStructures.filter((s) => s.type === "outfall");
     if (outfallStructs.length > 0) {
       outfallSid = outfallStructs[0].id;
       outfallTw = outfallStructs[0].startElev != null ? outfallStructs[0].startElev : outfallStructs[0].rim;
-    } else if (structures.length > 0) {
-      const lowest = structures.slice().sort((a, b) => (a.startElev || 1e9) - (b.startElev || 1e9))[0];
+    } else if (importedStructures.length > 0) {
+      const lowest = importedStructures.slice().sort((a, b) => (a.rim || 1e9) - (b.rim || 1e9))[0];
       outfallSid = lowest.id;
-      outfallTw = lowest.startElev;
+      outfallTw = lowest.rim;
     }
-    // Override tailwater from Outlet Structures when an outlet links to the outfall.
-    // The sheet's own id is "Outlet Structure ID"; the linked junction is
-    // "Tailwater Linked Structure ID", and the fixed elevation is
-    // "Tailwater Fixed Elevation (ft)" (legacy fallback: "TW Elevation").
-    for (const r of outRows) {
-      const linkedSid = String(r["Tailwater Linked Structure ID"] || r["Structure ID"] || r.structureId || "");
-      if (linkedSid === outfallSid) {
-        const twFixed = pickNum(r["Tailwater Fixed Elevation (ft)"], r["TW Elevation"]);
-        if (twFixed != null) outfallTw = twFixed;
+
+    // Robust-only: use Outlet Structures' TW Fixed Elevation when it links
+    // to the outfall.  Reader keeps the raw header names in result.outletStructures.
+    if (Array.isArray(result.outletStructures)) {
+      for (const r of result.outletStructures) {
+        const linkedSid = String(r["Tailwater Linked Structure ID"] || r["Structure ID"] || "");
+        if (linkedSid === outfallSid) {
+          const twFixed = pickNum(r["Tailwater Fixed Elevation (ft)"], r["TW Elevation"]);
+          if (twFixed != null) outfallTw = twFixed;
+        }
       }
     }
 
-    const drainageAreas = daRows.map((r) => ({
-      id:          String(pick(r["ID"], r.id) || ""),
-      structureId: String(structureIdOf(r) || ""),
-      areaAc:      pickNum(r["Area A (ac)"], r["Area (ac)"]),
-      C:           pickNum(r["C"]),
-      tc:          pickNum(r["Tc (min)"], r["Tc"])
+    // Drainage areas + TR-55: the reader surfaces both as plain arrays.
+    const drainageAreas = (result.drainage || []).map((d, i) => ({
+      // Legacy carries DA's own ID; Simple/Robust don't, so synthesize.
+      id:          d.id ? String(d.id) : String("DA-" + (i + 1)),
+      structureId: String(d.structureId || ""),
+      areaAc:      pickNum(d.area),
+      C:           pickNum(d.C),
+      tc:          pickNum(d.tc)
     }));
 
-    const tr55Segments = tr55Rows.map((r) => ({
-      drainageAreaId: String(r["Drainage Area"] || r["DA ID"] || ""),
-      order:  pickNum(r["Order"]),
-      type:   String(r["Type"] || "").toLowerCase(),
-      n:      pickNum(r["n"]),
-      L:      pickNum(r["L (ft)"]),
-      s:      pickNum(r["s (ft/ft)"]),
-      P2:     pickNum(r["P2 (in)"]),
-      surface: pick(r["Surface"]) || "",
-      area:   pickNum(r["Area a (sf)"]),
-      wp:     pickNum(r["Wetted Perimeter Pw (ft)"])
+    const tr55Segments = (result.tr55Segments || []).map((r) => ({
+      drainageAreaId: String(r.drainageAreaId || ""),
+      order:  pickNum(r.order),
+      type:   String(r.type || "").toLowerCase(),
+      n:      pickNum(r.n),
+      L:      pickNum(r.L),
+      s:      pickNum(r.s),
+      P2:     pickNum(r.P2),
+      surface: r.surface || "",
+      area:   pickNum(r.area),
+      wp:     pickNum(r.wp)
     }));
 
     state.ui.fileName = (file && file.name) || "";
     state.overrides = { byId: {} };
     state.imported = {
-      structures, pipes,
+      structures: importedStructures,
+      pipes: importedPipes,
       outfall: { structureId: outfallSid, tailwaterElev: outfallTw != null ? outfallTw : 100 },
-      config: { stormLabel: "", units: "us-customary", hglMethod: state.ui.hglMethod },
+      config: { stormLabel: "", units: "us-customary", hglMethod },
       kbTable: null,
       drainageAreas, tr55Segments
     };

@@ -726,6 +726,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       if(has("Outlet Structures")) return "robust";
       return "simple";
     }
+    // Pre-Spec-3 calculator native format (Spec 4).
+    if(has("Pipe Sizing") && has("Junction Structure")) return "legacy-native";
     return "unknown";
   }
 
@@ -925,7 +927,141 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       });
   }
 
+  function readLegacyNativeWorkbook(wb){
+    // Pre-Spec-3 calculator native xlsx (Spec 4). Separate sheets per
+    // entity; no STORM DRAIN COMPS. Output shape matches readRobust so
+    // applyRobustReaderResult can consume it directly.
+    const pipeRows = readSheetAsObjects(wb, "Pipe Sizing");
+    const structRows = readSheetAsObjects(wb, "Junction Structure");
+    const daRows = readSheetAsObjects(wb, "Drainage Area");
+
+    const pipes = pipeRows
+      .filter(r => r["From Structure"] !== "" && r["From Structure"] != null)
+      .map(r => ({
+        // Legacy exports carry an explicit ID (e.g., "r12") on col A.
+        id: (r["ID"] !== "" && r["ID"] != null) ? String(r["ID"]) : "",
+        fromId: String(r["From Structure"] || ""),
+        toId: String(r["To Structure"] || ""),
+        size: r["Size (in or SPANxRISE)"] || "",
+        length: r["Length (ft)"] || "",
+        usInvert: (r["US Invert (ft)"] !== "" && r["US Invert (ft)"] != null)
+          ? r["US Invert (ft)"] : "",
+        dsInvert: (r["DS Invert (ft)"] !== "" && r["DS Invert (ft)"] != null)
+          ? r["DS Invert (ft)"] : "",
+        angle: r["Angle (deg)"] || 0,
+        n: (r["n"] !== "" && r["n"] != null) ? r["n"] : 0.013,
+        // Normalize splitRole to a top-level field (visualizer reads it).
+        splitRole: String(r["Split Role"] || "").toLowerCase(),
+        _splitRole: r["Split Role"] || "",
+        _structureType: "",
+        _rim: "",
+        _inflowAngle1: "",
+        _inflowAngle2: "",
+        _capturedQOverride: "",
+      }));
+
+    const structures = structRows
+      .filter(r => r["Structure ID"] !== "" && r["Structure ID"] != null)
+      .map(r => ({
+        structureId: String(r["Structure ID"] || ""),
+        type: String(r["Type"] || "manhole").toLowerCase(),
+        rim: (r["Rim-Grate Elev (ft)"] !== "" && r["Rim-Grate Elev (ft)"] != null)
+          ? r["Rim-Grate Elev (ft)"] : "",
+        // Legacy-only fields the visualizer consumes.
+        startElev: (r["Fixed-Start Elev (ft)"] !== "" && r["Fixed-Start Elev (ft)"] != null)
+          ? r["Fixed-Start Elev (ft)"] : "",
+        forceElev: String(r["Force Fixed"] || "").toUpperCase() === "TRUE",
+        totalQ: (r["Total Flow (cfs)"] !== "" && r["Total Flow (cfs)"] != null)
+          ? r["Total Flow (cfs)"] : "",
+        outPipeId: String(r["Outgoing Pipe ID"] || ""),
+        capturedQ: (r["Captured Q (cfs)"] !== "" && r["Captured Q (cfs)"] != null)
+          ? r["Captured Q (cfs)"] : "",
+        capturedQOverride: "",
+      }));
+
+    const drainage = daRows
+      .filter(r => r["ID"] !== "" && r["ID"] != null)
+      .map(r => ({
+        // Legacy carries DA's own ID separately from the linked structure.
+        id: String(r["ID"] || ""),
+        // "Structure" column links the DA to the capturing structure.
+        structureId: String(r["Structure"] || ""),
+        area: r["Area A (ac)"] || "",
+        C: r["C"] || "",
+        tc: r["Tc (min)"] || "",
+      }));
+
+    // TR-55 Segments: identical sheet layout to Robust.
+    const tr55 = wb.Sheets["TR-55 Segments"];
+    const tr55Segments = [];
+    if(tr55){
+      const sheetAoa = XLSX.utils.sheet_to_json(tr55, {header:1, raw:true, defval:""});
+      const headers = (sheetAoa[0]||[]).map(h => String(h).trim());
+      const idx = (name) => headers.indexOf(name);
+      for(let i = 1; i < sheetAoa.length; i++){
+        const row = sheetAoa[i];
+        if(!row.some(v => v !== "" && v != null)) continue;
+        tr55Segments.push({
+          drainageAreaId: row[idx("Drainage Area")] || "",
+          order: row[idx("Order")] || i,
+          type: String(row[idx("Type")]||"").toLowerCase(),
+          n: row[idx("n")] || "",
+          L: row[idx("L (ft)")] || "",
+          s: row[idx("s (ft/ft)")] || "",
+          P2: row[idx("P2 (in)")] || "",
+          surface: row[idx("Surface")] || "",
+          area: row[idx("Area a (sf)")] || "",
+          wp: row[idx("Wetted Perimeter Pw (ft)")] || "",
+        });
+      }
+    }
+    const outletStructures = readSheetAsObjects(wb, "Outlet Structures");
+    const outletDevices    = readSheetAsObjects(wb, "Outlet Devices");
+
+    // Rainfall Settings is a key/value sheet in legacy as in Robust.
+    const rainfallSettings = {};
+    const rfWs = wb.Sheets["Rainfall Settings"];
+    if(rfWs){
+      const aoa = XLSX.utils.sheet_to_json(rfWs, {header:1, raw:false, defval:""});
+      for(const row of aoa){
+        const k = String(row[0]||"").trim();
+        if(k) rainfallSettings[k] = row[1];
+      }
+    }
+
+    // No Config sheet in legacy — derive hglMethod from Rainfall Settings
+    // IF PRESENT. Leave as empty string when absent so consumers can
+    // distinguish "no explicit value" from "default value" (prevents a
+    // missing Rainfall Settings sheet from silently overriding the
+    // consumer's current hglMethod toggle).
+    const config = {
+      junctionAngleRule:   "smaller-loss",
+      hglCrownCeilingRule: "crown-plus-1ft",
+      hglMethod: rainfallSettings["HGL Method"]
+        ? String(rainfallSettings["HGL Method"]) : "",
+      projectName: "",
+      templateShape: "legacy-native",
+      contractVersion: 1,
+    };
+    const ovSheet = wb.Sheets["Overview"];
+    if(ovSheet){
+      const aoa = XLSX.utils.sheet_to_json(ovSheet, {header:1, raw:false, defval:""});
+      if(aoa[1] && aoa[1][1]) config.projectName = String(aoa[1][1]);
+    }
+
+    const jurisdiction = "MCDOT";
+    const pipeStorm = String(rainfallSettings["Pipe & HGL Design Storm"] || "10yr");
+
+    return {
+      _shape: "legacy-native",
+      pipes, structures, drainage, config,
+      tr55Segments, outletStructures, outletDevices, rainfallSettings,
+      hydraulics: { jurisdiction, pipeStorm },
+    };
+  }
+
   const api = { detectShape, readSimpleWorkbook, readRobustWorkbook,
+                readLegacyNativeWorkbook,
                 hglMethodFromLabel, readSheetAsObjects };
   if(typeof window !== "undefined") window.__xlsxShapeReader = api;
   if(typeof module !== "undefined" && module.exports) module.exports = api;
@@ -7103,6 +7239,16 @@ function importExcel(file){
         syncShapeRadio();
         toast("Imported Simple template. Outlet structures, TR-55 "
               +"segments, and custom NOAA data were not in the file.");
+        renderAll(); updateSavesUI();
+        return;
+      }
+      if(shape === "legacy-native"){
+        const legacy = window.__xlsxShapeReader.readLegacyNativeWorkbook(wb);
+        applyRobustReaderResult(legacy);
+        state.exportShape = "robust";
+        syncShapeRadio();
+        toast("Imported legacy native format. Re-export as Robust to "
+              +"upgrade to the current layout.");
         renderAll(); updateSavesUI();
         return;
       }
