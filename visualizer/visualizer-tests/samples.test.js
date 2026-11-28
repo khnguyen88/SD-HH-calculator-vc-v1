@@ -44,13 +44,13 @@ test("loadSample applies the calculator demo through the shared import path", ()
   viz.dom.window.close();
 });
 
-test("loadSample applies the bburg sample with legacy-both-crown preselected", () => {
+test("loadSample applies the bburg sample with hec22 (Spec 6: legacy removed)", () => {
   const viz = loadVisualizer();
   viz.fn("loadSample")("bburg-simplified");
   const imp = viz.window.state.imported;
   assert.strictEqual(imp.structures.length, 3);
   assert.strictEqual(imp.pipes.length, 2);
-  assert.strictEqual(viz.window.state.ui.hglMethod, "legacy-both-crown");
+  assert.strictEqual(viz.window.state.ui.hglMethod, "hec22");
   assert.notStrictEqual(viz.window.state.ui.walkStartId, null);
   viz.dom.window.close();
 });

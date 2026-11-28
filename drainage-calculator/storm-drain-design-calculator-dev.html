@@ -2108,18 +2108,13 @@ function computeStructureCalc(structureId, seen, stormOverride){
   const crown = (geo && invSt.usInvert !== null) ? invSt.usInvert + geo.equivDiamIn/12 : null;
   const rim = (st.rim!==""&&st.rim!=null) ? parseFloat(st.rim) : null;
 
-  // Conservative HGL method: pin the upstream HGL to the outgoing pipe's
-  // upstream crown so the profile never falls below the pipe soffit.
-  // Base/forceElev structures never reach this code (early return above).
+  // HEC-22 only (Spec 6): the upstream HGL is the HEC-22 chain value —
+  // no crown pin. Dropped support for the legacy both-end crown floor;
+  // see docs/superpowers/specs/2026-11-27-spec6-drop-legacy-hgl-method-design.md.
   let elevation = hec22Elevation;
   let pinned = false;
-  if ((state.hydraulics && state.hydraulics.hglMethod) === "conservative" && crown !== null && hec22Elevation < crown) {
-    elevation = crown;
-    pinned = true;
-  }
 
   // EGL at the structure = upstream HGL + velocity head in the outgoing pipe.
-  // Under the Conservative method the pinned HGL carries through unchanged.
   const vhOut = Vout*Vout/(2*G);
   const egl = elevation + vhOut;
 
@@ -2134,10 +2129,11 @@ function computeStructureCalc(structureId, seen, stormOverride){
   };
 }
 
-// Excel label <-> state value for the HGL method (Rainfall Settings sheet).
-// Unknown or missing values fall back to HEC-22 per the design spec.
-function hglMethodFromLabel(v){
-  return String(v==null ? "" : v).trim().toLowerCase() === "conservative" ? "conservative" : "hec22";
+// Spec 6: HGL method is always HEC-22. Helpers kept for forward-compat
+// but no longer distinguish "conservative" from "hec22" — any input
+// returns "hec22".
+function hglMethodFromLabel(_v){
+  return "hec22";
 }
 
 // Human-readable label for the selected HGL method, used on detail/print sheets.
@@ -4050,19 +4046,9 @@ function renderRainfall() {
   pipeStormField.appendChild(pipeSel);
   stRow.appendChild(pipeStormField);
 
-  // HGL method (global project setting — spec: HGL method toggle)
-  const hglField = el("div", {class:"field"});
-  hglField.appendChild(el("label", {}, "HGL Method"));
-  const hglSel = el("select", {class:"cell-input", style:"width:150px;",
-    "data-focus-key":"rf:hglMethod",
-    onchange: (e) => { state.hydraulics.hglMethod = e.target.value; withFocusPreserved(renderAll); }});
-  [["hec22","HEC-22 (standard)"], ["conservative","Conservative (crown-pin)"]].forEach(([v,lab]) => {
-    const o = el("option", {value:v}, lab);
-    if (((state.hydraulics && state.hydraulics.hglMethod) || "hec22") === v) o.selected = true;
-    hglSel.appendChild(o);
-  });
-  hglField.appendChild(hglSel);
-  stRow.appendChild(hglField);
+  // HGL method toggle removed in Spec 6: user project is MDSHA/MCDOT/
+  // HEC-22 only. state.hydraulics.hglMethod stays as the string "hec22"
+  // for forward-compat (future "add another HGL method" would reuse it).
 
   // Inlet storm
   const inletStormField = el("div", {class:"field"});
@@ -6182,9 +6168,7 @@ async function buildRobustWorkbook(){
   writeCell(cfg, "B3", state.hydraulics.junctionAngleRule || "smaller-loss", "s");
   writeCell(cfg, "B4", state.hydraulics.hglCrownCeilingRule || "crown-plus-1ft", "s");
   writeCell(cfg, "B5",
-    state.hydraulics.hglMethod === "conservative"
-      ? "legacy both-end crown floor"
-      : "HEC-22 EGL (d/s crown floor)", "s");
+    "HEC-22 EGL (d/s crown floor)", "s");
   writeCell(cfg, "B6", "robust", "s");
   writeCell(cfg, "B7", 2, "n");
 
@@ -6389,7 +6373,7 @@ async function buildRobustWorkbook(){
     ["Pipe & HGL Design Storm",  rf.pipeStorm||"10yr"],
     ["25-yr Check",              rf.pipe25Check ? "TRUE" : "FALSE"],
     ["Inlet Design Storm",       rf.inletStorm||"2yr"],
-    ["HGL Method",               state.hydraulics.hglMethod==="conservative" ? "Conservative" : "HEC-22"],
+    ["HGL Method",               "HEC-22"],
     ["Custom NOAA 5-min (in/hr)",  (rf.customNoaa&&rf.customNoaa[5]!=null&&rf.customNoaa[5]!=="")?rf.customNoaa[5]:""],
     ["Custom NOAA 10-min (in/hr)", (rf.customNoaa&&rf.customNoaa[10]!=null&&rf.customNoaa[10]!=="")?rf.customNoaa[10]:""],
     ["Custom NOAA 15-min (in/hr)", (rf.customNoaa&&rf.customNoaa[15]!=null&&rf.customNoaa[15]!=="")?rf.customNoaa[15]:""],
@@ -6469,9 +6453,7 @@ async function buildSimpleWorkbook(){
   writeCell(cfg, "B3", state.hydraulics.junctionAngleRule || "smaller-loss", "s");
   writeCell(cfg, "B4", state.hydraulics.hglCrownCeilingRule || "crown-plus-1ft", "s");
   writeCell(cfg, "B5",
-    state.hydraulics.hglMethod === "conservative"
-      ? "legacy both-end crown floor"
-      : "HEC-22 EGL (d/s crown floor)", "s");
+    "HEC-22 EGL (d/s crown floor)", "s");
   writeCell(cfg, "B6", "simple", "s");
   writeCell(cfg, "B7", 2, "n");
 
@@ -6639,7 +6621,7 @@ function buildVisualizerPayload(){
     config: {
       stormLabel: VISUALIZER_STORM_LABELS[state.rainfall.pipeStorm||"10yr"] || (state.rainfall.pipeStorm||""),
       units: "us-customary",
-      hglMethod: (state.hydraulics && state.hydraulics.hglMethod) === "conservative" ? "legacy-both-crown" : "hec22"
+      hglMethod: "hec22"
     }
   };
 }

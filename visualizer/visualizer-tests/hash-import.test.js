@@ -22,7 +22,7 @@ function samplePayload() {
         n: 0.013, slope: 0.005, length: 100, designQ: 2.5 }
     ],
     outfall: { structureId: "OUT", tailwaterElev: 100 },
-    config: { stormLabel: "10-yr", units: "us-customary", hglMethod: "legacy-both-crown" }
+    config: { stormLabel: "10-yr", units: "us-customary", hglMethod: "hec22" }
   };
 }
 
@@ -36,7 +36,7 @@ test("#data= hash loads through the shared import path at boot", () => {
   assert.strictEqual(w.state.ui.fileName, "(from calculator)");
   assert.strictEqual(w.document.getElementById("fileName").textContent, "(from calculator)");
   assert.strictEqual(w.location.hash, "", "hash must be stripped after import");
-  assert.strictEqual(w.state.ui.hglMethod, "legacy-both-crown", "config.hglMethod must apply");
+  assert.strictEqual(w.state.ui.hglMethod, "hec22", "config.hglMethod must apply");
 });
 
 test("garbage #data= hash: no crash, empty start, error surfaced, hash stripped", () => {
@@ -60,7 +60,7 @@ test("importFromHash works when the visualizer is already open", () => {
   w.location.hash = "#data=" + encodeURIComponent(JSON.stringify(samplePayload()));
   assert.strictEqual(w.importFromHash(), true);
   assert.ok(w.state.imported, "payload imported on live page");
-  assert.strictEqual(w.state.ui.hglMethod, "legacy-both-crown");
+  assert.strictEqual(w.state.ui.hglMethod, "hec22");
   assert.strictEqual(w.location.hash, "");
 });
 

@@ -80,7 +80,7 @@ test("with inverts: PB downstream floor is its own soffit 101.5, not MH crown 92
   viz.dom.window.close();
 });
 
-test("with inverts: hec22 hglUp = hglDn + Hf (101.5 + ~0.210); legacy also pins at upstream soffit 102.5", () => {
+test("with inverts: hec22 hglUp = hglDn + Hf (101.5 + ~0.210)", () => {
   const viz = loadDropNetwork(true);
 
   const hec = walkRows(viz, "hec22");
@@ -90,10 +90,8 @@ test("with inverts: hec22 hglUp = hglDn + Hf (101.5 + ~0.210); legacy also pins 
   assert.ok(Math.abs(pbHec.hgl - (101.5 + 0.21062)) < 0.01,
     "hec22 PB hglUp expected ~101.71, got " + pbHec.hgl);
 
-  const legacy = walkRows(viz, "legacy-both-crown");
-  const pbLegacy = hfRow(legacy, "PB");
-  assert.strictEqual(pbLegacy.hglDn, 101.5);
-  assert.strictEqual(pbLegacy.hgl, 102.5, "legacy upstream pin at usInvert 101 + 1.5");
+  // Spec 6: legacy-both-crown walk removed. Previously this test also
+  // asserted that legacy pins at the upstream soffit (102.5) — gone.
   viz.dom.window.close();
 });
 

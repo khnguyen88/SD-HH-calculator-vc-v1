@@ -532,12 +532,13 @@
   //   legacy:       HGL_up = max(HGL_dn + Hf, Crown_up)
   // Returns { hglDn, hglUp, clamped } — clamped means a crown floor fired.
   function hglWalkStep(EGL_dn, V_fps, crownDn, crownUp, Hf, method) {
+    // Spec 6: HEC-22 only. The `method` and `crownUp` parameters are
+    // kept in the signature for backward-compat with callers; crownUp
+    // is no longer consulted.
     const hglDnRaw = EGL_dn - velocityHead(V_fps);
     const hglDn = (crownDn == null) ? hglDnRaw : Math.max(hglDnRaw, crownDn);
-    const hglUpRaw = hglDn + Hf;
-    const hglUp = (method === "legacy-both-crown" && crownUp != null)
-      ? Math.max(hglUpRaw, crownUp) : hglUpRaw;
-    return { hglDn, hglUp, clamped: Math.abs(hglUp - (hglDnRaw + Hf)) > 1e-12 };
+    const hglUp = hglDn + Hf;
+    return { hglDn, hglUp, clamped: hglDn !== hglDnRaw };
   }
 
   // Annotate each ledger row with HGL. Does not mutate rows.
@@ -547,7 +548,7 @@
   function annotateLedgerHgl(rows, resolvedState, method) {
     const imp = resolvedState.imported;
     const ovr = resolvedState.overrides;
-    const legacy = method === "legacy-both-crown";
+    const legacy = false; // Spec 6: HEC-22 only.
     const crownOf = (id) => {
       const crown = resolveField(id, "crown", imp, ovr);
       return (typeof crown === "number" && isFinite(crown)) ? crown : null;
@@ -765,8 +766,10 @@
     state.ui.mode = listOverrides().length > 0 ? "edit" : "explore";
 
     // Apply hglMethod from config if provided
-    if (imported.config && (imported.config.hglMethod === "hec22" || imported.config.hglMethod === "legacy-both-crown")) {
-      state.ui.hglMethod = imported.config.hglMethod;
+    if (imported.config && imported.config.hglMethod === "hec22") {
+      // Spec 6: only hec22 is honored. Any legacy-both-crown value from
+      // an older JSON is silently normalized to hec22 (no UI toggle).
+      state.ui.hglMethod = "hec22";
     }
 
     // Any import invalidates the previous walk: reset the cursor and branch memory.
@@ -869,7 +872,7 @@
           { id: "B2", fromId: "MH-1", toId: "CULVERT", shape: "circular", size: 24, n: 0.013, slope: 0.01, length: 35, angle: 0, splitRole: "", designQ: 9, usInvert: 67.35, dsInvert: 67 }
         ],
         outfall: { structureId: "CULVERT", tailwaterElev: 67 },
-        config: { stormLabel: "10-yr MoCo", units: "us-customary", hglMethod: "legacy-both-crown" }
+        config: { stormLabel: "10-yr MoCo", units: "us-customary", hglMethod: "hec22" }
       }
     }
   };
@@ -971,23 +974,11 @@
       };
     });
 
-    // Reader config: {hglMethod (label string), junctionAngleRule,
-    // hglCrownCeilingRule, projectName, ...}.  Collapse the human-readable
-    // HGL label to the visualizer's two-value toggle via the reader's helper.
-    // Only override state.ui.hglMethod when the xlsx provided an EXPLICIT
-    // AND RECOGNIZED value. An empty or unrecognized value means "no HGL
-    // Method info" — don't clobber the user's current toggle.
-    const hglRaw = (result.config && result.config.hglMethod) || "";
-    const _low = hglRaw.toLowerCase();
-    const _recognized = hglRaw && (
-      _low.indexOf("hec-22") !== -1 || _low.indexOf("hec22") !== -1 ||
-      _low.indexOf("legacy") !== -1 || _low.indexOf("both-end") !== -1 ||
-      _low.indexOf("both end") !== -1 || _low.indexOf("conservative") !== -1
-    );
-    const hglMethod = _recognized
-      ? window.__xlsxShapeReader.hglMethodFromLabel(hglRaw)
-      : state.ui.hglMethod;
-    if (_recognized) state.ui.hglMethod = hglMethod;
+    // Spec 6: state.ui.hglMethod is always "hec22"; nothing to apply
+    // from the xlsx config. `hglMethod` local kept for the imported
+    // config.hglMethod round-trip at the bottom of this function.
+    const hglMethod = "hec22";
+    state.ui.hglMethod = "hec22";
 
     // Outfall: first structure of type "outfall" (the Simple reader already
     // retags leaf structures as "outfall" in Pass 3), else lowest rim.
@@ -1722,45 +1713,9 @@
     syncTr55Toggle();
   }
 
-  // --- HGL method select (task-40) ---
-
-  // Keep the topbar HGL-method <select> in sync with state.ui.hglMethod.
-  function syncHglSelect() {
-    const sel = document.getElementById("hglMethodSelect");
-    if (!sel) return;
-    const v = state.ui.hglMethod === "legacy-both-crown" ? "legacy-both-crown" : "hec22";
-    if (sel.value !== v) sel.value = v;
-  }
-
-  // Inject the HGL-method label + select into the topbar, just before the mode toggle.
-  // Fallback: if the mode toggle is absent, still render both inside the topbar.
-  (function () {
-    const topbar = document.querySelector(".topbar");
-    if (!topbar) return;
-    const modeToggle = document.getElementById("modeToggle");
-    const label = el("label", {
-      for: "hglMethodSelect",
-      style: "font-size:12px;color:var(--fg-dim);font-family:var(--mono);white-space:nowrap;"
-    }, "HGL method:");
-    const select = el("select", {
-      id: "hglMethodSelect",
-      style: "font-family:var(--mono);font-size:12px;background:var(--bg-elev);" +
-             "color:var(--fg);border:1px solid #30363d;border-radius:3px;padding:2px 4px;",
-      onchange: (ev) => {
-        state.ui.hglMethod = ev.target.value;
-        withFocusPreserved(renderAll);
-      }
-    }, [
-      el("option", { value: "hec22" }, "HEC-22 EGL"),
-      el("option", { value: "legacy-both-crown" }, "Legacy both-crown")
-    ]);
-    // One flex group so "HGL method:" and its select never split across
-    // topbar wrap rows.
-    const group = el("span", { style: "display:flex; align-items:center; gap:6px;" }, [label, select]);
-    if (modeToggle) topbar.insertBefore(group, modeToggle);
-    else topbar.appendChild(group);
-    syncHglSelect();
-  })();
+  // Spec 6: HGL method toggle removed. state.ui.hglMethod stays as the
+  // string "hec22" for forward-compat; no UI exposes it.
+  function syncHglSelect() { /* no-op after Spec 6 */ }
 
   // Inject the built-in sample loader into the topbar, before the mode toggle.
   // Mirrors the hglMethodSelect injection pattern above.

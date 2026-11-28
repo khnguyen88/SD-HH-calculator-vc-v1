@@ -17,13 +17,9 @@
     return "unknown";
   }
 
-  function hglMethodFromLabel(label){
-    const s = String(label||"").toLowerCase();
-    if(s.indexOf("hec-22")!==-1 || s.indexOf("hec22")!==-1) return "hec22";
-    if(s.indexOf("legacy")!==-1 || s.indexOf("both-end")!==-1
-       || s.indexOf("both end")!==-1 || s.indexOf("conservative")!==-1){
-      return "legacy-both-crown";
-    }
+  function hglMethodFromLabel(_label){
+    // Spec 6: HGL method is always HEC-22. Kept as a function for
+    // backward-compat with callers that pass the result through.
     return "hec22";
   }
 

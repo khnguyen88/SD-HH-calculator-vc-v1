@@ -443,14 +443,6 @@ HGL_METHOD_LEGACY_LABEL = "legacy both-end crown floor"
 HGL_METHOD_SHEETS = ("HGL", "HGL(25YEAR)")
 
 
-def _wrap_if_hgl_method(legacy_body, hec22_body):
-    """Compose the IF(hglMethod=legacy,...) wrapper used on HGL G/K/M."""
-    return (
-        f'=IF(hglMethod="{HGL_METHOD_LEGACY_LABEL}",'
-        f'{legacy_body},{hec22_body})'
-    )
-
-
 def _hec22_strip_us_crown(legacy_body, us_crown_token):
     """Return the HEC-22 variant of a MAX(...) formula body.
 
@@ -492,28 +484,51 @@ def _hec22_strip_us_crown(legacy_body, us_crown_token):
     return out
 
 
+_IF_WRAP_RE = re.compile(
+    r'^IF\(hglMethod="legacy both-end crown floor",(.+),(.+)\)$',
+    re.DOTALL
+)
+
+
+def _unwrap_hgl_method(body):
+    """Return the HEC-22 branch of an IF(hglMethod="legacy...",legacy,hec22)
+    wrapper. For bodies without the wrapper, returns None.
+
+    Spec 6 inverse of Spec 3 Task 18's _wrap_if_hgl_method. Used to strip
+    the toggle from old wrapped formulas when rebuilding golden.
+    """
+    m = _IF_WRAP_RE.match(body)
+    if not m:
+        return None
+    # Group 2 is the hec22 branch — the whole point of the strip.
+    return m.group(2)
+
+
 def wire_hgl_method(wb):
-    """Replace HGL cols G, K, M with IF(hglMethod=...) branching formulas.
+    """Make HGL and HGL(25YEAR) formulas use HEC-22 only (Spec 6).
 
-    Spec 2 left hglMethod label-only (P3 stamp only). Spec 3 Task 18 makes
-    the toggle drive the formulas on both HGL and HGL(25YEAR).
+    Spec 3 Task 18 wrapped HGL cols G/K/M with IF(hglMethod="legacy...",
+    legacy, hec22). Spec 6 drops support for the legacy PG-County rule
+    (user project is MDSHA/MCDOT/HEC-22 only). This function:
 
-    Branch semantics (docs/template-analysis/02-hgl.md §G, §K, §M):
-      - Legacy ("legacy both-end crown floor"): verbatim current formula.
-      - HEC-22 ("HEC-22 EGL (d/s crown floor)"): drops the us_crown term.
+    1. For col K (the only col where the two branches actually differ):
+       strip the D{r} us_crown term from the MAX(...) call, producing
+       =IFERROR(IF(A{r}="","",MAX(J{r}+G{r})),"") — HEC-22 only.
 
-    us_crown appears only on column K (as D{r}). Columns G (uses F{r}=
-    ds_crown) and M (no crown) are unchanged between branches; they still
-    get wrapped in IF(hglMethod=...,legacy,hec22) so the branch structure
-    is uniform across G/K/M and a single test can assert "all three cols
-    on both sheets carry the hglMethod toggle."
+    2. For cols G and M (where Task 18 wrapped defensively; both IF
+       branches had identical bodies): unwrap to the plain body.
 
-    Column G is stored as an ArrayFormula (CSE) because of the embedded
-    MAX(IF($A$7:$A$91=$B{r},$M$7:$M$91)) chain lookup; the ArrayFormula
-    wrapper is preserved on rewrite.
+    Handles both forms:
+      - Repaired WIP (no IF-wrap yet; col K has MAX(D{r},J{r}+G{r})) →
+        strip us_crown directly.
+      - Old golden with Task 18's IF-wrap → unwrap, then strip.
 
-    Any row whose formula shape is unrecognized is logged to stderr and
-    left unchanged — never wreck a working formula on a bad guess.
+    Idempotent: a second run on an already-simplified file produces the
+    same bytes (no "hglMethod" literal remains to re-process).
+
+    ArrayFormula on G is preserved. No usages of the hglMethod named
+    range remain; the named range itself stays defined on the Config
+    sheet for forward-compat.
     """
     for sheet_name in HGL_METHOD_SHEETS:
         if sheet_name not in wb.sheetnames:
@@ -521,9 +536,8 @@ def wire_hgl_method(wb):
         ws = wb[sheet_name]
 
         for r in range(HGL_DATA_ROW_START, HGL_DATA_ROW_END + 1):
-            # ---- Column G: ArrayFormula, no us_crown; wrap only.
-            gcell = ws[f"G{r}"]
-            gval = gcell.value
+            # ---- Column G: ArrayFormula (CSE), no us_crown.
+            gval = ws[f"G{r}"].value
             gtext = None
             is_array = False
             if isinstance(gval, ArrayFormula):
@@ -533,43 +547,36 @@ def wire_hgl_method(wb):
                 gtext = gval
             if gtext is not None:
                 body = gtext.lstrip("=")
-                if "hglMethod" in body:
-                    # Already wired from a prior run — idempotent skip.
-                    pass
-                else:
-                    # G has no us_crown; HEC-22 variant == legacy.
-                    new_text = _wrap_if_hgl_method(body, body)
+                unwrapped = _unwrap_hgl_method(body)
+                if unwrapped is not None:
+                    new_text = "=" + unwrapped
                     if is_array:
                         ws[f"G{r}"] = ArrayFormula(gval.ref, new_text)
                     else:
                         ws[f"G{r}"] = new_text
 
-            # ---- Column K: plain string formula, us_crown = D{r}.
+            # ---- Column K: plain formula, us_crown = D{r}.
             kval = ws[f"K{r}"].value
             if isinstance(kval, str) and kval.startswith("="):
                 body = kval.lstrip("=")
-                if "hglMethod" in body:
-                    pass  # idempotent
+                unwrapped = _unwrap_hgl_method(body)
+                if unwrapped is not None:
+                    # Formula was Task-18-wrapped — use the hec22 branch.
+                    ws[f"K{r}"] = "=" + unwrapped
                 else:
+                    # Un-wrapped WIP formula — strip the us_crown term.
                     hec22 = _hec22_strip_us_crown(body, f"D{r}")
-                    if hec22 == body:
-                        print(
-                            f"[wire_hgl_method] unparsed {sheet_name}!K{r}: "
-                            f"us_crown token D{r} not found in "
-                            f"{body!r} — leaving unchanged",
-                            file=sys.stderr,
-                        )
-                    else:
-                        ws[f"K{r}"] = _wrap_if_hgl_method(body, hec22)
+                    if hec22 != body:
+                        ws[f"K{r}"] = "=" + hec22
+                    # else: no us_crown present, leave alone.
 
-            # ---- Column M: plain string formula, no crown terms; wrap only.
+            # ---- Column M: plain formula, no crown terms.
             mval = ws[f"M{r}"].value
             if isinstance(mval, str) and mval.startswith("="):
                 body = mval.lstrip("=")
-                if "hglMethod" in body:
-                    pass  # idempotent
-                else:
-                    ws[f"M{r}"] = _wrap_if_hgl_method(body, body)
+                unwrapped = _unwrap_hgl_method(body)
+                if unwrapped is not None:
+                    ws[f"M{r}"] = "=" + unwrapped
 
     return wb
 
