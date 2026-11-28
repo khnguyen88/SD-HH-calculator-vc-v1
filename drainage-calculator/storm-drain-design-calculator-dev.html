@@ -6145,23 +6145,23 @@ async function buildRobustWorkbook(){
                       || p.toStructureId || "";
     writeCell(sdc, "A"+row, fromLabel, "s");
     writeCell(sdc, "B"+row, toLabel, "s");
-    writeCell(sdc, "N"+row, parseFloat(p.size) || "", "n");
-    writeCell(sdc, "O"+row, p.length);
-    writeCell(sdc, "P"+row, p.upstreamInvert);
-    writeCell(sdc, "Q"+row, p.downstreamInvert);
-    writeCell(sdc, "R"+row, p.angle);
-    writeCell(sdc, "S"+row, pipeEffectiveN(p));
-    // Spec 7: Pipe Shape / Width / # (barrel count) on BF/BG/BH.
-    writeCell(sdc, "BF"+row, (p.shape || "circular"), "s");
-    writeCell(sdc, "BG"+row, (p.width === "" || p.width == null) ? "" : parseFloat(p.width), "n");
-    writeCell(sdc, "BH"+row, (p.barrelCount && p.barrelCount > 0) ? Number(p.barrelCount) : 1, "n");
+    // Spec 7 Path A: N=Pipe Shape, O=Size/Height, P=Width, Q=#.
+    writeCell(sdc, "N"+row, (p.shape || "circular"), "s");
+    writeCell(sdc, "O"+row, parseFloat(p.size) || "", "n");
+    writeCell(sdc, "P"+row, (p.width === "" || p.width == null) ? "" : parseFloat(p.width), "n");
+    writeCell(sdc, "Q"+row, (p.barrelCount && p.barrelCount > 0) ? Number(p.barrelCount) : 1, "n");
+    writeCell(sdc, "R"+row, p.length);
+    writeCell(sdc, "S"+row, p.upstreamInvert);
+    writeCell(sdc, "T"+row, p.downstreamInvert);
+    writeCell(sdc, "U"+row, p.angle);
+    writeCell(sdc, "V"+row, pipeEffectiveN(p));
     const s = findStructure(p.fromStructureId);
     if(s){
-      writeCell(sdc, "AA"+row, (s.type||"manhole"), "s");
-      writeCell(sdc, "AB"+row, s.rim);
+      writeCell(sdc, "AD"+row, (s.type||"manhole"), "s");
+      writeCell(sdc, "AE"+row, s.rim);
       const calc = computeStructureCalc(s.id);
       if(calc && calc.captured){
-        writeCell(sdc, "AK"+row, round(calc.captured, 4));
+        writeCell(sdc, "AN"+row, round(calc.captured, 4));
       }
     }
   });
@@ -6186,7 +6186,7 @@ async function buildRobustWorkbook(){
   writeCell(cfg, "B7", 2, "n");
 
   if(state.hydraulics.jurisdiction){
-    writeCell(sdc, "T3", state.hydraulics.jurisdiction, "s");
+    writeCell(sdc, "W3", state.hydraulics.jurisdiction, "s");
   }
   if(state.rainfall && state.rainfall.pipeStorm){
     writeCell(sdc, "H3", state.rainfall.pipeStorm, "s");
@@ -6436,23 +6436,23 @@ async function buildSimpleWorkbook(){
                       || p.toStructureId || "";
     writeCell(sdc, "A"+row, fromLabel, "s");
     writeCell(sdc, "B"+row, toLabel, "s");
-    writeCell(sdc, "N"+row, parseFloat(p.size) || "", "n");
-    writeCell(sdc, "O"+row, p.length);
-    writeCell(sdc, "P"+row, p.upstreamInvert);
-    writeCell(sdc, "Q"+row, p.downstreamInvert);
-    writeCell(sdc, "R"+row, p.angle);
-    writeCell(sdc, "S"+row, pipeEffectiveN(p));
-    // Spec 7: Pipe Shape / Width / # (barrel count) on BF/BG/BH.
-    writeCell(sdc, "BF"+row, (p.shape || "circular"), "s");
-    writeCell(sdc, "BG"+row, (p.width === "" || p.width == null) ? "" : parseFloat(p.width), "n");
-    writeCell(sdc, "BH"+row, (p.barrelCount && p.barrelCount > 0) ? Number(p.barrelCount) : 1, "n");
+    // Spec 7 Path A: N=Pipe Shape, O=Size/Height, P=Width, Q=#.
+    writeCell(sdc, "N"+row, (p.shape || "circular"), "s");
+    writeCell(sdc, "O"+row, parseFloat(p.size) || "", "n");
+    writeCell(sdc, "P"+row, (p.width === "" || p.width == null) ? "" : parseFloat(p.width), "n");
+    writeCell(sdc, "Q"+row, (p.barrelCount && p.barrelCount > 0) ? Number(p.barrelCount) : 1, "n");
+    writeCell(sdc, "R"+row, p.length);
+    writeCell(sdc, "S"+row, p.upstreamInvert);
+    writeCell(sdc, "T"+row, p.downstreamInvert);
+    writeCell(sdc, "U"+row, p.angle);
+    writeCell(sdc, "V"+row, pipeEffectiveN(p));
     const s = findStructure(p.fromStructureId);
     if(s){
-      writeCell(sdc, "AA"+row, (s.type||"manhole"), "s");
-      writeCell(sdc, "AB"+row, s.rim);
+      writeCell(sdc, "AD"+row, (s.type||"manhole"), "s");
+      writeCell(sdc, "AE"+row, s.rim);
       const calc = computeStructureCalc(s.id);
       if(calc && calc.captured){
-        writeCell(sdc, "AK"+row, round(calc.captured, 4));
+        writeCell(sdc, "AN"+row, round(calc.captured, 4));
       }
     }
   });
@@ -6475,7 +6475,7 @@ async function buildSimpleWorkbook(){
   writeCell(cfg, "B7", 2, "n");
 
   if(state.hydraulics.jurisdiction){
-    writeCell(sdc, "T3", state.hydraulics.jurisdiction, "s");
+    writeCell(sdc, "W3", state.hydraulics.jurisdiction, "s");
   }
   if(state.rainfall && state.rainfall.pipeStorm){
     writeCell(sdc, "H3", state.rainfall.pipeStorm, "s");

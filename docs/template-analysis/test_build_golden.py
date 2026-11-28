@@ -565,8 +565,8 @@ def equations_wb(wip_src):
     return wb
 
 
-TOGGLES_HEADER = "=== Design-Rule Toggles (Config sheet) ==="
-CITATIONS_HEADER = "=== Citation refresh (Spec 1 U1-U7) ==="
+TOGGLES_HEADER = "--- Design-Rule Toggles (Config sheet) ---"
+CITATIONS_HEADER = "--- Citation refresh (Spec 1 U1-U7) ---"
 
 
 def _find_text_row(ws, needle):

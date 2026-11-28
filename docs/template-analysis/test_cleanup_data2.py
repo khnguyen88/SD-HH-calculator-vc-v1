@@ -29,25 +29,36 @@ def _assert_data2_clean(wb):
             )
 
 
-def _assert_sdc_vlookup_intact(wb):
+def _assert_sdc_vlookup_intact(wb, path_a=False):
+    """WIP (pre-Path-A) VLOOKUPs at AZ/BB; golden (Path A, Spec 7) at BC/BE."""
     sdc = wb["STORM DRAIN COMPS"]
-    az10 = sdc["AZ10"].value
-    bb10 = sdc["BB10"].value
-    assert az10 == '=IFERROR(VLOOKUP(AY10,DATA2!$A$2:$D$101,2),"")', (
-        f"AZ10 formula drifted: {az10!r}"
-    )
-    assert bb10 == '=IFERROR(VLOOKUP(AY10,DATA2!$A$2:$D$101,3),"")', (
-        f"BB10 formula drifted: {bb10!r}"
-    )
+    if path_a:
+        bc10 = sdc["BC10"].value
+        be10 = sdc["BE10"].value
+        assert bc10 == '=IFERROR(VLOOKUP(BB10,DATA2!$A$2:$D$101,2),"")', (
+            f"BC10 formula drifted: {bc10!r}"
+        )
+        assert be10 == '=IFERROR(VLOOKUP(BB10,DATA2!$A$2:$D$101,3),"")', (
+            f"BE10 formula drifted: {be10!r}"
+        )
+    else:
+        az10 = sdc["AZ10"].value
+        bb10 = sdc["BB10"].value
+        assert az10 == '=IFERROR(VLOOKUP(AY10,DATA2!$A$2:$D$101,2),"")', (
+            f"AZ10 formula drifted: {az10!r}"
+        )
+        assert bb10 == '=IFERROR(VLOOKUP(AY10,DATA2!$A$2:$D$101,3),"")', (
+            f"BB10 formula drifted: {bb10!r}"
+        )
 
 
 def test_wip_data2_cleaned():
     wb = openpyxl.load_workbook(WIP, data_only=False)
     _assert_data2_clean(wb)
-    _assert_sdc_vlookup_intact(wb)
+    _assert_sdc_vlookup_intact(wb, path_a=False)
 
 
 def test_golden_data2_cleaned():
     wb = openpyxl.load_workbook(GOLDEN, data_only=False)
     _assert_data2_clean(wb)
-    _assert_sdc_vlookup_intact(wb)
+    _assert_sdc_vlookup_intact(wb, path_a=True)

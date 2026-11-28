@@ -163,31 +163,35 @@ def _clear_prior_junction_helper(ws):
 
 def rewire_junction_angle_rule(wb):
     ws = wb[SDC_SHEET]
+    # Spec 7 Path A awareness: if cols have been shifted (N8=Pipe Shape),
+    # target the shifted positions: AD→AG, AQ→AT, AR→AU, R→U.
+    path_a = ws["N8"].value == "Pipe Shape"
+    ad_col  = "AG" if path_a else "AD"
+    aq_col  = "AT" if path_a else "AQ"
+    ar_col  = "AU" if path_a else "AR"
+    ang_col = "U"  if path_a else "R"
+
     _clear_prior_junction_helper(ws)
     helper_letter = _find_free_column_for_helper(ws, HELPER_COL_PREFERRED)
 
     for r in range(SDC_DATA_START, SDC_DATA_END + 1):
-        # AR_min helper: MIN of positive Lv values entering this structure.
         helper_formula = (
             f'=IFERROR(MIN(IF(($B${SDC_DATA_START}:$B${SDC_DATA_END}=$A{r})'
-            f'*($AQ${SDC_DATA_START}:$AQ${SDC_DATA_END}>0),'
-            f'$AQ${SDC_DATA_START}:$AQ${SDC_DATA_END})),0)'
+            f'*(${aq_col}${SDC_DATA_START}:${aq_col}${SDC_DATA_END}>0),'
+            f'${aq_col}${SDC_DATA_START}:${aq_col}${SDC_DATA_END})),0)'
         )
         helper_coord = f"{helper_letter}{r}"
         ws[helper_coord] = ArrayFormula(helper_coord, helper_formula)
 
-        # AD: toggle-aware controlling angle.
-        #   smaller-loss (MDSHA): angle of MIN-Lv inflow among positive Lv's.
-        #   larger-loss (PG):     angle of MAX-Lv inflow (= original WIP).
-        ad_coord = f"AD{r}"
+        ad_coord = f"{ad_col}{r}"
         ad_formula = (
-            f'=IF(AR{r}="","",IF(AR{r}=0,"-",'
+            f'=IF({ar_col}{r}="","",IF({ar_col}{r}=0,"-",'
             f'IF(junctionAngleRule="smaller-loss",'
             f'MAX(IF(($B${SDC_DATA_START}:$B${SDC_DATA_END}=$A{r})'
-            f'*($AQ${SDC_DATA_START}:$AQ${SDC_DATA_END}={helper_letter}{r}),'
-            f'$R${SDC_DATA_START}:$R${SDC_DATA_END})),'
-            f'MAX(IF($AQ${SDC_DATA_START}:$AQ${SDC_DATA_END}=$AR{r},'
-            f'$R${SDC_DATA_START}:$R${SDC_DATA_END})))))'
+            f'*(${aq_col}${SDC_DATA_START}:${aq_col}${SDC_DATA_END}={helper_letter}{r}),'
+            f'${ang_col}${SDC_DATA_START}:${ang_col}${SDC_DATA_END})),'
+            f'MAX(IF(${aq_col}${SDC_DATA_START}:${aq_col}${SDC_DATA_END}=${ar_col}{r},'
+            f'${ang_col}${SDC_DATA_START}:${ang_col}${SDC_DATA_END})))))'
         )
         ws[ad_coord] = ArrayFormula(ad_coord, ad_formula)
 
@@ -367,8 +371,8 @@ def add_u7_small_area_tc_lookup(wb):
 
 
 EQ_SHEET = "EQUATIONS + INSTRUCTIONS"
-EQ_TOGGLES_HEADER = "=== Design-Rule Toggles (Config sheet) ==="
-EQ_CITATIONS_HEADER = "=== Citation refresh (Spec 1 U1-U7) ==="
+EQ_TOGGLES_HEADER = "--- Design-Rule Toggles (Config sheet) ---"
+EQ_CITATIONS_HEADER = "--- Citation refresh (Spec 1 U1-U7) ---"
 EQ_BLOCK_HEIGHT = 36  # Number of rows our block occupies (conservative upper bound)
 
 
@@ -584,99 +588,240 @@ def wire_hgl_method(wb):
 PIPE_DATA_ROW_START = 10
 PIPE_DATA_ROW_END = 98
 
+# Path A insertion: Shape/Width/# at O/P/Q, after N (Size/Height). All
+# existing SDC columns at O (col 15) or beyond shift right by 3.
+PATH_A_INSERT_AT = 15
+PATH_A_SHIFT_BY = 3
+
+_PATH_A_CELL_REF_RE = re.compile(
+    r"(?:(?P<sheet>'[^']+'|[A-Za-z_][A-Za-z0-9_]*)!)?"
+    r"(?P<abs_col>\$?)(?P<col>[A-Z]{1,3})(?P<abs_row>\$?)(?P<row>\d+)"
+)
+
+
+def _shift_refs_to_sdc(formula, local_sheet, target_sheet="STORM DRAIN COMPS",
+                      insert_at=PATH_A_INSERT_AT, amount=PATH_A_SHIFT_BY):
+    """Shift col-letter refs that point to STORM DRAIN COMPS right by `amount`
+    when they're at column index >= insert_at. Handles local refs on SDC and
+    explicit 'STORM DRAIN COMPS'!<col><row> refs from any sheet."""
+    import openpyxl.utils as _u
+    target_norm = target_sheet.lower()
+
+    def replace(m):
+        sheet = m.group("sheet")
+        col = m.group("col")
+        col_idx = _u.column_index_from_string(col)
+        if sheet is not None:
+            sheet_clean = sheet.strip("'")
+            is_target = sheet_clean.lower() == target_norm
+        else:
+            is_target = (local_sheet.lower() == target_norm)
+        if is_target and col_idx >= insert_at:
+            new_col = _u.get_column_letter(col_idx + amount)
+            return (
+                (m.group("sheet") + "!" if sheet else "")
+                + m.group("abs_col") + new_col
+                + m.group("abs_row") + m.group("row")
+            )
+        return m.group(0)
+    return _PATH_A_CELL_REF_RE.sub(replace, formula)
+
+
+def _swap_n_and_o_refs_on_sdc(wb):
+    """Swap N{row} ↔ O{row} refs in SDC-targeting formulas across all
+    sheets. Called after inserting the Pipe Shape column at N and
+    shifting the pre-Spec-7 N (Size/Height) data to O."""
+    import openpyxl.utils as _u
+    from openpyxl.worksheet.formula import ArrayFormula
+    target_norm = "storm drain comps"
+    SWAP_RE = re.compile(
+        r"(?:(?P<sheet>'[^']+'|[A-Za-z_][A-Za-z0-9_]*)!)?"
+        r"(?P<abs_col>\$?)(?P<col>N|O)(?P<abs_row>\$?)(?P<row>\d+)"
+    )
+
+    def replace(local_sheet, m):
+        sheet = m.group("sheet")
+        col = m.group("col")
+        if sheet is not None:
+            sheet_clean = sheet.strip("'")
+            is_target = sheet_clean.lower() == target_norm
+        else:
+            is_target = (local_sheet.lower() == target_norm)
+        if not is_target:
+            return m.group(0)
+        new_col = "O" if col == "N" else "N"
+        return (
+            (m.group("sheet") + "!" if sheet else "")
+            + m.group("abs_col") + new_col
+            + m.group("abs_row") + m.group("row")
+        )
+
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                if isinstance(v, ArrayFormula):
+                    new_text = SWAP_RE.sub(lambda m: replace(ws.title, m), v.text)
+                    if new_text != v.text:
+                        cell.value = ArrayFormula(v.ref, new_text)
+                elif isinstance(v, str) and v.startswith("="):
+                    new_v = SWAP_RE.sub(lambda m: replace(ws.title, m), v)
+                    if new_v != v:
+                        cell.value = new_v
+
+
+def _shift_all_formulas_path_a(wb):
+    """Walk every formula on every sheet, shift col refs that target
+    STORM DRAIN COMPS columns >= position 15 by +3. Handles plain string
+    formulas and ArrayFormula CSE cells."""
+    from openpyxl.worksheet.formula import ArrayFormula
+    count = 0
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                if isinstance(v, ArrayFormula):
+                    new_text = _shift_refs_to_sdc(v.text, ws.title)
+                    if new_text != v.text:
+                        cell.value = ArrayFormula(v.ref, new_text)
+                        count += 1
+                elif isinstance(v, str) and v.startswith("="):
+                    new_v = _shift_refs_to_sdc(v, ws.title)
+                    if new_v != v:
+                        cell.value = new_v
+                        count += 1
+    return count
+
 
 def add_pipe_shape_columns(wb):
-    """Spec 7 Path B: append Pipe Shape / Width / # columns at BF/BG/BH on
-    STORM DRAIN COMPS, plus helper formulas on BI/BJ/BK. Rewrite the
-    full-flow (T), velocity (V), friction-slope (Y), and partial-flow
-    inputs (AV, AW) to be shape-aware and multi-barrel aware.
+    """Spec 7 Path A: insert Pipe Shape / Width / # columns at O/P/Q on
+    STORM DRAIN COMPS, right after N (Size/Height). All existing SDC
+    columns at col 15 (O) or beyond shift right by 3. Helper columns
+    appended at the new tail (post-shift BE→BH).
 
-    Non-destructive: existing formulas on cols other than T/V/Y/AV/AW
-    are untouched. Columns inserted at the end (past BE Lv_min helper).
-    Default values populate rows 10-98 so blanks in BF/BG/BH on a fresh
-    template behave as circular / blank / 1 barrel.
+    Non-idempotent: re-runs on an already-shifted workbook would insert
+    ANOTHER 3 columns. Guard via N8 header check — if O8 already says
+    "Pipe Shape", skip the shift.
 
-    Idempotent: re-runs detect the BF8 header and skip the per-row
-    defaults (preserves user data).
+    Fixes the pre-existing EQUATIONS cell content bug separately via
+    annotate_equations_sheet (headers no longer start with "=").
     """
     if "STORM DRAIN COMPS" not in wb.sheetnames:
         return wb
     ws = wb["STORM DRAIN COMPS"]
 
-    # Row-8 headers (data header row per Spec 1).
-    already_run = ws["BF8"].value is not None
-    ws["N8"] = "Size/Height (in)"
-    ws["BF8"] = "Pipe Shape"
-    ws["BG8"] = "Width (in)"
-    ws["BH8"] = "#"
+    # Idempotency guard: if O8 already says "Pipe Shape", skip insertion.
+    if ws["N8"].value == "Pipe Shape":
+        return wb
+
+    # Insert 3 blank columns at position 15 (O) — shifts all content right.
+    ws.insert_cols(PATH_A_INSERT_AT, PATH_A_SHIFT_BY)
+
+    # Shift formula references across the entire workbook.
+    _shift_all_formulas_path_a(wb)
+
+    # Extend the Excel Table range (Table4 spans SDC data rows 10..98;
+    # insert_cols should extend automatically but confirm the ref).
+    for tbl in list(ws.tables.values()):
+        # Table ref like 'A9:BE98' — need to extend end col by +3.
+        ref = tbl.ref
+        m = re.match(r"^([A-Z]+)(\d+):([A-Z]+)(\d+)$", ref)
+        if m:
+            import openpyxl.utils as _u
+            start_col, start_row, end_col, end_row = m.groups()
+            end_idx = _u.column_index_from_string(end_col) + PATH_A_SHIFT_BY
+            new_end_col = _u.get_column_letter(end_idx)
+            tbl.ref = f"{start_col}{start_row}:{new_end_col}{end_row}"
+
+    # Row-8 headers at the newly-inserted positions.
+    # Per user: N=Pipe Shape (first), O=Size/Height (next), P=Width, Q=#.
+    # Swap N↔O (N originally had Size/Height data; O is the newly-inserted
+    # column). We also swap all N<row> ↔ O<row> cell refs across the
+    # workbook so formulas keep pointing at the right physical data.
+    # Step: save N data, write new content, swap formula refs.
+    saved_n_data = {}
+    for r in range(1, 100):
+        saved_n_data[r] = ws[f"N{r}"].value
+    # N now holds Pipe Shape; O holds Size/Height (data from pre-shift N).
+    ws["N8"] = "Pipe Shape"
+    ws["O8"] = "Size/Height (in)"
+    ws["P8"] = "Width (in)"
+    ws["Q8"] = "#"
+    # Copy saved N data (rows 1-98 except header row 8) to O; write defaults to N.
+    for r in range(1, 100):
+        if r == 8:
+            continue  # headers already set
+        if saved_n_data[r] is not None:
+            ws[f"O{r}"] = saved_n_data[r]
+
+    # Data-entry defaults on rows 10-98 for Pipe Shape (N) and # (Q).
+    for r in range(PIPE_DATA_ROW_START, PIPE_DATA_ROW_END + 1):
+        ws[f"N{r}"] = "circular"
+        ws[f"Q{r}"] = 1
+
+    # Swap N↔O references in all formulas across the workbook. Only refs
+    # to SDC (local or 'STORM DRAIN COMPS'! prefixed). N and O are both
+    # < col 15 so they weren't touched by the earlier shift.
+    _swap_n_and_o_refs_on_sdc(wb)
+
+    # Data validation on N (Pipe Shape) — dropdown with 3 options.
+    dv_shape = DataValidation(
+        type="list",
+        formula1='"circular,elliptical,rectangular"',
+        allow_blank=True,
+        showErrorMessage=True,
+    )
+    dv_shape.error = "Pipe Shape must be one of: circular, elliptical, rectangular"
+    dv_shape.errorTitle = "Invalid Pipe Shape"
+    dv_shape.prompt = "Choose: circular, elliptical, or rectangular"
+    dv_shape.promptTitle = "Pipe Shape"
+    dv_shape.add(f"N{PIPE_DATA_ROW_START}:N{PIPE_DATA_ROW_END}")
+    ws.add_data_validation(dv_shape)
+
+    # Helper columns at the new tail. Pre-insert last col was BE (57); after
+    # +3 shift BE→BH (60). Fresh positions for helpers: BI/BJ/BK (61/62/63).
     ws["BI8"] = "A (sf per barrel)"
     ws["BJ8"] = "R (ft per barrel)"
     ws["BK8"] = "D_eq (in)"
 
     for r in range(PIPE_DATA_ROW_START, PIPE_DATA_ROW_END + 1):
-        # Data-entry defaults — only populate on first run, preserve user
-        # edits on re-runs.
-        if not already_run:
-            if ws[f"BF{r}"].value in (None, ""):
-                ws[f"BF{r}"] = "circular"
-            # BG stays blank by default (circular doesn't need width).
-            if ws[f"BH{r}"].value in (None, ""):
-                ws[f"BH{r}"] = 1
-
-        # Helper formulas (always rewritten — they derive from input cells).
         # BK: equivalent diameter (in), shape-aware.
-        #   circular   → D = N
-        #   elliptical → D_eq = sqrt(N·BG)  (area-equivalent)
-        #   rectangular→ D_eq = 2·N·BG/(N+BG)  (hydraulic-diameter equivalent)
+        #   N=shape, O=height/size, P=width.
         ws[f"BK{r}"] = (
-            f'=IF(BF{r}="rectangular",'
-            f'IF(OR(N{r}="",BG{r}=""),"",2*N{r}*BG{r}/(N{r}+BG{r})),'
-            f'IF(BF{r}="elliptical",'
-            f'IF(OR(N{r}="",BG{r}=""),"",SQRT(N{r}*BG{r})),'
-            f'IF(N{r}="","",N{r})))'
+            f'=IF(N{r}="rectangular",'
+            f'IF(OR(O{r}="",P{r}=""),"",2*O{r}*P{r}/(O{r}+P{r})),'
+            f'IF(N{r}="elliptical",'
+            f'IF(OR(O{r}="",P{r}=""),"",SQRT(O{r}*P{r})),'
+            f'IF(O{r}="","",O{r})))'
         )
-
-        # BI: Area A (sf per barrel), shape-aware.
-        #   circular   → PI·N²/(4·144)
-        #   elliptical → PI·N·BG/(4·144)
-        #   rectangular→ N·BG/144
+        # BI: Area A (sf per barrel).
         ws[f"BI{r}"] = (
-            f'=IF(BF{r}="rectangular",'
-            f'IF(OR(N{r}="",BG{r}=""),"",N{r}*BG{r}/144),'
-            f'IF(BF{r}="elliptical",'
-            f'IF(OR(N{r}="",BG{r}=""),"",PI()*N{r}*BG{r}/(4*144)),'
-            f'IF(N{r}="","",PI()*N{r}^2/(4*144))))'
+            f'=IF(N{r}="rectangular",'
+            f'IF(OR(O{r}="",P{r}=""),"",O{r}*P{r}/144),'
+            f'IF(N{r}="elliptical",'
+            f'IF(OR(O{r}="",P{r}=""),"",PI()*O{r}*P{r}/(4*144)),'
+            f'IF(O{r}="","",PI()*O{r}^2/(4*144))))'
         )
-
-        # BJ: Hydraulic radius R (ft per barrel). R = D_eq/4; inches→ft.
+        # BJ: Hydraulic radius R (ft per barrel). R = D_eq/4; in→ft.
         ws[f"BJ{r}"] = f'=IF(BK{r}="","",BK{r}/48)'
 
-        # Rewrite full-flow Capacity (T) — total for all barrels.
-        # T = BH * (1.486/n) * R^(2/3) * sqrt(S) * A
-        # (S here is pipe slope Z column; n is Manning on S column.)
-        ws[f"T{r}"] = (
-            f'=IF(Z{r}="","",IF(BI{r}="","",'
-            f'BH{r}*1.486/S{r}*BJ{r}^(2/3)*SQRT(Z{r})*BI{r}))'
+        # After shift: T→W (full flow), V→Y (Manning V), Y→AB (friction slope),
+        # AV→AY (Q per barrel), AW→AZ (eff D), Z→AC (slope), S→V (Manning n).
+        # Rewrite these to use helpers + Q (barrel count).
+        ws[f"W{r}"] = (
+            f'=IF(AC{r}="","",IF(BI{r}="","",'
+            f'Q{r}*1.486/V{r}*BJ{r}^(2/3)*SQRT(AC{r})*BI{r}))'
         )
-
-        # Manning velocity full (V) — per-barrel (same for all barrels).
-        ws[f"V{r}"] = (
-            f'=IF(Z{r}="","",IF(BJ{r}="","",'
-            f'1.486/S{r}*BJ{r}^(2/3)*SQRT(Z{r})))'
-        )
-
-        # Friction slope (Y) — per-barrel at design-Q-per-barrel.
-        # Sf = ((Q_per_barrel * n) / (1.486 * A * R^(2/3)))^2
         ws[f"Y{r}"] = (
-            f'=IF(A{r}="","",IF(BI{r}="","",IF(M{r}="","",'
-            f'ROUND(((M{r}/BH{r}*S{r})/(1.486*BI{r}*BJ{r}^(2/3)))^2,6))))'
+            f'=IF(AC{r}="","",IF(BJ{r}="","",'
+            f'1.486/V{r}*BJ{r}^(2/3)*SQRT(AC{r})))'
         )
-
-        # Partial-flow block inputs:
-        #   AV (Q per barrel) — was Table4 lookup via Q_total; now M/BH.
-        ws[f"AV{r}"] = f'=IF(M{r}="","",M{r}/BH{r})'
-        #   AW (effective diameter for DATA2) — now BK (shape-aware D_eq).
-        ws[f"AW{r}"] = f'=BK{r}'
+        ws[f"AB{r}"] = (
+            f'=IF(A{r}="","",IF(BI{r}="","",IF(M{r}="","",'
+            f'ROUND(((M{r}/Q{r}*V{r})/(1.486*BI{r}*BJ{r}^(2/3)))^2,6))))'
+        )
+        ws[f"AY{r}"] = f'=IF(M{r}="","",M{r}/Q{r})'
+        ws[f"AZ{r}"] = f'=BK{r}'
 
     return wb
 

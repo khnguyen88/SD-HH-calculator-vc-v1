@@ -11,6 +11,9 @@ def find_visualizer_build():
         for p in parent.rglob("storm-drain-visualizer.html"):
             if "node_modules" in p.parts:
                 continue
+            if ".worktrees" in p.parts:
+                # Skip stale builds in sibling feature worktrees.
+                continue
             return p
         # Stop once we've reached the worktree root (has visualizer/ dir).
         if (parent / "visualizer").is_dir():
